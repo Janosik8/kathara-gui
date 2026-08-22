@@ -1,0 +1,46 @@
+[project]
+name = "kathara-gui"
+version = "0.1.0"
+description = "Graphical environment for modeling, deploying and verifying Kathara network topologies"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "websockets>=13",
+    "pydantic>=2.9",
+    "kathara>=3.8",
+    "docker>=7.1",
+]
+
+[project.scripts]
+kathara-gui = "kathara_gui.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.7",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kathara_gui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Docker-dependent tests are opt-in: they only run where a daemon exists.
+markers = ["docker: requires a running Docker daemon and Kathara"]
+addopts = "-m 'not docker'"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

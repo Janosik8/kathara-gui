@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Built frontend is injected into the package at release time only.
+src/kathara_gui/static/*
+!src/kathara_gui/static/.gitkeep
+
+# Scratch lab output
+.labs/
+*.kgui
+
+
+
+
+.DS_Store
