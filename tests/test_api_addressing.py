@@ -294,3 +294,60 @@ def test_omitting_the_topology_still_uses_the_session(client: TestClient) -> Non
     client.put("/api/topology", json=TRIANGLE)
     body = client.post("/api/topology/addressing/allocate", json={}).json()
     assert len(body["topology"]["nodes"]) == 3
+
+
+def test_a_pinned_subnet_is_honoured_and_the_rest_allocated(client: TestClient) -> None:
+    """Pin one domain, let the allocator fill in the others around it."""
+    body = client.post(
+        "/api/topology/addressing/allocate",
+        json={
+            "topology": {
+                "name": "lab",
+                "nodes": [
+                    {
+                        "name": "r1",
+                        "interfaces": [
+                            {"number": 0, "collision_domain": "A"},
+                            {"number": 1, "collision_domain": "C"},
+                        ],
+                    },
+                    {
+                        "name": "r2",
+                        "interfaces": [{"number": 0, "collision_domain": "A"}],
+                    },
+                    {
+                        "name": "r3",
+                        "interfaces": [{"number": 0, "collision_domain": "C"}],
+                    },
+                ],
+                "collision_domains": [{"name": "C", "subnet": "192.168.1.0/24"}],
+            }
+        },
+    ).json()
+
+    addresses = {
+        f"{n['name']}:{i['number']}": i["ip"]
+        for n in body["topology"]["nodes"]
+        for i in n["interfaces"]
+    }
+    # C keeps the pinned network; A is allocated from the pool.
+    assert addresses["r1:1"] == "192.168.1.1/24"
+    assert addresses["r3:0"] == "192.168.1.2/24"
+    assert addresses["r1:0"].startswith("10.")
+    assert "C" not in body["assigned_subnets"]
+
+
+def test_renumbering_discards_a_pinned_subnet(client: TestClient) -> None:
+    """Documented behaviour: Renumber all means all, pinned subnets included."""
+    body = client.post(
+        "/api/topology/addressing/allocate",
+        json={
+            "overwrite": True,
+            "topology": {
+                "name": "lab",
+                "nodes": [{"name": "r1", "interfaces": [{"number": 0, "collision_domain": "C"}]}],
+                "collision_domains": [{"name": "C", "subnet": "192.168.1.0/24"}],
+            },
+        },
+    ).json()
+    assert body["topology"]["nodes"][0]["interfaces"][0]["ip"] == "10.0.0.1/24"

@@ -11,6 +11,7 @@
  * regardless, because hiding a button stops nobody with developer tools open.
  */
 
+import { useState } from "react";
 import type { AddressingIssue } from "../api/client";
 
 interface Props {
@@ -28,7 +29,7 @@ interface Props {
   /** False when the instructor has withdrawn the calculator. */
   canAllocate: boolean;
   canValidate: boolean;
-  onAllocate: (overwrite: boolean) => void;
+  onAllocate: (overwrite: boolean, pool: string, prefix: number) => void;
 }
 
 const SEVERITY: Record<string, { glyph: string; label: string }> = {
@@ -54,6 +55,11 @@ export function AddressingPanel({
   canValidate,
   onAllocate,
 }: Props) {
+  // Local rather than global: these are parameters of the next allocation,
+  // not part of the topology, so they do not belong in the document.
+  const [pool, setPool] = useState("10.0.0.0/8");
+  const [prefix, setPrefix] = useState(24);
+
   if (!canAllocate && !canValidate) return null;
 
   return (
@@ -64,15 +70,39 @@ export function AddressingPanel({
 
       {canAllocate ? (
         <div className="addressing__actions">
-          <button type="button" onClick={() => onAllocate(false)} disabled={busy}>
+          <div className="field">
+            <label htmlFor="addressing-pool">Address pool</label>
+            <input
+              id="addressing-pool"
+              value={pool}
+              onChange={(e) => setPool(e.target.value)}
+              placeholder="10.0.0.0/8"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="addressing-prefix">Subnet size</label>
+            <select
+              id="addressing-prefix"
+              value={prefix}
+              onChange={(e) => setPrefix(Number(e.target.value))}
+            >
+              {[16, 24, 25, 26, 27, 28, 29, 30].map((p) => (
+                <option key={p} value={p}>
+                  /{p}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button type="button" onClick={() => onAllocate(false, pool, prefix)} disabled={busy}>
             Assign addresses
           </button>
-          <button type="button" onClick={() => onAllocate(true)} disabled={busy}>
+          <button type="button" onClick={() => onAllocate(true, pool, prefix)} disabled={busy}>
             Renumber all
           </button>
           <p className="addressing__hint">
-            Assign fills in what is missing and leaves your own addresses alone.
-            Renumber replaces every address.
+            Assign fills in what is missing and leaves your own addresses and pinned subnets
+            alone. Renumber replaces every address and every subnet, including pinned ones.
           </p>
         </div>
       ) : (

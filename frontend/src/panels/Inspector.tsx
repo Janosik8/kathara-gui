@@ -1,65 +1,18 @@
 /**
  * Editing the selected device.
  *
- * Text fields commit on blur or Enter rather than on every keystroke: a
- * per-character dispatch would fill the operation log and make undo useless
- * (twelve presses of Ctrl+Z to retract one rename).
+ * Text fields use CommittedInput, so they report on blur or Enter rather than
+ * on every keystroke.
  */
 
-import { useEffect, useState } from "react";
 import type { Operation } from "../store/operations";
+import { CommittedInput } from "./CommittedInput";
 import { DEVICE_KINDS, type DeviceKind, KNOWN_DAEMONS, type Node, type Topology } from "../types";
 
 interface Props {
   topology: Topology;
   selected: string[];
   onDispatch: (op: Operation) => void;
-}
-
-/** An input that reports its value only once the user has finished with it. */
-function CommittedInput({
-  id,
-  label,
-  value,
-  placeholder,
-  onCommit,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  placeholder?: string;
-  onCommit: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-
-  // Adopt external changes (a different device selected, or an undo) without
-  // discarding an edit in progress.
-  useEffect(() => setDraft(value), [value]);
-
-  const commit = () => {
-    if (draft !== value) onCommit(draft);
-  };
-
-  return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        value={draft}
-        placeholder={placeholder}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            setDraft(value);
-          }
-        }}
-      />
-    </div>
-  );
 }
 
 export function Inspector({ topology, selected, onDispatch }: Props) {

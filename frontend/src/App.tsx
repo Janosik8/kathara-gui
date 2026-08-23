@@ -4,6 +4,7 @@ import { TopologyTree } from "./a11y/TopologyTree";
 import { type AddressingIssue, ApiError, api } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
 import { AddressingPanel } from "./panels/AddressingPanel";
+import { CollisionDomainsPanel } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
@@ -246,11 +247,11 @@ export default function App() {
   }, [topology, canValidate]);
 
   const allocateAddressing = useCallback(
-    async (overwrite: boolean) => {
+    async (overwrite: boolean, pool: string, prefix: number) => {
       setAllocating(true);
       try {
         // Send the document we hold: the saved session may be far behind.
-        const result = await api.allocateAddressing({ topology, overwrite });
+        const result = await api.allocateAddressing({ topology, overwrite, pool, prefix });
         // One operation, so the whole allocation undoes in one step.
         dispatch({ type: "replaceTopology", topology: result.topology });
         setNotice(
@@ -399,6 +400,8 @@ export default function App() {
       <div className="app__body">
         <aside className="panel" aria-label="Devices">
           <Palette topology={topology} onAdd={addDevice} />
+
+          <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
 
           <ConnectModeBar
             active={connectMode}

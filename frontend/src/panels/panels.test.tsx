@@ -4,6 +4,7 @@ import axeCore from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 import { type Topology, newNode, suggestCollisionDomain } from "../types";
 import { Inspector } from "./Inspector";
+import { CollisionDomainsPanel, validateSubnet } from "./CollisionDomainsPanel";
 import { Palette, suggestName } from "./Palette";
 
 function twoRouters(): Topology {
@@ -169,6 +170,145 @@ describe("Inspector", () => {
   it("has no axe violations", async () => {
     const { container } = render(
       <Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />,
+    );
+    const results = await axeCore.run(container);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("validateSubnet", () => {
+  it("accepts a network in CIDR form", () => {
+    expect(validateSubnet("192.168.1.0/24")).toBeNull();
+    expect(validateSubnet("10.0.0.0/8")).toBeNull();
+    expect(validateSubnet("172.16.4.0/30")).toBeNull();
+  });
+
+  it("treats blank as 'allocate one for me'", () => {
+    expect(validateSubnet("")).toBeNull();
+    expect(validateSubnet("   ")).toBeNull();
+  });
+
+  it("rejects text that is not CIDR at all", () => {
+    expect(validateSubnet("192.168.1.0")).toMatch(/CIDR/);
+    expect(validateSubnet("hello")).toMatch(/CIDR/);
+  });
+
+  it("rejects out-of-range octets", () => {
+    expect(validateSubnet("300.1.1.0/24")).toMatch(/0-255/);
+  });
+
+  it("rejects an impossible prefix", () => {
+    expect(validateSubnet("10.0.0.0/33")).toMatch(/\/32 or shorter/);
+  });
+
+  it("catches a host address and suggests the network", () => {
+    // The common slip: typing the router's own address as the subnet.
+    expect(validateSubnet("192.168.1.1/24")).toBe(
+      "That is a host address. Did you mean 192.168.1.0/24?",
+    );
+    expect(validateSubnet("10.0.0.5/30")).toBe(
+      "That is a host address. Did you mean 10.0.0.4/30?",
+    );
+  });
+});
+
+describe("CollisionDomainsPanel", () => {
+  function withDomains() {
+    const topology = linked();
+    topology.nodes.push(newNode("r3", "router", { x: 200, y: 0 }));
+    topology.nodes[2]!.interfaces = [{ number: 0, collision_domain: "C" }];
+    topology.collision_domains = [{ name: "A" }, { name: "C", subnet: "192.168.1.0/24" }];
+    return topology;
+  }
+
+  it("lists every collision domain in use", () => {
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
+    expect(screen.getByLabelText("Subnet for A")).toBeInTheDocument();
+    expect(screen.getByLabelText("Subnet for C")).toBeInTheDocument();
+  });
+
+  it("shows how many devices share each domain", () => {
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
+    expect(screen.getByText("2 devices")).toBeInTheDocument();
+    expect(screen.getByText("1 device")).toBeInTheDocument();
+  });
+
+  it("shows a subnet that has already been pinned", () => {
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
+    expect(screen.getByLabelText("Subnet for C")).toHaveValue("192.168.1.0/24");
+  });
+
+  it("pins a subnet on commit", async () => {
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={onDispatch} />);
+
+    await user.type(screen.getByLabelText("Subnet for A"), "10.20.30.0/24");
+    await user.tab();
+
+    expect(onDispatch).toHaveBeenCalledWith({
+      type: "setSubnet",
+      collisionDomain: "A",
+      subnet: "10.20.30.0/24",
+    });
+  });
+
+  it("clearing the field releases the subnet for allocation", async () => {
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={onDispatch} />);
+
+    await user.clear(screen.getByLabelText("Subnet for C"));
+    await user.tab();
+
+    expect(onDispatch).toHaveBeenCalledWith({
+      type: "setSubnet",
+      collisionDomain: "C",
+      subnet: null,
+    });
+  });
+
+  it("refuses to commit an invalid subnet and says why", async () => {
+    // Committing it would poison the topology and 422 every later request.
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={onDispatch} />);
+
+    await user.type(screen.getByLabelText("Subnet for A"), "192.168.1.1/24");
+    await user.tab();
+
+    expect(onDispatch).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/Did you mean 192\.168\.1\.0\/24/);
+  });
+
+  it("keeps what the user typed rather than discarding it", async () => {
+    const user = userEvent.setup();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Subnet for A"), "192.168.1.1/24");
+    await user.tab();
+
+    expect(screen.getByLabelText("Subnet for A")).toHaveValue("192.168.1.1/24");
+  });
+
+  it("marks the field invalid for assistive technology", async () => {
+    const user = userEvent.setup();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Subnet for A"), "nonsense");
+    expect(screen.getByLabelText("Subnet for A")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("renders nothing when no domain is in use", () => {
+    const { container } = render(
+      <CollisionDomainsPanel topology={twoRouters()} onDispatch={vi.fn()} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("has no axe violations", async () => {
+    const { container } = render(
+      <CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />,
     );
     const results = await axeCore.run(container);
     expect(results.violations.map((v) => v.id)).toEqual([]);

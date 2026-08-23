@@ -625,3 +625,44 @@ select {
 .issue__severity {
   font-weight: 700;
 }
+
+.domain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.domain-list__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-raised);
+}
+
+.domain-list__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.domain-list__members {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.field__hint {
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  margin: 2px 0 0;
+}
+
+.field__error {
+  font-size: 0.8rem;
+  color: var(--danger);
+  margin: 3px 0 0;
+}

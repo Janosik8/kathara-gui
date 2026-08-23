@@ -113,6 +113,11 @@ there is no "Deploy" button yet.
 | Disconnect an interface | **Details** → Interfaces → Disconnect ethN. |
 | Delete | Select, then the **Delete** button or the Delete key. |
 | Undo / redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or the toolbar. |
+| Pin a subnet to a collision domain | Left panel → **Collision domains** → type the network for that domain, e.g. `192.168.1.0/24`, then Enter. |
+| Let a domain be allocated | Leave its subnet field blank. |
+| Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
+| Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
+| Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. |
 | Save | **Save** sends the topology to the backend. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
@@ -137,6 +142,32 @@ report anything that is not.
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
 
 The first `Tab` on a fresh page reveals a **Skip to topology** link.
+
+### Planning the addressing
+
+Two levels of control:
+
+- **Per domain.** The **Collision domains** panel lists every domain in use. Type a network
+  into one to pin it — `192.168.1.0/24` — and the allocator will number hosts inside it
+  rather than choosing its own. Blank means "allocate one for me".
+- **Globally.** The **Address pool** and **Subnet size** in the Addressing panel decide
+  where unpinned domains are carved from. Default is `10.0.0.0/8` in `/24` blocks.
+
+So to make domain C use `192.168.1.0/24` while everything else is automatic: type it into
+C's field, leave the rest blank, and press **Assign addresses**.
+
+```
+allocated subnets: {'A': '10.0.0.0/24', 'B': '10.0.1.0/24'}
+  r1  eth1  192.168.1.1/24   (domain C)
+  r3  eth1  192.168.1.2/24   (domain C)
+```
+
+**Assign** preserves pinned subnets and any address you typed yourself. **Renumber all**
+replaces both — that is what "all" means, so pin again afterwards if you need to.
+
+A subnet field rejects a host address (`192.168.1.1/24`) and suggests the network instead,
+because the model requires a network and an invalid value would otherwise be rejected on
+every later request.
 
 ### Not built yet
 
