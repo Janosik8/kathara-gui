@@ -13,7 +13,11 @@
   --bg-raised: #ffffff;
   --fg: #14181f;
   --fg-muted: #4a5261;
+  /* Two tiers. `--border` separates areas; `--border-strong` bounds anything
+     interactive, where WCAG 1.4.11 requires 3:1 against the adjacent surface.
+     Verified by tests/test_contrast.py, which reads these very values. */
   --border: #c9cdd6;
+  --border-strong: #7f848e;
   --accent: #0b5cad; /* 7.0:1 on white — AAA for body text */
   --accent-fg: #ffffff;
   --danger: #a3101b;
@@ -21,6 +25,9 @@
 
   --radius: 6px;
   --gap: 12px;
+
+  /* Dim-out for the area of the minimap that is off-screen. */
+  --minimap-mask: rgba(20, 24, 31, 0.28);
   color-scheme: light dark;
 }
 
@@ -32,10 +39,12 @@
     --fg: #eef1f6;
     --fg-muted: #a8b1c0;
     --border: #3a4353;
+    --border-strong: #757e8e;
     --accent: #6fb3ff; /* lightened to keep contrast on a dark ground */
     --accent-fg: #0a0f16;
     --danger: #ff9098;
     --focus: #6fb3ff;
+    --minimap-mask: rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -43,6 +52,7 @@
 @media (prefers-contrast: more) {
   :root {
     --border: currentColor;
+    --border-strong: currentColor;
     --fg-muted: var(--fg);
   }
 }
@@ -142,7 +152,7 @@ body {
 button {
   font: inherit;
   padding: 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--bg-raised);
   color: var(--fg);
@@ -329,7 +339,7 @@ input,
 select {
   font: inherit;
   padding: 6px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--bg-raised);
   color: var(--fg);
@@ -472,4 +482,74 @@ select {
 /* In connect mode a link is a target, so it must look like one. */
 .app[data-connect-mode] .react-flow__edge {
   cursor: crosshair;
+}
+
+/* -- canvas chrome --------------------------------------------------
+ *
+ * React Flow ships its controls as #fefefe on #eee borders and masks the
+ * minimap with rgba(240,240,240,0.6). Against a white canvas that is close to
+ * invisible, and it fails WCAG 1.4.11, which asks for 3:1 on the visual
+ * boundary of a control.
+ *
+ * The library exposes its own custom properties, so map those onto the theme
+ * tokens rather than fighting selector specificity. Doing it this way means
+ * dark mode and prefers-contrast are handled by the tokens already.
+ */
+
+.react-flow {
+  --xy-controls-button-background-color: var(--bg-raised);
+  --xy-controls-button-background-color-hover: var(--bg-panel);
+  --xy-controls-button-color: var(--fg);
+  --xy-controls-button-color-hover: var(--accent);
+  --xy-controls-button-border-color: var(--border-strong);
+  --xy-controls-box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+
+  --xy-minimap-background-color: var(--bg-panel);
+  --xy-minimap-mask-background-color: var(--minimap-mask);
+  --xy-minimap-node-background-color: var(--fg-muted);
+  --xy-minimap-node-stroke-color: var(--fg);
+
+  /* The default #b1b1b7 link is barely a line; links are the topology. */
+  --xy-edge-stroke: var(--fg-muted);
+  --xy-edge-stroke-width: 2;
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-label-background-color: var(--bg-raised);
+  --xy-edge-label-color: var(--fg);
+
+  --xy-background-pattern-dots-color: var(--border-strong);
+  --xy-attribution-background-color: var(--bg-raised);
+}
+
+.react-flow__controls {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 26px is only just over the 24px minimum target size, and these are the
+   controls a low-vision user reaches for first. */
+.react-flow__controls-button {
+  width: 30px;
+  height: 30px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.react-flow__controls-button svg {
+  max-width: 14px;
+  max-height: 14px;
+}
+
+.react-flow__controls-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.react-flow__edge-text {
+  fill: var(--fg);
+  font-size: 11px;
 }

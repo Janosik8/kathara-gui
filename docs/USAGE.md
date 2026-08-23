@@ -274,8 +274,14 @@ Automated, on every commit:
 cd frontend && npm test        # axe-core audits over tree, panels and the whole app
 ```
 
-> **axe under jsdom cannot check colour contrast** — it needs a real canvas. A clean run
-> proves structure, roles and naming only. Contrast must be verified in a browser.
+```bash
+uv run pytest tests/test_contrast.py    # palette contrast against WCAG 2.1
+```
+
+> **axe under jsdom cannot check colour contrast** — it needs a real canvas. A clean
+> `npm test` proves structure, roles and naming only. `test_contrast.py` covers the palette
+> from the other side by reading the real tokens out of `styles.css`, but neither proves
+> *rendered* contrast, so the browser pass below still matters.
 
 Manual:
 
