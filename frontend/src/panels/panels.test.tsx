@@ -2,8 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { describe, expect, it, vi } from "vitest";
-import { type Topology, newNode } from "../types";
-import { ConnectForm, suggestCollisionDomain } from "./ConnectForm";
+import { type Topology, newNode, suggestCollisionDomain } from "../types";
 import { Inspector } from "./Inspector";
 import { Palette, suggestName } from "./Palette";
 
@@ -75,86 +74,6 @@ describe("Palette", () => {
     render(<Palette topology={twoRouters()} onAdd={onAdd} />);
     await user.click(screen.getByRole("button", { name: /Add pc/ }));
     expect(onAdd).toHaveBeenCalledWith("pc");
-  });
-});
-
-describe("ConnectForm", () => {
-  it("creates a link between two devices", async () => {
-    const user = userEvent.setup();
-    const onConnect = vi.fn();
-    render(<ConnectForm topology={twoRouters()} onConnect={onConnect} />);
-
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "device:r2");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-
-    expect(onConnect).toHaveBeenCalledWith({
-      type: "link",
-      a: "r1",
-      b: "r2",
-      collisionDomain: "A",
-    });
-  });
-
-  it("joins an existing collision domain when one is chosen", async () => {
-    const user = userEvent.setup();
-    const onConnect = vi.fn();
-    const topology = linked();
-    topology.nodes.push(newNode("r3", "router", { x: 200, y: 0 }));
-    render(<ConnectForm topology={topology} onConnect={onConnect} />);
-
-    await user.selectOptions(screen.getByLabelText("Device"), "r3");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "domain:A");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-
-    expect(onConnect).toHaveBeenCalledWith({
-      type: "connect",
-      node: "r3",
-      collisionDomain: "A",
-    });
-  });
-
-  it("never offers a device as its own destination", async () => {
-    const user = userEvent.setup();
-    render(<ConnectForm topology={twoRouters()} onConnect={vi.fn()} />);
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-
-    const target = screen.getByLabelText("Connect to") as HTMLSelectElement;
-    const values = [...target.options].map((o) => o.value);
-    expect(values).not.toContain("device:r1");
-    expect(values).toContain("device:r2");
-  });
-
-  it("states the outcome before the button is pressed", async () => {
-    const user = userEvent.setup();
-    render(<ConnectForm topology={twoRouters()} onConnect={vi.fn()} />);
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "device:r2");
-
-    expect(
-      screen.getByText(/A new collision domain A will link r1 and r2/),
-    ).toBeInTheDocument();
-  });
-
-  it("cannot be submitted until both ends are chosen", () => {
-    render(<ConnectForm topology={twoRouters()} onConnect={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
-  });
-
-  it("renders nothing when there are no devices", () => {
-    const { container } = render(
-      <ConnectForm
-        topology={{ name: "l", nodes: [], collision_domains: [] }}
-        onConnect={vi.fn()}
-      />,
-    );
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it("has no axe violations", async () => {
-    const { container } = render(<ConnectForm topology={linked()} onConnect={vi.fn()} />);
-    const results = await axeCore.run(container);
-    expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 });
 

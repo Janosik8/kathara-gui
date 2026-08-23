@@ -4,12 +4,12 @@ import { TopologyTree } from "./a11y/TopologyTree";
 import { ApiError, api } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
-import { ConnectForm, suggestCollisionDomain } from "./panels/ConnectForm";
+import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
 import { Palette, suggestName } from "./panels/Palette";
-import { type AlignmentAction, ALIGNMENT_LABELS, computeAlignment } from "./store/alignment";
+import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
 import { useTopologyStore } from "./store/topology";
-import { type DeviceKind, newNode } from "./types";
+import { type DeviceKind, newNode, suggestCollisionDomain } from "./types";
 
 /** Lay new devices out on a loose grid rather than stacking them at the origin. */
 function placeNew(count: number) {
@@ -20,12 +20,18 @@ function placeNew(count: number) {
 /** True when the keystroke belongs to whatever the user is typing into. */
 function isTextEntry(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName) ||
-    // The tree handles Delete itself, per the ARIA pattern.
-    target.getAttribute("role") === "treeitem"
-  );
+  return target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName);
+}
+
+/**
+ * True when focus is inside the tree, which owns Delete per the ARIA pattern.
+ *
+ * Scoped to Delete alone: an earlier version skipped *all* global shortcuts
+ * here, which silently swallowed Escape and undo whenever focus was in the
+ * tree — that is, for keyboard users specifically.
+ */
+function isTreeItem(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.getAttribute("role") === "treeitem";
 }
 
 export default function App() {
@@ -46,8 +52,14 @@ export default function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
 
-  // Adopt whatever the server already holds, so reloading the page does not
-  // discard work.
+  // Connect mode: click one device, then another, and a link appears — the
+  // interaction people expect from a topology editor.
+  const [connectMode, setConnectMode] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const canConnect = topology.nodes.length >= 2;
+
   useEffect(() => {
     api
       .read()
@@ -55,14 +67,34 @@ export default function App() {
       .catch((err) => setStatus(err instanceof ApiError ? err.message : String(err)));
   }, [load]);
 
-  // Drop devices that an edit or an undo removed, so an alignment can never
-  // act on something that is no longer there.
+  // Drop devices that an edit or an undo removed, so neither an alignment nor a
+  // half-finished link can refer to something that is gone.
   useEffect(() => {
     setSelected((current) => {
       const present = current.filter((name) => topology.nodes.some((n) => n.name === name));
       return present.length === current.length ? current : present;
     });
+    setPending((current) =>
+      current && !topology.nodes.some((n) => n.name === current) ? null : current,
+    );
   }, [topology]);
+
+  // Leaving connect mode must never strand a half-made link.
+  const leaveConnectMode = useCallback((announce = true) => {
+    setConnectMode(false);
+    setPending(null);
+    if (announce) setNotice("Left connect mode");
+  }, []);
+
+  const toggleConnectMode = useCallback(() => {
+    if (connectMode) {
+      leaveConnectMode();
+    } else {
+      setConnectMode(true);
+      setPending(null);
+      setNotice("Connect mode on. Choose the first device.");
+    }
+  }, [connectMode, leaveConnectMode]);
 
   const select = useCallback((name: string | null, additive: boolean) => {
     setSelected((current) => {
@@ -73,6 +105,47 @@ export default function App() {
         : [...current, name];
     });
   }, []);
+
+  /**
+   * What a click on a device means, which depends on the mode.
+   * Both the canvas and the tree route through here, so the two agree.
+   */
+  const activate = useCallback(
+    (name: string | null, additive: boolean) => {
+      if (!connectMode) {
+        select(name, additive);
+        return;
+      }
+      if (name === null) {
+        // Clicking empty space abandons the half-made link but stays in mode.
+        setPending(null);
+        setNotice("Cancelled. Choose the first device.");
+        return;
+      }
+      if (pending === null) {
+        setPending(name);
+        setNotice(`${name} selected. Now choose the device to link it to.`);
+        return;
+      }
+      if (pending === name) {
+        setPending(null);
+        setNotice(`${name} deselected. Choose the first device.`);
+        return;
+      }
+
+      // Clearing the notice lets the store's own description be announced.
+      setNotice(null);
+      dispatch({
+        type: "link",
+        a: pending,
+        b: name,
+        collisionDomain: suggestCollisionDomain(topology),
+      });
+      // Stay in mode so several links can be drawn in a row.
+      setPending(null);
+    },
+    [connectMode, dispatch, pending, select, topology],
+  );
 
   const addDevice = useCallback(
     (kind: DeviceKind) => {
@@ -113,7 +186,17 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (isTextEntry(event.target)) return;
+      const typing = isTextEntry(event.target);
+
+      // Escape works everywhere except mid-edit, where the field uses it to
+      // abandon the edit.
+      if (event.key === "Escape" && connectMode && !typing) {
+        event.preventDefault();
+        leaveConnectMode();
+        return;
+      }
+
+      if (typing) return;
 
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "z") {
@@ -122,18 +205,36 @@ export default function App() {
         else undo();
         return;
       }
-      if ((event.key === "Delete" || event.key === "Backspace") && selected.length > 0) {
+      if (!meta && event.key.toLowerCase() === "c" && canConnect) {
+        event.preventDefault();
+        toggleConnectMode();
+        return;
+      }
+      // The tree implements Delete itself, so do not act twice.
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selected.length > 0 &&
+        !isTreeItem(event.target)
+      ) {
         event.preventDefault();
         removeSelected();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, removeSelected, selected]);
+  }, [
+    undo,
+    redo,
+    removeSelected,
+    selected,
+    connectMode,
+    leaveConnectMode,
+    toggleConnectMode,
+    canConnect,
+  ]);
 
   return (
-    <div className="app">
-      {/* Lets a keyboard user reach the editor without traversing the toolbar. */}
+    <div className="app" data-connect-mode={connectMode || undefined}>
       <a className="skip-link" href="#topology">
         Skip to topology
       </a>
@@ -170,28 +271,32 @@ export default function App() {
         <aside className="panel" aria-label="Devices">
           <Palette topology={topology} onAdd={addDevice} />
 
+          <ConnectModeBar
+            active={connectMode}
+            pending={pending}
+            enabled={canConnect}
+            onToggle={toggleConnectMode}
+          />
+
           <h2 className="panel__heading" id="topology">
             Topology
           </h2>
           <TopologyTree
             topology={topology}
             selected={selected}
-            onSelect={select}
+            pending={pending}
+            onSelect={activate}
             onRemove={(name) => dispatch({ type: "removeNode", name })}
           />
-
-          <ConnectForm topology={topology} onConnect={dispatch} />
         </aside>
 
         <main className="app__canvas">
           <TopologyCanvas
             topology={topology}
             selected={selected}
-            onSelect={select}
+            pending={pending}
+            onSelect={activate}
             onMove={(name, position) => dispatch({ type: "moveNode", name, position })}
-            onLink={(a, b) =>
-              dispatch({ type: "link", a, b, collisionDomain: suggestCollisionDomain(topology) })
-            }
           />
         </main>
 
@@ -210,7 +315,7 @@ export default function App() {
         </div>
       )}
 
-      <LiveRegion message={status ?? lastAnnouncement} error={error} />
+      <LiveRegion message={notice ?? status ?? lastAnnouncement} error={error} />
     </div>
   );
 }

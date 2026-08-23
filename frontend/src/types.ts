@@ -87,6 +87,20 @@ export function newNode(name: string, kind: DeviceKind, position: Position): Nod
   };
 }
 
+/** Next unused collision-domain name: A, B, ... Z, AA, AB, ... */
+export function suggestCollisionDomain(topology: Topology): string {
+  const taken = new Set(topology.collision_domains.map((cd) => cd.name.toUpperCase()));
+  for (let i = 0; ; i += 1) {
+    let n = i;
+    let name = "";
+    do {
+      name = String.fromCharCode(65 + (n % 26)) + name;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    if (!taken.has(name)) return name;
+  }
+}
+
 /** Lowest unused interface index, so numbering stays gap-free. */
 export function nextInterfaceNumber(node: Node): number {
   const used = new Set(node.interfaces.map((i) => i.number));

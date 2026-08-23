@@ -45,6 +45,16 @@ async function renderApp() {
 const addRouter = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole("button", { name: /Add router/ }));
 
+const row = (name: string) => screen.getByRole("treeitem", { name: new RegExp(`^${name}`) });
+
+/** Draw a link the way a user does: connect mode, then two clicks. */
+async function link(user: ReturnType<typeof userEvent.setup>, a: string, b: string) {
+  await user.click(screen.getByRole("button", { name: /Connect mode/ }));
+  await user.click(row(a));
+  await user.click(row(b));
+  await user.keyboard("{Escape}");
+}
+
 describe("building a topology", () => {
   it("starts by telling the user what to do", async () => {
     render(<App />);
@@ -64,14 +74,11 @@ describe("building a topology", () => {
     expect(screen.getByRole("treeitem", { name: /^r2/ })).toBeInTheDocument();
   });
 
-  it("connects two devices through the form", async () => {
+  it("connects two devices by clicking one then the other", async () => {
     const user = await renderApp();
     await addRouter(user);
     await addRouter(user);
-
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "device:r2");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await link(user, "r1", "r2");
 
     // The tree reports the link from both ends.
     expect(screen.getByRole("treeitem", { name: /r1, router, 1 interface/ })).toBeInTheDocument();
@@ -107,9 +114,7 @@ describe("undo and redo", () => {
     const user = await renderApp();
     await addRouter(user);
     await addRouter(user);
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "device:r2");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await link(user, "r1", "r2");
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
 
@@ -120,6 +125,144 @@ describe("undo and redo", () => {
   it("disables undo when there is nothing to undo", async () => {
     await renderApp();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
+});
+
+describe("connect mode", () => {
+  const toggle = () => screen.getByRole("button", { name: /Connect mode/ });
+
+  it("is unavailable until there are two devices to join", async () => {
+    const user = await renderApp();
+    expect(toggle()).toBeDisabled();
+    await addRouter(user);
+    expect(toggle()).toBeDisabled();
+    await addRouter(user);
+    expect(toggle()).toBeEnabled();
+  });
+
+  it("exposes its state as a pressed button, not just a cursor change", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle());
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("says what the next click will do", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    expect(screen.getByText(/Choose the first device/)).toBeInTheDocument();
+
+    await user.click(row("r1"));
+    expect(screen.getByText(/r1 selected\. Now choose the device to link it to/)).toBeInTheDocument();
+  });
+
+  it("marks the half-made link in the tree for screen readers", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    await user.click(row("r1"));
+
+    // Spoken, not merely highlighted.
+    expect(
+      screen.getByRole("treeitem", { name: /r1.*first end of the new link/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not change the selection while connecting", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    await user.click(row("r1"));
+
+    expect(row("r1")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("stays in mode so several links can be drawn in a row", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(toggle());
+    await user.click(row("r1"));
+    await user.click(row("r2"));
+    // Still on, and ready for the next pair.
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(row("r2"));
+    await user.click(row("r3"));
+    expect(screen.getByRole("treeitem", { name: /r2, router, 2 interfaces/ })).toBeInTheDocument();
+  });
+
+  it("cancels the pending device when it is clicked again", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    await user.click(row("r1"));
+    await user.click(row("r1"));
+
+    expect(await screen.findByText(/r1 deselected/)).toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: /r1, router, 0 interfaces/ })).toBeInTheDocument();
+  });
+
+  it("leaves the mode on Escape without stranding a half-made link", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    await user.click(row("r1"));
+    await user.keyboard("{Escape}");
+
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("treeitem", { name: /r1, router, 0 interfaces/ })).toBeInTheDocument();
+  });
+
+  it("toggles with the C key", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.keyboard("c");
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+    await user.keyboard("c");
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("does not hijack C while typing in a field", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(row("r1"));
+
+    await user.clear(screen.getByLabelText("Name"));
+    await user.type(screen.getByLabelText("Name"), "core");
+
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText("Name")).toHaveValue("core");
+  });
+
+  it("forgets a pending device that is deleted underneath it", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(toggle());
+    await user.click(row("r1"));
+
+    // Removing r1 from the tree must not leave a dangling first end.
+    await user.click(row("r1"));
+    await user.click(toggle());
+    await user.click(row("r1"));
+    await user.keyboard("{Delete}");
+
+    expect(screen.queryByRole("treeitem", { name: /first end of the new link/ })).toBeNull();
   });
 });
 
@@ -232,10 +375,8 @@ describe("accessibility", () => {
     const user = await renderApp();
     await addRouter(user);
     await addRouter(user);
-    await user.selectOptions(screen.getByLabelText("Device"), "r1");
-    await user.selectOptions(screen.getByLabelText("Connect to"), "device:r2");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-    await user.click(screen.getByRole("treeitem", { name: /^r1/ }));
+    await link(user, "r1", "r2");
+    await user.click(row("r1"));
 
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);

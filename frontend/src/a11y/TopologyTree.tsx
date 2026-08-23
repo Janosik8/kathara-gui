@@ -21,6 +21,8 @@ import type { Node, Topology } from "../types";
 interface Props {
   topology: Topology;
   selected: string[];
+  /** The first end of a link being drawn in connect mode, if any. */
+  pending?: string | null;
   /** `additive` extends the selection rather than replacing it. */
   onSelect: (name: string, additive: boolean) => void;
   onRemove?: (name: string) => void;
@@ -64,7 +66,7 @@ function describeDevice(node: Node): string {
   return `${node.name}, ${node.kind}, ${interfaces}${daemons}`;
 }
 
-export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) {
+export function TopologyTree({ topology, selected, pending, onSelect, onRemove }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<string | null>(null);
   const containerRef = useRef<HTMLUListElement>(null);
@@ -187,9 +189,12 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
     >
       {rows.map((row) => {
         const isDevice = row.kind === "device";
-        const label = isDevice
-          ? describeDevice(row.node)
-          : describeInterface(topology, row.node, row.index);
+        const isPending = isDevice && row.node.name === pending;
+        // Spoken, not merely highlighted: a screen-reader user needs to know
+        // which device is waiting for its other end.
+        const label =
+          (isDevice ? describeDevice(row.node) : describeInterface(topology, row.node, row.index)) +
+          (isPending ? ", first end of the new link" : "");
 
         return (
           <li key={row.id} role="none">
@@ -207,6 +212,7 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
               tabIndex={active === row.id ? 0 : -1}
               className={`tree-row tree-row--${row.kind}`}
               data-selected={selected.includes(row.node.name) || undefined}
+              data-pending={isPending || undefined}
               onKeyDown={(event) => onKeyDown(event, row)}
               onFocus={() => setActive(row.id)}
               onClick={(event) => onSelect(row.node.name, event.ctrlKey || event.metaKey)}

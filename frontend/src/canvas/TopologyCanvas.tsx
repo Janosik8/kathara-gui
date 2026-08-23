@@ -33,8 +33,8 @@ interface Props {
   selected: string[];
   onSelect: (name: string | null, additive: boolean) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
-  /** Pointer users drag between handles; the same operation the form dispatches. */
-  onLink: (a: string, b: string) => void;
+  /** The first end of a link being drawn in connect mode, if any. */
+  pending?: string | null;
 }
 
 /** Where to place a collision-domain node: the centroid of its members. */
@@ -44,14 +44,14 @@ function centroid(points: { x: number; y: number }[]): { x: number; y: number } 
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }: Props) {
+export function TopologyCanvas({ topology, selected, pending, onSelect, onMove }: Props) {
   const { nodes, edges } = useMemo(() => {
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       position: node.position,
       selected: selected.includes(node.name),
       data: { label: `${node.name}\n${node.kind}` },
-      className: `device device--${node.kind}`,
+      className: `device device--${node.kind}${node.name === pending ? " device--pending" : ""}`,
     }));
 
     const flowEdges: Edge[] = [];
@@ -96,7 +96,7 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }:
     }
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [topology, selected]);
+  }, [topology, selected, pending]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -121,14 +121,6 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }:
         edges={edges}
         onNodesChange={onNodesChange}
         onNodeClick={(event, node) => onSelect(node.id, event.ctrlKey || event.metaKey)}
-        onConnect={({ source, target }) => {
-          // Ignore drags onto a collision-domain node: joining a shared
-          // segment goes through the Connect panel, which can say what it
-          // will do before doing it.
-          if (source && target && !source.startsWith("cd:") && !target.startsWith("cd:")) {
-            onLink(source, target);
-          }
-        }}
         onPaneClick={() => onSelect(null, false)}
         snapToGrid
         snapGrid={[16, 16]}

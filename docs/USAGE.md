@@ -99,9 +99,10 @@ there is no "Deploy" button yet.
 | Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. |
 | Select | Click a device in the tree or on the canvas. |
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
-| Connect two devices | Left panel → **Connect**: pick a device, pick another device, press Connect. A new collision domain is created. |
-| Join a shared segment | Same form, but choose a *collision domain* as the destination instead of a device. |
-| Connect by dragging | Drag from the edge of one node to another on the canvas. |
+| Connect two devices | Turn on **Connect mode** (button, or press `C`), click one device, then click another. A link appears. |
+| Draw several links | Connect mode stays on after each link, so keep clicking pairs. |
+| Cancel a half-made link | Click the same device again, or click empty canvas. |
+| Leave connect mode | Press `Escape`, or the toggle again. |
 | Rename | Select a device → **Details** → Name → Enter or click away. |
 | Set an address | Select a device → **Details** → Interfaces → address field, e.g. `10.0.0.1/24`. |
 | Enable routing daemons | **Details** → Routing daemons. Ticking any protocol also ticks `zebra`. |
@@ -129,8 +130,9 @@ report anything that is not.
 | `Home` / `End` | First / last row. |
 | `Enter` | Select the focused device. |
 | `Ctrl/Cmd + Enter` | Add to the selection. |
+| `C` | Toggle connect mode. In it, `Enter` picks each end of the link. |
 | `Delete` | Remove the focused or selected device. Ignored while typing in a field. |
-| `Escape` | Abandon an in-progress text edit. |
+| `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
 
 The first `Tab` on a fresh page reveals a **Skip to topology** link.
