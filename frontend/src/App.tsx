@@ -3,6 +3,8 @@ import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
 import { ApiError, api } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
+import { ConnectForm, suggestCollisionDomain } from "./panels/ConnectForm";
+import { Inspector } from "./panels/Inspector";
 import { Palette, suggestName } from "./panels/Palette";
 import { useTopologyStore } from "./store/topology";
 import { type DeviceKind, newNode } from "./types";
@@ -122,6 +124,8 @@ export default function App() {
               if (selected === name) setSelected(null);
             }}
           />
+
+          <ConnectForm topology={topology} onConnect={dispatch} />
         </aside>
 
         <main className="app__canvas">
@@ -130,8 +134,15 @@ export default function App() {
             selected={selected}
             onSelect={setSelected}
             onMove={(name, position) => dispatch({ type: "moveNode", name, position })}
+            onLink={(a, b) =>
+              dispatch({ type: "link", a, b, collisionDomain: suggestCollisionDomain(topology) })
+            }
           />
         </main>
+
+        <aside className="panel panel--right" aria-label="Device details">
+          <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
+        </aside>
       </div>
 
       {error && (

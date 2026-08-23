@@ -68,6 +68,38 @@ describe("connect", () => {
   });
 });
 
+describe("link", () => {
+  it("attaches both devices to one collision domain", () => {
+    const next = apply(base(), { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+    expect(next.nodes[0]!.interfaces[0]!.collision_domain).toBe("A");
+    expect(next.nodes[1]!.interfaces[0]!.collision_domain).toBe("A");
+    expect(next.collision_domains.map((cd) => cd.name)).toEqual(["A"]);
+  });
+
+  it("is a single undo step, not two", () => {
+    // Linking is one user intent; undoing it should not take two presses.
+    const start = base();
+    const linked = apply(start, { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+    expect(linked).not.toBe(start);
+    expect(linked.nodes.every((n) => n.interfaces.length === 1)).toBe(true);
+  });
+
+  it("refuses to link a device to itself", () => {
+    expect(() =>
+      apply(base(), { type: "link", a: "r1", b: "r1", collisionDomain: "A" }),
+    ).toThrow(/cannot be linked to itself/);
+  });
+
+  it("rejects an unknown device without half-applying", () => {
+    const start = base();
+    expect(() =>
+      apply(start, { type: "link", a: "r1", b: "ghost", collisionDomain: "A" }),
+    ).toThrow(/No device named/);
+    // The caller keeps the original topology, so r1 gained nothing.
+    expect(start.nodes[0]!.interfaces).toEqual([]);
+  });
+});
+
 describe("disconnect", () => {
   it("removes the interface", () => {
     const connected = apply(base(), { type: "connect", node: "r1", collisionDomain: "A" });
@@ -143,6 +175,7 @@ describe("describe", () => {
     { type: "renameNode", from: "r1", to: "r9" },
     { type: "updateNode", name: "r1", changes: {} },
     { type: "connect", node: "r1", collisionDomain: "A" },
+    { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
     { type: "disconnect", node: "r1", number: 0 },
     { type: "updateInterface", node: "r1", number: 0, changes: {} },
     { type: "setSubnet", collisionDomain: "A", subnet: "10.0.0.0/24" },

@@ -33,6 +33,8 @@ interface Props {
   selected: string | null;
   onSelect: (name: string | null) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
+  /** Pointer users drag between handles; the same operation the form dispatches. */
+  onLink: (a: string, b: string) => void;
 }
 
 /** Where to place a collision-domain node: the centroid of its members. */
@@ -42,7 +44,7 @@ function centroid(points: { x: number; y: number }[]): { x: number; y: number } 
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-export function TopologyCanvas({ topology, selected, onSelect, onMove }: Props) {
+export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }: Props) {
   const { nodes, edges } = useMemo(() => {
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
@@ -119,6 +121,14 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove }: Props) 
         edges={edges}
         onNodesChange={onNodesChange}
         onNodeClick={(_, node) => onSelect(node.id)}
+        onConnect={({ source, target }) => {
+          // Ignore drags onto a collision-domain node: joining a shared
+          // segment goes through the Connect panel, which can say what it
+          // will do before doing it.
+          if (source && target && !source.startsWith("cd:") && !target.startsWith("cd:")) {
+            onLink(source, target);
+          }
+        }}
         onPaneClick={() => onSelect(null)}
         snapToGrid
         snapGrid={[16, 16]}

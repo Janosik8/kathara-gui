@@ -295,3 +295,88 @@ button:disabled {
   white-space: pre-line;
   text-align: center;
 }
+
+/* -- forms and inspector ------------------------------------------- */
+
+.panel--right {
+  border-right: none;
+  border-left: 1px solid var(--border);
+  width: 300px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.field label,
+.field legend,
+.connect-form__row label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.field--group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+input,
+select {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--fg);
+  width: 100%;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+.checkbox input {
+  width: auto;
+}
+
+.connect-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.connect-form__explanation,
+.inspector__empty {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin: 0 0 10px;
+}
+
+.interface-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.interface-list__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-raised);
+}
+
+.interface-list__title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}

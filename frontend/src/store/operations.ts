@@ -29,6 +29,9 @@ export type Operation =
   | { type: "renameNode"; from: string; to: string }
   | { type: "updateNode"; name: string; changes: Partial<Omit<Node, "name">> }
   | { type: "connect"; node: string; collisionDomain: string; number?: number }
+  // Linking two devices is one user intent, so it is one operation and one
+  // undo step — not two `connect`s the user must undo twice.
+  | { type: "link"; a: string; b: string; collisionDomain: string }
   | { type: "disconnect"; node: string; number: number }
   | { type: "updateInterface"; node: string; number: number; changes: Partial<Interface> }
   | { type: "setSubnet"; collisionDomain: string; subnet: string | null }
@@ -113,6 +116,18 @@ export function apply(topology: Topology, op: Operation): Topology {
       };
     }
 
+    case "link": {
+      if (op.a === op.b) {
+        throw new OperationError("A device cannot be linked to itself.");
+      }
+      // Applied through `apply` so both ends get the same validation a single
+      // `connect` would receive.
+      return applyAll(topology, [
+        { type: "connect", node: op.a, collisionDomain: op.collisionDomain },
+        { type: "connect", node: op.b, collisionDomain: op.collisionDomain },
+      ]);
+    }
+
     case "disconnect":
       return mapNode(topology, op.node, (node) => {
         const interfaces = node.interfaces.filter((i) => i.number !== op.number);
@@ -176,6 +191,8 @@ export function describe(op: Operation): string {
       return `Changed ${op.name}`;
     case "connect":
       return `Connected ${op.node} to ${op.collisionDomain}`;
+    case "link":
+      return `Linked ${op.a} and ${op.b} on ${op.collisionDomain}`;
     case "disconnect":
       return `Disconnected eth${op.number} on ${op.node}`;
     case "updateInterface":
