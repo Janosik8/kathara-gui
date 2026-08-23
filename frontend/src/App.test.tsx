@@ -44,12 +44,14 @@ const { MockApiError, checkAddressing, allocateAddressing } = vi.hoisted(() => {
       }),
     ),
     allocateAddressing: vi.fn(
-      async (): Promise<AllocateResponse> => ({
-        topology: blank(),
+      async (options: { topology?: unknown }): Promise<AllocateResponse> => ({
+        // Echo back what was sent, as the real endpoint does. Returning a
+        // fixed topology here is what let the canvas-wiping bug through.
+        topology: (options?.topology ?? blank()) as AllocateResponse["topology"],
         assigned_subnets: {},
         assigned_addresses: {},
         skipped: [],
-        changed: false,
+        changed: true,
       }),
     ),
   };
@@ -645,10 +647,14 @@ describe("addressing", () => {
     await addRouter(user);
 
     await user.click(screen.getByRole("button", { name: "Renumber all" }));
-    expect(allocateAddressing).toHaveBeenCalledWith({ overwrite: true });
+    expect(allocateAddressing).toHaveBeenCalledWith(
+      expect.objectContaining({ overwrite: true }),
+    );
 
     await user.click(screen.getByRole("button", { name: "Assign addresses" }));
-    expect(allocateAddressing).toHaveBeenLastCalledWith({ overwrite: false });
+    expect(allocateAddressing).toHaveBeenLastCalledWith(
+      expect.objectContaining({ overwrite: false }),
+    );
   });
 
   it("withdraws the calculator when the scenario forbids it", async () => {
@@ -681,5 +687,45 @@ describe("addressing", () => {
 
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("regression: allocation must not wipe the canvas", () => {
+  it("sends the topology the editor is holding", async () => {
+    // Omitting it made the server allocate over its stale, empty session and
+    // return that, which the editor then adopted — losing every device.
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+
+    const sent = allocateAddressing.mock.calls.at(-1)?.[0] as
+      | { topology?: { nodes: { name: string }[] } }
+      | undefined;
+    expect(sent?.topology?.nodes.map((n) => n.name)).toEqual(["r1", "r2"]);
+  });
+
+  it("keeps every device after assigning", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+
+    expect(await screen.findByRole("treeitem", { name: /^r1/ })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: /^r2/ })).toBeInTheDocument();
+    expect(screen.queryByText(/No devices yet/)).toBeNull();
+  });
+
+  it("keeps every device after renumbering", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(screen.getByRole("button", { name: "Renumber all" }));
+
+    expect(await screen.findByRole("treeitem", { name: /^r1/ })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: /^r2/ })).toBeInTheDocument();
   });
 });

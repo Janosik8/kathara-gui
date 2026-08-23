@@ -249,7 +249,8 @@ export default function App() {
     async (overwrite: boolean) => {
       setAllocating(true);
       try {
-        const result = await api.allocateAddressing({ overwrite });
+        // Send the document we hold: the saved session may be far behind.
+        const result = await api.allocateAddressing({ topology, overwrite });
         // One operation, so the whole allocation undoes in one step.
         dispatch({ type: "replaceTopology", topology: result.topology });
         setNotice(
@@ -272,7 +273,7 @@ export default function App() {
         setAllocating(false);
       }
     },
-    [dispatch],
+    [dispatch, topology],
   );
 
   const addDevice = useCallback(

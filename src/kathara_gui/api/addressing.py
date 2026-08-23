@@ -33,6 +33,13 @@ class IssuesResponse(BaseModel):
 
 
 class AllocateRequest(BaseModel):
+    topology: Topology | None = Field(
+        default=None,
+        description=(
+            "The topology to allocate over. The editor sends the document it holds, "
+            "which is ahead of the saved session. Omitted, the saved session is used."
+        ),
+    )
     pool: str = Field(default=addressing.DEFAULT_POOL, description="Address space to carve up")
     prefix: int = Field(default=addressing.DEFAULT_PREFIX, ge=1, le=127)
     overwrite: bool = Field(
@@ -101,9 +108,15 @@ async def allocate(
     """Fill in subnets and host addresses, and make the result the edited topology."""
     session.features.require("subnet_calculator")
 
+    # Allocate over what the caller sent, falling back to the session. Using
+    # the session unconditionally would silently discard unsaved edits: the
+    # browser would receive the stale topology back and replace its canvas
+    # with it, which is exactly what happened before this was fixed.
+    source = request.topology if request.topology is not None else session.topology
+
     try:
         result = addressing.allocate(
-            session.topology,
+            source,
             pool=request.pool,
             prefix=request.prefix,
             overwrite=request.overwrite,

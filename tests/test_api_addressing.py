@@ -252,3 +252,45 @@ def test_check_agrees_with_the_session_endpoint(client: TestClient) -> None:
 def test_check_is_withdrawn_with_validation(client: TestClient, session: Session) -> None:
     session.set_features(Features(addressing_validation=False))
     assert client.post("/api/topology/addressing/check", json=MIXED_SUBNETS).status_code == 403
+
+
+# -- regression: unsaved edits must not be discarded -------------------
+
+
+def test_allocate_uses_the_supplied_topology_not_the_stale_session(client: TestClient) -> None:
+    """The editor's document is ahead of the session until the user saves.
+
+    Allocating over the session instead returned an empty topology, which the
+    browser then adopted — wiping every device off the canvas.
+    """
+    # Session is empty, as it is before the first save.
+    assert client.get("/api/topology").json()["topology"]["nodes"] == []
+
+    body = client.post(
+        "/api/topology/addressing/allocate", json={"topology": TRIANGLE}
+    ).json()
+
+    assert [n["name"] for n in body["topology"]["nodes"]] == ["r1", "r2", "r3"]
+    assert body["topology"]["nodes"][0]["interfaces"][0]["ip"] == "10.0.0.1/24"
+
+
+def test_allocate_never_returns_fewer_devices_than_it_was_given(client: TestClient) -> None:
+    """The property that failed: devices in, the same devices out."""
+    for payload in (TRIANGLE, MIXED_SUBNETS):
+        body = client.post(
+            "/api/topology/addressing/allocate", json={"topology": payload}
+        ).json()
+        assert len(body["topology"]["nodes"]) == len(payload["nodes"])
+
+
+def test_allocating_a_supplied_topology_updates_the_session(client: TestClient) -> None:
+    client.post("/api/topology/addressing/allocate", json={"topology": TRIANGLE})
+    stored = client.get("/api/topology").json()["topology"]
+    assert [n["name"] for n in stored["nodes"]] == ["r1", "r2", "r3"]
+
+
+def test_omitting_the_topology_still_uses_the_session(client: TestClient) -> None:
+    """Kept for API callers driving the server directly."""
+    client.put("/api/topology", json=TRIANGLE)
+    body = client.post("/api/topology/addressing/allocate", json={}).json()
+    assert len(body["topology"]["nodes"]) == 3

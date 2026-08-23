@@ -97,6 +97,9 @@ export interface AllocateResponse {
 }
 
 export interface AllocateRequest {
+  /** The document the editor holds. Omitting it allocates over the stale
+   *  saved session, which silently discards unsaved edits. */
+  topology: Topology;
   pool?: string;
   prefix?: number;
   overwrite?: boolean;
@@ -140,7 +143,7 @@ export const api = {
       body: JSON.stringify(topology),
     }),
 
-  allocateAddressing: (options: AllocateRequest = {}) =>
+  allocateAddressing: (options: AllocateRequest) =>
     request<AllocateResponse>("/api/topology/addressing/allocate", {
       method: "POST",
       body: JSON.stringify(options),
