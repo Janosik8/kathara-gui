@@ -13,10 +13,12 @@ htmlcov/
 # Frontend
 node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
-# Built frontend is injected into the package at release time only.
-src/kathara_gui/static/*
-!src/kathara_gui/static/.gitkeep
+# The built frontend is emitted here by `npm run build` and injected into the
+# package at release time. Vite empties the directory on every build, so there
+# is nothing to keep in it; main.py handles the directory being absent.
+src/kathara_gui/static/
 
 # Scratch lab output
 .labs/

@@ -11,7 +11,11 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 ## Status
 
-Under development. Phase 0 (integration spike and CI) complete.
+Under development. Phases 0 (integration spike, CI) and 1 (domain model, `lab.conf` codec)
+complete; Phase 2 (topology editor) in progress.
+
+See **[PLAN.md](PLAN.md)** for the development plan, phase status, capability traceability
+and the decision log. It is a living document kept in step with the code.
 
 ## Requirements
 

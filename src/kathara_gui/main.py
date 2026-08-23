@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from kathara_gui import __version__
+from kathara_gui.api import topology
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -61,6 +62,8 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    app.include_router(topology.router)
 
     # Mounted last so API routes win. Absent during early development and in
     # a source checkout that has not built the frontend yet.

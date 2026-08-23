@@ -1,0 +1,57 @@
+/**
+ * Adding devices.
+ *
+ * Buttons rather than drag-only: dragging from a palette onto a canvas is
+ * unusable without a pointer, and "add a router" is the single most common
+ * action in the application. Placement is automatic and can be adjusted after.
+ */
+
+import { DEVICE_KINDS, type DeviceKind, type Topology } from "../types";
+
+interface Props {
+  topology: Topology;
+  onAdd: (kind: DeviceKind) => void;
+  disabled?: boolean;
+}
+
+/** Conventional prefixes, so generated names read like a network diagram. */
+const PREFIX: Record<DeviceKind, string> = {
+  router: "r",
+  switch: "sw",
+  pc: "pc",
+  server: "srv",
+};
+
+/** First free `r1`, `r2`, ... for this kind. */
+export function suggestName(topology: Topology, kind: DeviceKind): string {
+  const taken = new Set(topology.nodes.map((n) => n.name.toLowerCase()));
+  for (let i = 1; ; i += 1) {
+    const candidate = `${PREFIX[kind]}${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+export function Palette({ topology, onAdd, disabled }: Props) {
+  return (
+    <div className="palette">
+      <h2 className="panel__heading" id="palette-heading">
+        Add device
+      </h2>
+      <div className="palette__buttons" role="group" aria-labelledby="palette-heading">
+        {DEVICE_KINDS.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className="palette__button"
+            onClick={() => onAdd(kind)}
+            disabled={disabled}
+          >
+            {/* Name the device that will be created, so the outcome is
+                predictable before activating the control. */}
+            Add {kind} <span className="palette__hint">({suggestName(topology, kind)})</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
