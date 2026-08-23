@@ -39,10 +39,13 @@ def main(argv: list[str] | None = None) -> int:
     url = f"http://{HOST}:{port}/?token={app.state.token}"
 
     if args.check:
-        print(f"kathara-gui {__version__} OK")
+        print(f"kathara-gui {__version__} OK", flush=True)
         return 0
 
-    print(f"Kathara GUI running at:\n  {url}\n\nPress Ctrl+C to stop.")
+    # flush matters: stdout is block-buffered when it is not a terminal, so a
+    # user piping to a file or a log would never see the URL — and the token in
+    # it is the only way to reach the application.
+    print(f"Kathara GUI running at:\n  {url}\n\nPress Ctrl+C to stop.", flush=True)
     if not args.no_browser:
         # Deferred so the server is accepting connections before the tab loads.
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
