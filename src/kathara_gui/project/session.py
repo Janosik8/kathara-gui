@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 
 from kathara_gui.domain.model import Topology
+from kathara_gui.features import Features
 
 
 class Session:
@@ -30,6 +31,18 @@ class Session:
         self._topology = Topology(name="untitled")
         self._path: Path | None = None
         self._dirty = False
+        self._features = Features()
+
+    @property
+    def features(self) -> Features:
+        """Which assistive features this scenario permits (Capability 8)."""
+        with self._lock:
+            return self._features
+
+    def set_features(self, features: Features) -> Features:
+        with self._lock:
+            self._features = features
+            return self._features
 
     @property
     def topology(self) -> Topology:
@@ -65,6 +78,10 @@ class Session:
             self._topology = Topology(name="untitled")
             self._path = None
             self._dirty = False
+            # Feature toggles belong to the scenario, so a new one starts
+            # from the permissive default rather than inheriting an exam's
+            # restrictions.
+            self._features = Features()
             return self._topology
 
 

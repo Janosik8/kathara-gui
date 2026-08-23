@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
-import { ApiError, api } from "./api/client";
+import { type AddressingIssue, ApiError, api } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
+import { AddressingPanel } from "./panels/AddressingPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
@@ -57,6 +58,16 @@ export default function App() {
   const [connectMode, setConnectMode] = useState(false);
   const [pending, setPending] = useState<PendingEnd | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Addressing. Feature flags start permissive and are switched off when the
+  // server refuses, so a withdrawn feature disappears rather than erroring
+  // repeatedly.
+  const [issues, setIssues] = useState<AddressingIssue[]>([]);
+  const [counts, setCounts] = useState({ errors: 0, warnings: 0 });
+  const [canAllocate, setCanAllocate] = useState(true);
+  const [canValidate, setCanValidate] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [allocating, setAllocating] = useState(false);
 
   const canConnect = topology.nodes.length >= 2;
 
@@ -195,6 +206,73 @@ export default function App() {
       choose({ kind: "domain", name });
     },
     [choose, connectMode],
+  );
+
+  // Validate as the design changes, debounced so a drag does not produce a
+  // request per frame. The rules live on the server, so the editor and the
+  // exported lab can never disagree about what is wrong.
+  useEffect(() => {
+    if (!canValidate) return;
+    if (topology.nodes.length === 0) {
+      setIssues([]);
+      setCounts({ errors: 0, warnings: 0 });
+      return;
+    }
+
+    let cancelled = false;
+    setChecking(true);
+    const timer = window.setTimeout(() => {
+      api
+        .checkAddressing(topology)
+        .then((result) => {
+          if (cancelled) return;
+          setIssues(result.issues);
+          setCounts({ errors: result.errors, warnings: result.warnings });
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          // 403 means the instructor withdrew it for this scenario.
+          if (err instanceof ApiError && err.status === 403) setCanValidate(false);
+        })
+        .finally(() => {
+          if (!cancelled) setChecking(false);
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [topology, canValidate]);
+
+  const allocateAddressing = useCallback(
+    async (overwrite: boolean) => {
+      setAllocating(true);
+      try {
+        const result = await api.allocateAddressing({ overwrite });
+        // One operation, so the whole allocation undoes in one step.
+        dispatch({ type: "replaceTopology", topology: result.topology });
+        setNotice(
+          result.changed
+            ? `Assigned ${Object.keys(result.assigned_addresses).length} addresses across ` +
+              `${Object.keys(result.assigned_subnets).length} collision domains.`
+            : "Everything already has an address.",
+        );
+        if (result.skipped.length > 0) {
+          setNotice(`Could not address: ${result.skipped.join(", ")}. The subnet is too small.`);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          setCanAllocate(false);
+          setNotice("The subnet calculator is disabled for this scenario.");
+        } else {
+          setNotice(err instanceof ApiError ? err.message : String(err));
+        }
+      } finally {
+        setAllocating(false);
+      }
+    },
+    [dispatch],
   );
 
   const addDevice = useCallback(
@@ -355,6 +433,16 @@ export default function App() {
 
         <aside className="panel panel--right" aria-label="Device details">
           <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
+          <AddressingPanel
+            issues={issues}
+            errors={counts.errors}
+            warnings={counts.warnings}
+            busy={allocating}
+            checking={checking}
+            canAllocate={canAllocate}
+            canValidate={canValidate}
+            onAllocate={allocateAddressing}
+          />
           <AlignmentToolbar selectionCount={selected.length} onAlign={align} />
         </aside>
       </div>

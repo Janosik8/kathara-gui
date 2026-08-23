@@ -72,6 +72,36 @@ async function readError(response: Response): Promise<string> {
   return response.statusText || `Request failed (${response.status})`;
 }
 
+export type IssueSeverity = "error" | "warning";
+
+export interface AddressingIssue {
+  severity: IssueSeverity;
+  code: string;
+  message: string;
+  collision_domain: string | null;
+  devices: string[];
+}
+
+export interface IssuesResponse {
+  issues: AddressingIssue[];
+  errors: number;
+  warnings: number;
+}
+
+export interface AllocateResponse {
+  topology: Topology;
+  assigned_subnets: Record<string, string>;
+  assigned_addresses: Record<string, string>;
+  skipped: string[];
+  changed: boolean;
+}
+
+export interface AllocateRequest {
+  pool?: string;
+  prefix?: number;
+  overwrite?: boolean;
+}
+
 export interface ImportResponse {
   topology: Topology;
   warnings: string[];
@@ -97,4 +127,22 @@ export const api = {
     }),
 
   exportLabConf: () => request<{ text: string }>("/api/topology/export"),
+
+  /**
+   * Validate a topology without storing it.
+   *
+   * The rules live on the server so the editor and the exported lab can never
+   * disagree; the browser sends whatever it currently holds.
+   */
+  checkAddressing: (topology: Topology) =>
+    request<IssuesResponse>("/api/topology/addressing/check", {
+      method: "POST",
+      body: JSON.stringify(topology),
+    }),
+
+  allocateAddressing: (options: AllocateRequest = {}) =>
+    request<AllocateResponse>("/api/topology/addressing/allocate", {
+      method: "POST",
+      body: JSON.stringify(options),
+    }),
 };

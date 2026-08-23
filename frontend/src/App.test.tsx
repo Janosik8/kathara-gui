@@ -12,6 +12,9 @@ import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+// Type-only, so it is erased at runtime and does not clash with vi.mock.
+import type { AllocateResponse, IssuesResponse } from "./api/client";
+import type { Topology } from "./types";
 import { useTopologyStore } from "./store/topology";
 import { emptyTopology } from "./types";
 
@@ -19,11 +22,54 @@ vi.mock("./canvas/TopologyCanvas", () => ({
   TopologyCanvas: () => <div data-testid="canvas" aria-hidden="true" />,
 }));
 
+// vi.mock is hoisted above the file, so anything it closes over must be
+// created by vi.hoisted rather than declared as an ordinary const.
+const { MockApiError, checkAddressing, allocateAddressing } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  }
+  const blank = () => ({ name: "untitled", nodes: [], collision_domains: [] });
+  return {
+    MockApiError,
+    checkAddressing: vi.fn(
+      // The parameter is declared so tests can inspect what the editor sent.
+      async (_topology: Topology): Promise<IssuesResponse> => ({
+        issues: [],
+        errors: 0,
+        warnings: 0,
+      }),
+    ),
+    allocateAddressing: vi.fn(
+      async (): Promise<AllocateResponse> => ({
+        topology: blank(),
+        assigned_subnets: {},
+        assigned_addresses: {},
+        skipped: [],
+        changed: false,
+      }),
+    ),
+  };
+});
+
 vi.mock("./api/client", () => ({
-  ApiError: class ApiError extends Error {},
+  ApiError: MockApiError,
   api: {
-    read: vi.fn(async () => ({ topology: emptyTopology(), dirty: false, path: null })),
-    save: vi.fn(async () => ({ topology: emptyTopology(), dirty: false, path: null })),
+    read: vi.fn(async () => ({
+      topology: { name: "untitled", nodes: [], collision_domains: [] },
+      dirty: false,
+      path: null,
+    })),
+    save: vi.fn(async () => ({
+      topology: { name: "untitled", nodes: [], collision_domains: [] },
+      dirty: false,
+      path: null,
+    })),
+    checkAddressing,
+    allocateAddressing,
   },
   initialiseToken: vi.fn(),
 }));
@@ -31,6 +77,9 @@ vi.mock("./api/client", () => ({
 beforeEach(() => {
   // The store is a module singleton; without this, tests leak into each other.
   useTopologyStore.getState().load(emptyTopology());
+  checkAddressing.mockClear();
+  checkAddressing.mockResolvedValue({ issues: [], errors: 0, warnings: 0 });
+  allocateAddressing.mockClear();
 });
 
 async function renderApp() {
@@ -485,6 +534,150 @@ describe("accessibility", () => {
     await addRouter(user);
     await link(user, "r1", "r2");
     await user.click(row("r1"));
+
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("addressing", () => {
+  const MIXED = {
+    issues: [
+      {
+        severity: "error" as const,
+        code: "mixed_subnets",
+        message:
+          "Collision domain A carries more than one subnet: 10.0.0.0/24 (r1 eth0); " +
+          "192.168.1.0/24 (r2 eth0).",
+        collision_domain: "A",
+        devices: ["r1", "r2"],
+      },
+      {
+        severity: "warning" as const,
+        code: "missing_address",
+        message: "r3 eth0 has no address.",
+        collision_domain: "B",
+        devices: ["r3"],
+      },
+    ],
+    errors: 1,
+    warnings: 1,
+  };
+
+  it("confirms when nothing is wrong, rather than staying silent", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    expect(await screen.findByText("No addressing problems found.")).toBeInTheDocument();
+  });
+
+  it("reports problems found in the current design", async () => {
+    checkAddressing.mockResolvedValue(MIXED);
+    const user = await renderApp();
+    await addRouter(user);
+
+    expect(await screen.findByText("1 error, 1 warning")).toBeInTheDocument();
+    expect(screen.getByText(/carries more than one subnet/)).toBeInTheDocument();
+  });
+
+  it("labels severity in words, not only by colour", async () => {
+    // Capability 6 Scenario A: diagnostics must be unambiguous without hue.
+    checkAddressing.mockResolvedValue(MIXED);
+    const user = await renderApp();
+    await addRouter(user);
+
+    await screen.findByText("1 error, 1 warning");
+    expect(screen.getByText("Error:")).toBeInTheDocument();
+    expect(screen.getByText("Warning:")).toBeInTheDocument();
+  });
+
+  it("validates the topology in the browser, not the saved one", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await screen.findByText("No addressing problems found.");
+
+    const sent = checkAddressing.mock.calls.at(-1)?.[0];
+    expect(sent?.nodes.map((n) => n.name)).toEqual(["r1"]);
+  });
+
+  it("debounces so a burst of edits is one request", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+    await screen.findByText("No addressing problems found.");
+
+    expect(checkAddressing.mock.calls.length).toBeLessThan(3);
+  });
+
+  it("assigns addresses and folds the result into one undo step", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+
+    const filled = emptyTopology();
+    filled.nodes = [
+      {
+        name: "r1",
+        kind: "router",
+        bridged: false,
+        position: { x: 0, y: 0 },
+        interfaces: [{ number: 0, collision_domain: "A", ip: "10.0.0.1/24" }],
+        daemons: [],
+        extra_options: {},
+      },
+    ];
+    allocateAddressing.mockResolvedValue({
+      topology: filled,
+      assigned_subnets: { A: "10.0.0.0/24" },
+      assigned_addresses: { "r1:0": "10.0.0.1/24" },
+      skipped: [],
+      changed: true,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+
+    expect(await screen.findByRole("treeitem", { name: /r1, router, 1 interface/ })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("treeitem", { name: /r1, router, 0 interfaces/ })).toBeInTheDocument();
+  });
+
+  it("distinguishes assigning from renumbering", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+
+    await user.click(screen.getByRole("button", { name: "Renumber all" }));
+    expect(allocateAddressing).toHaveBeenCalledWith({ overwrite: true });
+
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+    expect(allocateAddressing).toHaveBeenLastCalledWith({ overwrite: false });
+  });
+
+  it("withdraws the calculator when the scenario forbids it", async () => {
+    // Exam mode: the server refuses, and the control stops pretending.
+    allocateAddressing.mockRejectedValue(new MockApiError("disabled", 403));
+    const user = await renderApp();
+    await addRouter(user);
+
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+
+    expect(await screen.findByText(/subnet calculator is disabled/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assign addresses" })).toBeNull();
+  });
+
+  it("withdraws validation when the scenario forbids it", async () => {
+    checkAddressing.mockRejectedValue(new MockApiError("disabled", 403));
+    const user = await renderApp();
+    await addRouter(user);
+
+    await waitFor(() =>
+      expect(screen.queryByText(/No addressing problems found/)).toBeNull(),
+    );
+  });
+
+  it("has no axe violations while reporting problems", async () => {
+    checkAddressing.mockResolvedValue(MIXED);
+    const user = await renderApp();
+    await addRouter(user);
+    await screen.findByText("1 error, 1 warning");
 
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);

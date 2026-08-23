@@ -553,3 +553,75 @@ select {
   fill: var(--fg);
   font-size: 11px;
 }
+
+/* -- addressing ------------------------------------------------------
+ *
+ * Severity is carried by a glyph, a word and the order of the list.
+ * Colour reinforces it and is never the only signal, which is what
+ * Capability 6 Scenario A (colour vision deficiency) requires.
+ */
+
+.addressing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.addressing__hint {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin: 6px 0 0;
+  flex-basis: 100%;
+}
+
+.addressing__summary {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 10px 0 6px;
+}
+.addressing__summary[data-severity="error"] {
+  color: var(--danger);
+}
+
+.issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issue {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 0.85rem;
+  /* A left bar whose thickness differs by severity, so the two are
+     distinguishable in greyscale. */
+  border-left: 4px solid var(--fg-muted);
+}
+.issue[data-severity="error"] {
+  border-left-color: var(--danger);
+  border-left-width: 6px;
+}
+
+.issue__badge {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+}
+.issue[data-severity="error"] .issue__badge {
+  color: var(--danger);
+}
+
+.issue__severity {
+  font-weight: 700;
+}
