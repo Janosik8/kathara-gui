@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
-import { type AddressingIssue, ApiError, api } from "./api/client";
+import {
+  type AddressingIssue,
+  ApiError,
+  type DiagnosticsResponse,
+  type EnvironmentCheck,
+  type StatusResponse,
+  api,
+} from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
 import { AddressingPanel } from "./panels/AddressingPanel";
 import { CollisionDomainsPanel } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
+import { LabPanel } from "./panels/LabPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
 import { useTopologyStore } from "./store/topology";
@@ -69,6 +77,15 @@ export default function App() {
   const [canValidate, setCanValidate] = useState(true);
   const [checking, setChecking] = useState(false);
   const [allocating, setAllocating] = useState(false);
+
+  // Lab state. `labBusy` names the action in flight so buttons can say what
+  // they are doing rather than just greying out.
+  const [labStatus, setLabStatus] = useState<StatusResponse | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsResponse | null>(null);
+  const [environment, setEnvironment] = useState<EnvironmentCheck[]>([]);
+  const [canDeploy, setCanDeploy] = useState(false);
+  const [canVerify, setCanVerify] = useState(true);
+  const [labBusy, setLabBusy] = useState<string | null>(null);
 
   const canConnect = topology.nodes.length >= 2;
 
@@ -277,6 +294,55 @@ export default function App() {
     [dispatch, topology],
   );
 
+  // Check the environment once at startup, and learn which features the
+  // scenario permits, so nothing is offered that cannot work.
+  useEffect(() => {
+    api
+      .probe()
+      .then((report) => {
+        setEnvironment(report.checks);
+        setCanDeploy(report.can_deploy);
+      })
+      .catch(() => setCanDeploy(false));
+
+    api
+      .features()
+      .then((f) => setCanVerify(f.infrastructure_verification))
+      .catch(() => undefined);
+  }, []);
+
+  const runLabAction = useCallback(
+    async (action: "deploy" | "undeploy" | "verify") => {
+      setLabBusy(action);
+      try {
+        if (action === "verify") {
+          setDiagnostics(await api.verify(topology));
+        } else {
+          const result =
+            action === "deploy" ? await api.deploy(topology) : await api.undeploy(topology);
+          setLabStatus(result);
+          // A previous run's results describe a lab that is no longer there.
+          setDiagnostics(null);
+          setNotice(
+            action === "deploy"
+              ? `Deployed ${result.running.length} of ${result.devices.length} devices.`
+              : "Lab stopped.",
+          );
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          setCanVerify(false);
+          setNotice("Link verification is disabled for this scenario.");
+        } else {
+          setNotice(err instanceof ApiError ? err.message : String(err));
+        }
+      } finally {
+        setLabBusy(null);
+      }
+    },
+    [topology],
+  );
+
   const addDevice = useCallback(
     (kind: DeviceKind) => {
       const name = suggestName(topology, kind);
@@ -448,6 +514,18 @@ export default function App() {
             onAllocate={allocateAddressing}
           />
           <AlignmentToolbar selectionCount={selected.length} onAlign={align} />
+          <LabPanel
+            status={labStatus}
+            diagnostics={diagnostics}
+            environment={environment}
+            canDeploy={canDeploy}
+            canVerify={canVerify}
+            busy={labBusy}
+            deviceCount={topology.nodes.length}
+            onDeploy={() => runLabAction("deploy")}
+            onUndeploy={() => runLabAction("undeploy")}
+            onVerify={() => runLabAction("verify")}
+          />
         </aside>
       </div>
 

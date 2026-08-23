@@ -105,6 +105,61 @@ export interface AllocateRequest {
   overwrite?: boolean;
 }
 
+export interface EnvironmentCheck {
+  name: string;
+  status: "ok" | "blocked" | "advisory";
+  detail: string;
+  remedy: string;
+}
+
+export interface ProbeResponse {
+  checks: EnvironmentCheck[];
+  can_deploy: boolean;
+}
+
+export type DeviceState = "running" | "stopped" | "orphaned";
+
+export interface DeviceStatus {
+  name: string;
+  state: DeviceState;
+}
+
+export interface StatusResponse {
+  devices: DeviceStatus[];
+  running: string[];
+  deployed: boolean;
+  lab_dir: string | null;
+  message: string | null;
+}
+
+export type LinkOutcome = "pass" | "fail" | "skipped";
+
+export interface LinkCheck {
+  collision_domain: string;
+  source: string;
+  source_interface: number;
+  target: string;
+  target_interface: number;
+  target_address: string | null;
+  outcome: LinkOutcome;
+  detail: string;
+}
+
+export interface DiagnosticsResponse {
+  checks: LinkCheck[];
+  passed: number;
+  failed: number;
+  skipped: number;
+  healthy: boolean;
+  message: string | null;
+}
+
+export interface FeaturesResponse {
+  subnet_calculator: boolean;
+  addressing_validation: boolean;
+  infrastructure_verification: boolean;
+}
+
 export interface ImportResponse {
   topology: Topology;
   warnings: string[];
@@ -147,5 +202,37 @@ export const api = {
     request<AllocateResponse>("/api/topology/addressing/allocate", {
       method: "POST",
       body: JSON.stringify(options),
+    }),
+
+  // -- lab -------------------------------------------------------------
+  // Each of these carries the topology for the same reason allocation does:
+  // the saved session lags behind whatever the editor is holding.
+
+  probe: () => request<ProbeResponse>("/api/lab/probe"),
+
+  features: () => request<FeaturesResponse>("/api/lab/features"),
+
+  labStatus: (topology: Topology) =>
+    request<StatusResponse>("/api/lab/status", {
+      method: "POST",
+      body: JSON.stringify({ topology }),
+    }),
+
+  deploy: (topology: Topology) =>
+    request<StatusResponse>("/api/lab/deploy", {
+      method: "POST",
+      body: JSON.stringify({ topology }),
+    }),
+
+  undeploy: (topology: Topology) =>
+    request<StatusResponse>("/api/lab/undeploy", {
+      method: "POST",
+      body: JSON.stringify({ topology }),
+    }),
+
+  verify: (topology: Topology) =>
+    request<DiagnosticsResponse>("/api/lab/verify", {
+      method: "POST",
+      body: JSON.stringify({ topology }),
     }),
 };

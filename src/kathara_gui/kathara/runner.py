@@ -1,0 +1,163 @@
+"""Deploying a topology and reporting what is actually running.
+
+Every call here blocks — deploying pulls images and starts containers — so the
+API layer must expose these through synchronous endpoints, which FastAPI runs
+in a threadpool. Calling them from an ``async def`` would stall the event loop
+and freeze the whole interface for the duration of a deployment.
+
+Never uses Kathará's ``wait=True``: it polls ``sys.stdin`` for a keypress so a
+CLI user can skip the wait, which a web backend has no way to satisfy. See
+:mod:`kathara_gui.kathara.readiness`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+from Kathara.manager.Kathara import Kathara
+from Kathara.parser.netkit.LabParser import LabParser
+
+from kathara_gui.domain.model import Topology
+from kathara_gui.kathara.readiness import StartupTimeout, wait_for_lab
+from kathara_gui.project.labdir import write_lab
+
+__all__ = [
+    "DeviceState",
+    "DeviceStatus",
+    "LabStatus",
+    "deploy",
+    "undeploy",
+    "status",
+    "lab_dir_for",
+]
+
+#: Where generated labs live. A stable, predictable location rather than a
+#: temporary directory, so `kathara connect` from a terminal reaches the same
+#: lab and a crash does not lose the generated files.
+WORKING_ROOT = Path.home() / ".kathara-gui" / "labs"
+
+
+class DeviceState(StrEnum):
+    RUNNING = "running"
+    #: In the topology but not deployed.
+    STOPPED = "stopped"
+    #: Running, but no longer in the topology — the user deleted it after
+    #: deploying, or a stale container was left behind.
+    ORPHANED = "orphaned"
+
+
+@dataclass(frozen=True)
+class DeviceStatus:
+    name: str
+    state: DeviceState
+
+
+@dataclass
+class LabStatus:
+    """What is running, compared with what the topology says should be.
+
+    The comparison is the point. A user can stop containers from a terminal at
+    any time, so the interface must reconcile rather than assume its last
+    action still holds.
+    """
+
+    devices: list[DeviceStatus] = field(default_factory=list)
+    lab_dir: str | None = None
+    message: str | None = None
+
+    @property
+    def running(self) -> list[str]:
+        return [d.name for d in self.devices if d.state is DeviceState.RUNNING]
+
+    @property
+    def orphaned(self) -> list[str]:
+        return [d.name for d in self.devices if d.state is DeviceState.ORPHANED]
+
+    @property
+    def deployed(self) -> bool:
+        return bool(self.running)
+
+
+def _safe_dir_name(name: str) -> str:
+    """A lab name is user text; a directory name is not."""
+    cleaned = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-")
+    return cleaned or "untitled"
+
+
+def lab_dir_for(topology: Topology) -> Path:
+    return WORKING_ROOT / _safe_dir_name(topology.name)
+
+
+def _load(topology: Topology) -> tuple[Any, Path]:
+    """Write the lab to disk and hand it to Kathará's parser.
+
+    Deployment goes through the generated files rather than an in-memory Lab
+    so that what runs is exactly what the user would get by exporting — if the
+    two ever diverged, a lab that worked in the GUI could fail when shared.
+    """
+    directory = write_lab(topology, lab_dir_for(topology))
+    return LabParser.parse(str(directory)), directory
+
+
+def deploy(topology: Topology, *, timeout: float = 180.0) -> LabStatus:
+    """Start every device in ``topology`` and wait for their startup scripts."""
+    if not topology.nodes:
+        return LabStatus(message="There is nothing to deploy.")
+
+    manager = Kathara.get_instance()
+    lab, directory = _load(topology)
+
+    manager.deploy_lab(lab)
+    message = None
+    try:
+        wait_for_lab(manager, lab, timeout=timeout)
+    except StartupTimeout as exc:
+        # The containers exist; their startup scripts have not finished. Worth
+        # reporting, but not worth tearing the lab down over.
+        message = str(exc)
+
+    result = status(topology)
+    result.lab_dir = str(directory)
+    result.message = message
+    return result
+
+
+def undeploy(topology: Topology) -> LabStatus:
+    """Stop everything belonging to this lab."""
+    manager = Kathara.get_instance()
+    try:
+        lab, _ = _load(topology)
+        manager.undeploy_lab(lab=lab)
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return LabStatus(message=f"Could not stop the lab cleanly: {exc}")
+    return status(topology)
+
+
+def status(topology: Topology) -> LabStatus:
+    """Reconcile the topology against what Docker is actually running."""
+    manager = Kathara.get_instance()
+
+    try:
+        lab, directory = _load(topology)
+    except Exception as exc:  # noqa: BLE001
+        return LabStatus(message=f"Could not read the lab: {exc}")
+
+    expected = {node.name for node in topology.nodes}
+    running: set[str] = set()
+
+    for name in expected:
+        try:
+            stats = next(manager.get_machine_stats(name, lab=lab), None)
+        except Exception:  # noqa: BLE001 - a missing container is not an error
+            stats = None
+        if stats is not None:
+            running.add(name)
+
+    devices = [
+        DeviceStatus(name, DeviceState.RUNNING if name in running else DeviceState.STOPPED)
+        for name in sorted(expected)
+    ]
+    return LabStatus(devices=devices, lab_dir=str(directory))

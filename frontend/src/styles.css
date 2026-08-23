@@ -666,3 +666,85 @@ select {
   color: var(--danger);
   margin: 3px 0 0;
 }
+
+/* -- lab status and diagnostics --------------------------------------
+ *
+ * Every state is a glyph plus a word. Colour repeats the meaning and never
+ * carries it, so a diagnostic stays readable with any colour vision.
+ */
+
+.lab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.lab__message {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin: 6px 0;
+}
+
+.issue__remedy {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  color: var(--fg);
+  font-weight: 400;
+}
+
+.state-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.state {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  border-left: 4px solid var(--fg-muted);
+  background: var(--bg-raised);
+  margin-bottom: 4px;
+}
+
+.state__glyph {
+  font-weight: 700;
+}
+
+.state__label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.state__detail {
+  grid-column: 2 / -1;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+/* Thickness differs as well as hue, so the states separate in greyscale. */
+.state[data-state="running"],
+.state[data-outcome="pass"] {
+  border-left-color: var(--accent);
+  border-left-width: 6px;
+}
+.state[data-outcome="fail"] {
+  border-left-color: var(--danger);
+  border-left-width: 6px;
+}
+.state[data-outcome="fail"] .state__glyph,
+.state[data-outcome="fail"] .state__label {
+  color: var(--danger);
+}
+.state[data-state="stopped"],
+.state[data-outcome="skipped"] {
+  border-left-style: dashed;
+}

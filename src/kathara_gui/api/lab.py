@@ -1,0 +1,166 @@
+"""HTTP surface for deploying and checking a running lab.
+
+Every endpoint here is a plain ``def`` rather than ``async def``. The work
+underneath blocks — pulling images, starting containers, waiting for startup
+scripts — and FastAPI runs synchronous endpoints in a threadpool. Declaring
+them ``async`` would stall the event loop and freeze the whole interface for
+the length of a deployment.
+
+Like the addressing endpoints, these take the caller's topology. Operating on
+the saved session instead would deploy whatever was last saved rather than
+what the user is looking at.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from kathara_gui.domain.model import Topology
+from kathara_gui.kathara import diagnostics, probe, runner
+from kathara_gui.project.session import Session, get_session
+
+router = APIRouter(prefix="/api/lab", tags=["lab"])
+
+
+class CheckModel(BaseModel):
+    name: str
+    status: str
+    detail: str
+    remedy: str = ""
+
+
+class ProbeResponse(BaseModel):
+    checks: list[CheckModel]
+    can_deploy: bool
+
+
+class DeviceStatusModel(BaseModel):
+    name: str
+    state: str
+
+
+class StatusResponse(BaseModel):
+    devices: list[DeviceStatusModel]
+    running: list[str]
+    deployed: bool
+    lab_dir: str | None = None
+    message: str | None = None
+
+
+class TopologyRequest(BaseModel):
+    topology: Topology
+
+
+class LinkCheckModel(BaseModel):
+    collision_domain: str
+    source: str
+    source_interface: int
+    target: str
+    target_interface: int
+    target_address: str | None
+    outcome: str
+    detail: str = ""
+
+
+class DiagnosticsResponse(BaseModel):
+    checks: list[LinkCheckModel]
+    passed: int
+    failed: int
+    skipped: int
+    healthy: bool
+    message: str | None = None
+
+
+def _status_response(status: runner.LabStatus) -> StatusResponse:
+    return StatusResponse(
+        devices=[DeviceStatusModel(name=d.name, state=d.state.value) for d in status.devices],
+        running=status.running,
+        deployed=status.deployed,
+        lab_dir=status.lab_dir,
+        message=status.message,
+    )
+
+
+@router.get("/probe", response_model=ProbeResponse)
+def environment() -> ProbeResponse:
+    """Whether this machine can run a lab, and what to fix if not."""
+    report = probe.probe()
+    return ProbeResponse(
+        checks=[
+            CheckModel(name=c.name, status=c.status.value, detail=c.detail, remedy=c.remedy)
+            for c in report.checks
+        ],
+        can_deploy=report.can_deploy,
+    )
+
+
+@router.post("/status", response_model=StatusResponse)
+def lab_status(request: TopologyRequest) -> StatusResponse:
+    """Reconcile the topology against what Docker is actually running.
+
+    A POST rather than a GET because it carries the topology. The user can
+    stop containers from a terminal at any moment, so the interface polls this
+    rather than trusting that its last action still holds.
+    """
+    return _status_response(runner.status(request.topology))
+
+
+@router.post("/deploy", response_model=StatusResponse)
+def deploy(
+    request: TopologyRequest, session: Session = Depends(get_session)
+) -> StatusResponse:
+    result = runner.deploy(request.topology)
+    # Deploying makes this topology the one on disk, so adopt it as the
+    # session's — otherwise a later save could overwrite what is running.
+    session.replace(request.topology, dirty=False)
+    return _status_response(result)
+
+
+@router.post("/undeploy", response_model=StatusResponse)
+def undeploy(request: TopologyRequest) -> StatusResponse:
+    return _status_response(runner.undeploy(request.topology))
+
+
+@router.post("/verify", response_model=DiagnosticsResponse)
+def verify(
+    request: TopologyRequest, session: Session = Depends(get_session)
+) -> DiagnosticsResponse:
+    """Ping between every pair sharing a collision domain (Capability 4)."""
+    session.features.require("infrastructure_verification")
+
+    report = diagnostics.verify(request.topology)
+    return DiagnosticsResponse(
+        checks=[
+            LinkCheckModel(
+                collision_domain=c.collision_domain,
+                source=c.source,
+                source_interface=c.source_interface,
+                target=c.target,
+                target_interface=c.target_interface,
+                target_address=c.target_address,
+                outcome=c.outcome.value,
+                detail=c.detail,
+            )
+            for c in report.checks
+        ],
+        passed=report.passed,
+        failed=report.failed,
+        skipped=report.skipped,
+        healthy=report.healthy,
+        message=report.message,
+    )
+
+
+class FeaturesResponse(BaseModel):
+    subnet_calculator: bool
+    addressing_validation: bool
+    infrastructure_verification: bool = Field(
+        description="Whether link diagnostics are available in this scenario."
+    )
+
+
+@router.get("/features", response_model=FeaturesResponse)
+def features(session: Session = Depends(get_session)) -> FeaturesResponse:
+    """What this scenario permits, so the UI can hide what it cannot use."""
+    return FeaturesResponse(**session.features.model_dump())

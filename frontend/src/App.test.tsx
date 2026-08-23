@@ -13,7 +13,14 @@ import axeCore from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 // Type-only, so it is erased at runtime and does not clash with vi.mock.
-import type { AllocateResponse, IssuesResponse } from "./api/client";
+import type {
+  AllocateResponse,
+  DiagnosticsResponse,
+  FeaturesResponse,
+  IssuesResponse,
+  ProbeResponse,
+  StatusResponse,
+} from "./api/client";
 import type { Topology } from "./types";
 import { useTopologyStore } from "./store/topology";
 import { emptyTopology } from "./types";
@@ -24,7 +31,8 @@ vi.mock("./canvas/TopologyCanvas", () => ({
 
 // vi.mock is hoisted above the file, so anything it closes over must be
 // created by vi.hoisted rather than declared as an ordinary const.
-const { MockApiError, checkAddressing, allocateAddressing } = vi.hoisted(() => {
+const { MockApiError, checkAddressing, allocateAddressing, probe, features, deploy, undeploy, verify } =
+  vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -33,8 +41,35 @@ const { MockApiError, checkAddressing, allocateAddressing } = vi.hoisted(() => {
     }
   }
   const blank = () => ({ name: "untitled", nodes: [], collision_domains: [] });
+  const idleStatus = (): StatusResponse => ({
+    devices: [],
+    running: [],
+    deployed: false,
+    lab_dir: null,
+    message: null,
+  });
   return {
     MockApiError,
+    probe: vi.fn(async (): Promise<ProbeResponse> => ({ checks: [], can_deploy: true })),
+    features: vi.fn(
+      async (): Promise<FeaturesResponse> => ({
+        subnet_calculator: true,
+        addressing_validation: true,
+        infrastructure_verification: true,
+      }),
+    ),
+    deploy: vi.fn(async (_topology: Topology): Promise<StatusResponse> => idleStatus()),
+    undeploy: vi.fn(async (_topology: Topology): Promise<StatusResponse> => idleStatus()),
+    verify: vi.fn(
+      async (_topology: Topology): Promise<DiagnosticsResponse> => ({
+        checks: [],
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        healthy: false,
+        message: null,
+      }),
+    ),
     checkAddressing: vi.fn(
       // The parameter is declared so tests can inspect what the editor sent.
       async (_topology: Topology): Promise<IssuesResponse> => ({
@@ -72,6 +107,18 @@ vi.mock("./api/client", () => ({
     })),
     checkAddressing,
     allocateAddressing,
+    probe,
+    features,
+    deploy,
+    undeploy,
+    verify,
+    labStatus: vi.fn(async () => ({
+      devices: [],
+      running: [],
+      deployed: false,
+      lab_dir: null,
+      message: null,
+    })),
   },
   initialiseToken: vi.fn(),
 }));
@@ -82,6 +129,33 @@ beforeEach(() => {
   checkAddressing.mockClear();
   checkAddressing.mockResolvedValue({ issues: [], errors: 0, warnings: 0 });
   allocateAddressing.mockClear();
+
+  // mockClear leaves implementations in place, so a test that stubs a
+  // failure would leak it into every test after it. Re-establish the
+  // defaults explicitly.
+  const idleStatus: StatusResponse = {
+    devices: [],
+    running: [],
+    deployed: false,
+    lab_dir: null,
+    message: null,
+  };
+  probe.mockReset().mockResolvedValue({ checks: [], can_deploy: true });
+  features.mockReset().mockResolvedValue({
+    subnet_calculator: true,
+    addressing_validation: true,
+    infrastructure_verification: true,
+  });
+  deploy.mockReset().mockResolvedValue(idleStatus);
+  undeploy.mockReset().mockResolvedValue(idleStatus);
+  verify.mockReset().mockResolvedValue({
+    checks: [],
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    healthy: false,
+    message: null,
+  });
 });
 
 async function renderApp() {
@@ -727,5 +801,155 @@ describe("regression: allocation must not wipe the canvas", () => {
 
     expect(await screen.findByRole("treeitem", { name: /^r1/ })).toBeTruthy();
     expect(screen.getByRole("treeitem", { name: /^r2/ })).toBeInTheDocument();
+  });
+});
+
+describe("deploying and verifying", () => {
+  const deployed: StatusResponse = {
+    devices: [
+      { name: "r1", state: "running" },
+      { name: "r2", state: "running" },
+    ],
+    running: ["r1", "r2"],
+    deployed: true,
+    lab_dir: "/tmp/lab",
+    message: null,
+  };
+
+  it("will not deploy an empty topology", async () => {
+    await renderApp();
+    expect(await screen.findByRole("button", { name: "Deploy" })).toBeDisabled();
+    expect(screen.getByText("Add a device before deploying.")).toBeInTheDocument();
+  });
+
+  it("deploys the topology the editor is holding", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    const sent = deploy.mock.calls.at(-1)?.[0];
+    expect(sent?.nodes.map((n) => n.name)).toEqual(["r1"]);
+  });
+
+  it("reports each device with a word, not only a colour", async () => {
+    deploy.mockResolvedValue(deployed);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText("r1")).toBeInTheDocument();
+    expect(screen.getAllByText("Running")).toHaveLength(2);
+  });
+
+  it("keeps Stop and Verify unavailable until something is running", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Verify links" })).toBeDisabled();
+
+    deploy.mockResolvedValue(deployed);
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+  });
+
+  it("reports a failing link in words", async () => {
+    // Capability 6 Scenario A: a diagnostic must not depend on hue.
+    deploy.mockResolvedValue(deployed);
+    verify.mockResolvedValue({
+      checks: [
+        {
+          collision_domain: "A",
+          source: "r1",
+          source_interface: 0,
+          target: "r2",
+          target_interface: 0,
+          target_address: "10.0.0.2",
+          outcome: "fail" as const,
+          detail: "no reply",
+        },
+      ],
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+      healthy: false,
+      message: null,
+    });
+
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+
+    expect(await screen.findByText("1 of 1 links failed")).toBeInTheDocument();
+    expect(screen.getByText("Fail")).toBeInTheDocument();
+    expect(screen.getByText(/r1 eth0 → r2 eth0 on A/)).toBeInTheDocument();
+  });
+
+  it("discards stale diagnostics when the lab is stopped", async () => {
+    // Results describing a lab that is no longer running would be a lie.
+    deploy.mockResolvedValue(deployed);
+    verify.mockResolvedValue({
+      checks: [],
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      healthy: true,
+      message: null,
+    });
+
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+    expect(await screen.findByText("All 1 links passed")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(screen.queryByText("All 1 links passed")).toBeNull());
+  });
+
+  it("shows an environment blocker with its remedy, and refuses to deploy", async () => {
+    probe.mockResolvedValue({
+      checks: [
+        {
+          name: "Docker daemon",
+          status: "blocked" as const,
+          detail: "Could not reach the Docker daemon.",
+          remedy: "Start Docker Desktop and wait for it to report running.",
+        },
+      ],
+      can_deploy: false,
+    });
+
+    const user = await renderApp();
+    await addRouter(user);
+
+    expect(await screen.findByText(/Could not reach the Docker daemon/)).toBeInTheDocument();
+    expect(screen.getByText(/Start Docker Desktop/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deploy" })).toBeDisabled();
+  });
+
+  it("hides verification when the scenario withdraws it", async () => {
+    features.mockResolvedValue({
+      subnet_calculator: true,
+      addressing_validation: true,
+      infrastructure_verification: false,
+    });
+    const user = await renderApp();
+    await addRouter(user);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Verify links" })).toBeNull(),
+    );
+  });
+
+  it("has no axe violations while showing results", async () => {
+    deploy.mockResolvedValue(deployed);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("r1");
+
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 });
