@@ -380,3 +380,20 @@ select {
   font-size: 0.85rem;
   margin-bottom: 6px;
 }
+
+.alignment__hint {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin: 0 0 10px;
+}
+
+.alignment__buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.alignment__buttons button {
+  font-size: 0.82rem;
+  padding: 5px 8px;
+}

@@ -160,14 +160,14 @@ describe("ConnectForm", () => {
 
 describe("Inspector", () => {
   it("invites a selection when nothing is selected", () => {
-    render(<Inspector topology={linked()} selected={null} onDispatch={vi.fn()} />);
+    render(<Inspector topology={linked()} selected={[]} onDispatch={vi.fn()} />);
     expect(screen.getByText(/Select a device/)).toBeInTheDocument();
   });
 
   it("commits a rename on blur rather than per keystroke", async () => {
     const user = userEvent.setup();
     const onDispatch = vi.fn();
-    render(<Inspector topology={linked()} selected="r1" onDispatch={onDispatch} />);
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
 
     const name = screen.getByLabelText("Name");
     await user.clear(name);
@@ -186,7 +186,7 @@ describe("Inspector", () => {
   it("commits on Enter", async () => {
     const user = userEvent.setup();
     const onDispatch = vi.fn();
-    render(<Inspector topology={linked()} selected="r1" onDispatch={onDispatch} />);
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
 
     await user.clear(screen.getByLabelText("Name"));
     await user.type(screen.getByLabelText("Name"), "core1{Enter}");
@@ -196,7 +196,7 @@ describe("Inspector", () => {
   it("abandons an edit on Escape", async () => {
     const user = userEvent.setup();
     const onDispatch = vi.fn();
-    render(<Inspector topology={linked()} selected="r1" onDispatch={onDispatch} />);
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
 
     await user.clear(screen.getByLabelText("Name"));
     await user.type(screen.getByLabelText("Name"), "oops{Escape}");
@@ -209,7 +209,7 @@ describe("Inspector", () => {
     const onDispatch = vi.fn();
     const topology = linked();
     topology.nodes[0]!.daemons = [];
-    render(<Inspector topology={topology} selected="r1" onDispatch={onDispatch} />);
+    render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
 
     await user.click(screen.getByRole("checkbox", { name: "ospfd" }));
 
@@ -220,7 +220,7 @@ describe("Inspector", () => {
   });
 
   it("lists interfaces with their collision domain", () => {
-    render(<Inspector topology={linked()} selected="r1" onDispatch={vi.fn()} />);
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />);
     expect(screen.getByText("eth0 on A")).toBeInTheDocument();
   });
 
@@ -229,7 +229,7 @@ describe("Inspector", () => {
     const onDispatch = vi.fn();
     const topology = linked();
     topology.nodes[0]!.interfaces[0]!.ip = null;
-    render(<Inspector topology={topology} selected="r1" onDispatch={onDispatch} />);
+    render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
 
     await user.type(screen.getByLabelText("Address for eth0"), "10.0.0.9/24");
     await user.tab();
@@ -243,13 +243,13 @@ describe("Inspector", () => {
   });
 
   it("explains how to connect an unconnected device", () => {
-    render(<Inspector topology={twoRouters()} selected="r1" onDispatch={vi.fn()} />);
+    render(<Inspector topology={twoRouters()} selected={["r1"]} onDispatch={vi.fn()} />);
     expect(screen.getByText(/Use the Connect panel/)).toBeInTheDocument();
   });
 
   it("has no axe violations", async () => {
     const { container } = render(
-      <Inspector topology={linked()} selected="r1" onDispatch={vi.fn()} />,
+      <Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />,
     );
     const results = await axeCore.run(container);
     expect(results.violations.map((v) => v.id)).toEqual([]);

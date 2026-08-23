@@ -12,7 +12,7 @@ import { DEVICE_KINDS, type DeviceKind, KNOWN_DAEMONS, type Node, type Topology 
 
 interface Props {
   topology: Topology;
-  selected: string | null;
+  selected: string[];
   onDispatch: (op: Operation) => void;
 }
 
@@ -63,13 +63,18 @@ function CommittedInput({
 }
 
 export function Inspector({ topology, selected, onDispatch }: Props) {
-  const node: Node | undefined = topology.nodes.find((n) => n.name === selected);
+  const only = selected.length === 1 ? selected[0] : undefined;
+  const node: Node | undefined = topology.nodes.find((n) => n.name === only);
 
   if (!node) {
     return (
       <>
         <h2 className="panel__heading">Details</h2>
-        <p className="inspector__empty">Select a device to edit its settings.</p>
+        <p className="inspector__empty">
+          {selected.length > 1
+            ? `${selected.length} devices selected. Editing applies to one device at a time; use Arrange to align them.`
+            : "Select a device to edit its settings."}
+        </p>
       </>
     );
   }

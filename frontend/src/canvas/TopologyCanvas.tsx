@@ -30,8 +30,8 @@ import type { Topology } from "../types";
 
 interface Props {
   topology: Topology;
-  selected: string | null;
-  onSelect: (name: string | null) => void;
+  selected: string[];
+  onSelect: (name: string | null, additive: boolean) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
   /** Pointer users drag between handles; the same operation the form dispatches. */
   onLink: (a: string, b: string) => void;
@@ -49,7 +49,7 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }:
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       position: node.position,
-      selected: node.name === selected,
+      selected: selected.includes(node.name),
       data: { label: `${node.name}\n${node.kind}` },
       className: `device device--${node.kind}`,
     }));
@@ -120,7 +120,7 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }:
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
-        onNodeClick={(_, node) => onSelect(node.id)}
+        onNodeClick={(event, node) => onSelect(node.id, event.ctrlKey || event.metaKey)}
         onConnect={({ source, target }) => {
           // Ignore drags onto a collision-domain node: joining a shared
           // segment goes through the Connect panel, which can say what it
@@ -129,7 +129,7 @@ export function TopologyCanvas({ topology, selected, onSelect, onMove, onLink }:
             onLink(source, target);
           }
         }}
-        onPaneClick={() => onSelect(null)}
+        onPaneClick={() => onSelect(null, false)}
         snapToGrid
         snapGrid={[16, 16]}
         fitView

@@ -20,8 +20,9 @@ import type { Node, Topology } from "../types";
 
 interface Props {
   topology: Topology;
-  selected: string | null;
-  onSelect: (name: string | null) => void;
+  selected: string[];
+  /** `additive` extends the selection rather than replacing it. */
+  onSelect: (name: string, additive: boolean) => void;
   onRemove?: (name: string) => void;
 }
 
@@ -153,7 +154,9 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
       case "Enter":
       case " ":
         event.preventDefault();
-        onSelect(row.node.name);
+        // Ctrl/Cmd extends the selection, matching the canvas and the
+        // platform convention for multi-select lists.
+        onSelect(row.node.name, event.ctrlKey || event.metaKey);
         return;
 
       case "Delete":
@@ -179,6 +182,7 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
       ref={containerRef}
       role="tree"
       aria-label="Network topology"
+      aria-multiselectable="true"
       className="topology-tree"
     >
       {rows.map((row) => {
@@ -193,7 +197,7 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
               role="treeitem"
               data-row-id={row.id}
               aria-level={row.level}
-              aria-selected={selected === row.node.name}
+              aria-selected={selected.includes(row.node.name)}
               aria-expanded={
                 isDevice && row.node.interfaces.length > 0
                   ? expanded.has(row.node.name)
@@ -202,10 +206,10 @@ export function TopologyTree({ topology, selected, onSelect, onRemove }: Props) 
               // Roving tabindex: one stop for the whole tree, then arrows.
               tabIndex={active === row.id ? 0 : -1}
               className={`tree-row tree-row--${row.kind}`}
-              data-selected={selected === row.node.name || undefined}
+              data-selected={selected.includes(row.node.name) || undefined}
               onKeyDown={(event) => onKeyDown(event, row)}
               onFocus={() => setActive(row.id)}
-              onClick={() => onSelect(row.node.name)}
+              onClick={(event) => onSelect(row.node.name, event.ctrlKey || event.metaKey)}
             >
               {/* Shape and text carry the meaning; colour never does alone. */}
               <span aria-hidden="true" className="tree-row__marker">

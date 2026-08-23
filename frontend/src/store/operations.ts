@@ -26,6 +26,9 @@ export type Operation =
   | { type: "addNode"; node: Node }
   | { type: "removeNode"; name: string }
   | { type: "moveNode"; name: string; position: Position }
+  // Aligning a selection moves many devices at once; as one operation it is
+  // also one undo step.
+  | { type: "moveNodes"; positions: Record<string, Position>; label?: string }
   | { type: "renameNode"; from: string; to: string }
   | { type: "updateNode"; name: string; changes: Partial<Omit<Node, "name">> }
   | { type: "connect"; node: string; collisionDomain: string; number?: number }
@@ -82,6 +85,21 @@ export function apply(topology: Topology, op: Operation): Topology {
 
     case "moveNode":
       return mapNode(topology, op.name, (node) => ({ ...node, position: op.position }));
+
+    case "moveNodes": {
+      const unknown = Object.keys(op.positions).filter(
+        (name) => !topology.nodes.some((n) => n.name === name),
+      );
+      if (unknown.length > 0) {
+        throw new OperationError(`No device named "${unknown[0]}".`);
+      }
+      return {
+        ...topology,
+        nodes: topology.nodes.map((node) =>
+          op.positions[node.name] ? { ...node, position: op.positions[node.name]! } : node,
+        ),
+      };
+    }
 
     case "renameNode": {
       if (op.from === op.to) return topology;
@@ -185,6 +203,10 @@ export function describe(op: Operation): string {
       return `Removed ${op.name}`;
     case "moveNode":
       return `Moved ${op.name}`;
+    case "moveNodes": {
+      const count = Object.keys(op.positions).length;
+      return op.label ?? `Moved ${count} ${count === 1 ? "device" : "devices"}`;
+    }
     case "renameNode":
       return `Renamed ${op.from} to ${op.to}`;
     case "updateNode":

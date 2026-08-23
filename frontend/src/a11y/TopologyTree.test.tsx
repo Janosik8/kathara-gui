@@ -34,7 +34,7 @@ function renderTree(overrides: Partial<Parameters<typeof TopologyTree>[0]> = {})
   const utils = render(
     <TopologyTree
       topology={topology()}
-      selected={null}
+      selected={[]}
       onSelect={onSelect}
       onRemove={onRemove}
       {...overrides}
@@ -76,7 +76,7 @@ describe("structure", () => {
   });
 
   it("reflects selection with aria-selected", () => {
-    renderTree({ selected: "r2" });
+    renderTree({ selected: ["r2"] });
     expect(screen.getByRole("treeitem", { name: /^r2/ })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -190,7 +190,7 @@ describe("keyboard navigation", () => {
     const { onSelect } = renderTree();
     await user.tab();
     await user.keyboard("{Enter}");
-    expect(onSelect).toHaveBeenCalledWith("r1");
+    expect(onSelect).toHaveBeenCalledWith("r1", false);
   });
 
   it("removes a device with Delete", async () => {
@@ -207,7 +207,7 @@ describe("empty state", () => {
     render(
       <TopologyTree
         topology={{ name: "lab", nodes: [], collision_domains: [] }}
-        selected={null}
+        selected={[]}
         onSelect={vi.fn()}
       />,
     );
