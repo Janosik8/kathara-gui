@@ -14,23 +14,31 @@
  * mechanisms that behave differently.
  */
 
+import type { PendingEnd } from "../types";
+
 interface Props {
   active: boolean;
-  pending: string | null;
+  pending: PendingEnd | null;
   /** Fewer than two devices means there is nothing to connect. */
   enabled: boolean;
   onToggle: () => void;
 }
 
-export function ConnectModeBar({ active, pending, enabled, onToggle }: Props) {
-  const instruction = !active
-    ? enabled
+function instructionFor(active: boolean, enabled: boolean, pending: PendingEnd | null): string {
+  if (!active) {
+    return enabled
       ? "Draw links between devices by clicking one, then another."
-      : "Add at least two devices before connecting them."
-    : pending
-      ? `${pending} selected. Now choose the device to link it to. Press Escape to cancel.`
-      : "Choose the first device. Press Escape to leave connect mode.";
+      : "Add at least two devices before connecting them.";
+  }
+  if (pending === null) {
+    return "Choose the first device. Press Escape to leave connect mode.";
+  }
+  return pending.kind === "device"
+    ? `${pending.name} selected. Now choose another device, or a collision domain to join. Press Escape to cancel.`
+    : `Collision domain ${pending.name} selected. Now choose a device to add to it. Press Escape to cancel.`;
+}
 
+export function ConnectModeBar({ active, pending, enabled, onToggle }: Props) {
   return (
     <div className="connect-mode">
       <button
@@ -47,7 +55,14 @@ export function ConnectModeBar({ active, pending, enabled, onToggle }: Props) {
 
       {/* Not a live region: the same sentence is announced through the app's
           existing polite region, and two announcements would double up. */}
-      <p className="connect-mode__instruction">{instruction}</p>
+      <p className="connect-mode__instruction">{instructionFor(active, enabled, pending)}</p>
+
+      {active && (
+        <p className="connect-mode__instruction">
+          To add a device to an existing network, click the device and then the link or
+          collision domain it should join.
+        </p>
+      )}
     </div>
   );
 }

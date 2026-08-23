@@ -158,7 +158,7 @@ describe("connect mode", () => {
     expect(screen.getByText(/Choose the first device/)).toBeInTheDocument();
 
     await user.click(row("r1"));
-    expect(screen.getByText(/r1 selected\. Now choose the device to link it to/)).toBeInTheDocument();
+    expect(screen.getByText(/r1 selected\. Now choose another device/)).toBeInTheDocument();
   });
 
   it("marks the half-made link in the tree for screen readers", async () => {
@@ -261,6 +261,114 @@ describe("connect mode", () => {
     await user.click(toggle());
     await user.click(row("r1"));
     await user.keyboard("{Delete}");
+
+    expect(screen.queryByRole("treeitem", { name: /first end of the new link/ })).toBeNull();
+  });
+});
+
+describe("joining an existing collision domain", () => {
+  const toggle = () => screen.getByRole("button", { name: /Connect mode/ });
+
+  /**
+   * Expand a device so its interface rows are reachable.
+   *
+   * Done before entering connect mode on purpose: in connect mode a click on
+   * a device row *picks* that device, so expanding by clicking would
+   * accidentally choose an end.
+   */
+  async function expand(user: ReturnType<typeof userEvent.setup>, device: string) {
+    await user.click(row(device));
+    await user.keyboard("{ArrowRight}");
+  }
+
+  async function threeRoutersOneLink(user: ReturnType<typeof userEvent.setup>) {
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+  }
+
+  it("adds a third device to the domain r1 and r2 already share", async () => {
+    const user = await renderApp();
+    await threeRoutersOneLink(user);
+
+    // Pick the device, then the collision domain — via r1's eth0 row, which
+    // is the keyboard equivalent of clicking the link on the canvas.
+    await expand(user, "r1");
+    await user.click(toggle());
+    await user.click(row("r3"));
+    await user.click(screen.getByRole("treeitem", { name: /eth0.*domain A/ }));
+
+    // All three now sit on A, rather than r3 getting a separate domain B.
+    expect(screen.getByRole("treeitem", { name: /r3, router, 1 interface/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("treeitem", { name: /eth0.*domain A.*r2 eth0, r3 eth0/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("works in the other order too", async () => {
+    const user = await renderApp();
+    await threeRoutersOneLink(user);
+
+    await expand(user, "r1");
+    await user.click(toggle());
+    await user.click(screen.getByRole("treeitem", { name: /eth0.*domain A/ }));
+    await user.click(row("r3"));
+
+    expect(screen.getByRole("treeitem", { name: /r3, router, 1 interface/ })).toBeInTheDocument();
+  });
+
+  it("tells the user what activating an interface row will do", async () => {
+    const user = await renderApp();
+    await threeRoutersOneLink(user);
+    await expand(user, "r1");
+    await user.click(toggle());
+
+    expect(
+      screen.getByRole("treeitem", { name: /press Enter to use collision domain A/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no such hint outside connect mode", async () => {
+    const user = await renderApp();
+    await threeRoutersOneLink(user);
+    await expand(user, "r1");
+
+    expect(screen.queryByRole("treeitem", { name: /press Enter to use/ })).toBeNull();
+  });
+
+  it("refuses to join two collision domains", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+    await link(user, "r3", "r4");
+
+    await expand(user, "r1");
+    await expand(user, "r3");
+    await user.click(toggle());
+    await user.click(screen.getByRole("treeitem", { name: /eth0.*domain A/ }));
+    await user.click(screen.getByRole("treeitem", { name: /eth0.*domain B/ }));
+
+    expect(await screen.findByText(/Two collision domains cannot be joined/)).toBeInTheDocument();
+  });
+
+  it("drops a pending domain that no longer exists", async () => {
+    const user = await renderApp();
+    await threeRoutersOneLink(user);
+
+    await expand(user, "r1");
+    await user.click(toggle());
+    await user.click(screen.getByRole("treeitem", { name: /eth0.*domain A/ }));
+
+    // Deleting both members leaves domain A with nothing on it.
+    await user.keyboard("{Escape}");
+    await user.click(row("r1"));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(row("r2"));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(screen.queryByRole("treeitem", { name: /first end of the new link/ })).toBeNull();
   });

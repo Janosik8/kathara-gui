@@ -27,6 +27,17 @@ export interface Position {
   y: number;
 }
 
+/**
+ * One end of a link being drawn in connect mode.
+ *
+ * Either end may be a device or an existing collision domain, which is what
+ * lets a third device join a segment two others already share — the shared
+ * medium is a first-class thing in Kathara, so it is selectable here too.
+ */
+export type PendingEnd =
+  | { kind: "device"; name: string }
+  | { kind: "domain"; name: string };
+
 export interface Interface {
   number: number;
   collision_domain: string;

@@ -26,7 +26,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useMemo } from "react";
-import type { Topology } from "../types";
+import type { PendingEnd, Topology } from "../types";
 
 interface Props {
   topology: Topology;
@@ -34,7 +34,12 @@ interface Props {
   onSelect: (name: string | null, additive: boolean) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
   /** The first end of a link being drawn in connect mode, if any. */
-  pending?: string | null;
+  pending?: PendingEnd | null;
+  /**
+   * A collision domain was chosen. Fired by clicking its node, or the link
+   * itself when only two devices share it and there is no node to click.
+   */
+  onSelectCollisionDomain?: (name: string) => void;
 }
 
 /** Where to place a collision-domain node: the centroid of its members. */
@@ -44,14 +49,24 @@ function centroid(points: { x: number; y: number }[]): { x: number; y: number } 
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-export function TopologyCanvas({ topology, selected, pending, onSelect, onMove }: Props) {
+export function TopologyCanvas({
+  topology,
+  selected,
+  pending,
+  onSelect,
+  onMove,
+  onSelectCollisionDomain,
+}: Props) {
+  const pendingDevice = pending?.kind === "device" ? pending.name : null;
+  const pendingDomain = pending?.kind === "domain" ? pending.name : null;
+
   const { nodes, edges } = useMemo(() => {
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       position: node.position,
       selected: selected.includes(node.name),
       data: { label: `${node.name}\n${node.kind}` },
-      className: `device device--${node.kind}${node.name === pending ? " device--pending" : ""}`,
+      className: `device device--${node.kind}${node.name === pendingDevice ? " device--pending" : ""}`,
     }));
 
     const flowEdges: Edge[] = [];
@@ -70,8 +85,11 @@ export function TopologyCanvas({ topology, selected, pending, onSelect, onMove }
           id: `cd:${cd.name}`,
           source: a.node.name,
           target: b.node.name,
-          label: cd.subnet ?? cd.name,
-          className: "link",
+          label: cd.subnet ? `${cd.name} · ${cd.subnet}` : cd.name,
+          // Carried in data so a click can resolve the domain without
+          // having to parse it back out of the id.
+          data: { collisionDomain: cd.name },
+          className: `link${cd.name === pendingDomain ? " link--pending" : ""}`,
         });
         continue;
       }
@@ -81,22 +99,25 @@ export function TopologyCanvas({ topology, selected, pending, onSelect, onMove }
       flowNodes.push({
         id: hubId,
         position: centroid(members.map((m) => m.node.position)),
-        data: { label: `${cd.name}${cd.subnet ? `\n${cd.subnet}` : ""}` },
-        className: "collision-domain",
-        selectable: false,
+        data: {
+          label: `${cd.name}${cd.subnet ? `\n${cd.subnet}` : ""}`,
+          collisionDomain: cd.name,
+        },
+        className: `collision-domain${cd.name === pendingDomain ? " collision-domain--pending" : ""}`,
       });
       for (const member of members) {
         flowEdges.push({
           id: `${hubId}->${member.node.name}:${member.iface.number}`,
           source: member.node.name,
           target: hubId,
-          className: "link",
+          data: { collisionDomain: cd.name },
+          className: `link${cd.name === pendingDomain ? " link--pending" : ""}`,
         });
       }
     }
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [topology, selected, pending]);
+  }, [topology, selected, pendingDevice, pendingDomain]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -120,7 +141,17 @@ export function TopologyCanvas({ topology, selected, pending, onSelect, onMove }
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
-        onNodeClick={(event, node) => onSelect(node.id, event.ctrlKey || event.metaKey)}
+        onNodeClick={(event, node) => {
+          const domain = node.data?.collisionDomain;
+          if (typeof domain === "string") onSelectCollisionDomain?.(domain);
+          else onSelect(node.id, event.ctrlKey || event.metaKey);
+        }}
+        onEdgeClick={(_, edge) => {
+          // A two-device domain has no node of its own, so the link stands in
+          // for it. Clicking a link therefore means "this collision domain".
+          const domain = edge.data?.collisionDomain;
+          if (typeof domain === "string") onSelectCollisionDomain?.(domain);
+        }}
         onPaneClick={() => onSelect(null, false)}
         snapToGrid
         snapGrid={[16, 16]}

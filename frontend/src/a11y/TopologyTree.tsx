@@ -16,13 +16,19 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Node, Topology } from "../types";
+import type { Node, PendingEnd, Topology } from "../types";
 
 interface Props {
   topology: Topology;
   selected: string[];
   /** The first end of a link being drawn in connect mode, if any. */
-  pending?: string | null;
+  pending?: PendingEnd | null;
+  /**
+   * In connect mode an interface row stands for its collision domain, which
+   * is how a keyboard user joins a segment that two devices already share.
+   */
+  connectMode?: boolean;
+  onSelectCollisionDomain?: (name: string) => void;
   /** `additive` extends the selection rather than replacing it. */
   onSelect: (name: string, additive: boolean) => void;
   onRemove?: (name: string) => void;
@@ -66,7 +72,18 @@ function describeDevice(node: Node): string {
   return `${node.name}, ${node.kind}, ${interfaces}${daemons}`;
 }
 
-export function TopologyTree({ topology, selected, pending, onSelect, onRemove }: Props) {
+export function TopologyTree({
+  topology,
+  selected,
+  pending,
+  connectMode,
+  onSelectCollisionDomain,
+  onSelect,
+  onRemove,
+}: Props) {
+  const pendingDevice = pending?.kind === "device" ? pending.name : null;
+  const pendingDomain = pending?.kind === "domain" ? pending.name : null;
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<string | null>(null);
   const containerRef = useRef<HTMLUListElement>(null);
@@ -119,6 +136,17 @@ export function TopologyTree({ topology, selected, pending, onSelect, onRemove }
     });
   }, []);
 
+  const activate = (row: Row, additive: boolean) => {
+    if (connectMode && row.kind === "interface") {
+      const iface = row.node.interfaces[row.index];
+      if (iface) onSelectCollisionDomain?.(iface.collision_domain);
+      return;
+    }
+    // Ctrl/Cmd extends the selection, matching the canvas and the platform
+    // convention for multi-select lists.
+    onSelect(row.node.name, additive);
+  };
+
   const onKeyDown = (event: React.KeyboardEvent, row: Row) => {
     const index = rows.findIndex((r) => r.id === row.id);
     const move = (to: number) => {
@@ -156,9 +184,7 @@ export function TopologyTree({ topology, selected, pending, onSelect, onRemove }
       case "Enter":
       case " ":
         event.preventDefault();
-        // Ctrl/Cmd extends the selection, matching the canvas and the
-        // platform convention for multi-select lists.
-        onSelect(row.node.name, event.ctrlKey || event.metaKey);
+        activate(row, event.ctrlKey || event.metaKey);
         return;
 
       case "Delete":
@@ -189,12 +215,19 @@ export function TopologyTree({ topology, selected, pending, onSelect, onRemove }
     >
       {rows.map((row) => {
         const isDevice = row.kind === "device";
-        const isPending = isDevice && row.node.name === pending;
+        const domain = isDevice ? null : row.node.interfaces[row.index]?.collision_domain ?? null;
+        const isPending = isDevice
+          ? row.node.name === pendingDevice
+          : domain !== null && domain === pendingDomain;
+
         // Spoken, not merely highlighted: a screen-reader user needs to know
-        // which device is waiting for its other end.
+        // which end is waiting, and what activating a row will now do.
         const label =
           (isDevice ? describeDevice(row.node) : describeInterface(topology, row.node, row.index)) +
-          (isPending ? ", first end of the new link" : "");
+          (isPending ? ", first end of the new link" : "") +
+          (connectMode && !isDevice && domain
+            ? `, press Enter to use collision domain ${domain}`
+            : "");
 
         return (
           <li key={row.id} role="none">
@@ -215,7 +248,7 @@ export function TopologyTree({ topology, selected, pending, onSelect, onRemove }
               data-pending={isPending || undefined}
               onKeyDown={(event) => onKeyDown(event, row)}
               onFocus={() => setActive(row.id)}
-              onClick={(event) => onSelect(row.node.name, event.ctrlKey || event.metaKey)}
+              onClick={(event) => activate(row, event.ctrlKey || event.metaKey)}
             >
               {/* Shape and text carry the meaning; colour never does alone. */}
               <span aria-hidden="true" className="tree-row__marker">

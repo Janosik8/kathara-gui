@@ -452,3 +452,24 @@ select {
   border-color: var(--accent);
   font-weight: 600;
 }
+
+/* A collision domain chosen as one end of a link. Dashed plus a ring, so it
+   reads the same way a pending device does, without relying on hue. */
+.react-flow__node.collision-domain--pending {
+  border-style: dashed;
+  border-width: 3px;
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.react-flow__edge.link--pending .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 6 4;
+}
+
+/* In connect mode a link is a target, so it must look like one. */
+.app[data-connect-mode] .react-flow__edge {
+  cursor: crosshair;
+}

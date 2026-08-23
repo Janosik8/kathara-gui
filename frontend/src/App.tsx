@@ -9,7 +9,7 @@ import { Inspector } from "./panels/Inspector";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
 import { useTopologyStore } from "./store/topology";
-import { type DeviceKind, newNode, suggestCollisionDomain } from "./types";
+import { type DeviceKind, type PendingEnd, newNode, suggestCollisionDomain } from "./types";
 
 /** Lay new devices out on a loose grid rather than stacking them at the origin. */
 function placeNew(count: number) {
@@ -55,7 +55,7 @@ export default function App() {
   // Connect mode: click one device, then another, and a link appears — the
   // interaction people expect from a topology editor.
   const [connectMode, setConnectMode] = useState(false);
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingEnd | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const canConnect = topology.nodes.length >= 2;
@@ -74,9 +74,16 @@ export default function App() {
       const present = current.filter((name) => topology.nodes.some((n) => n.name === name));
       return present.length === current.length ? current : present;
     });
-    setPending((current) =>
-      current && !topology.nodes.some((n) => n.name === current) ? null : current,
-    );
+    setPending((current) => {
+      if (current === null) return null;
+      const stillThere =
+        current.kind === "device"
+          ? topology.nodes.some((n) => n.name === current.name)
+          : topology.nodes.some((n) =>
+              n.interfaces.some((i) => i.collision_domain === current.name),
+            );
+      return stillThere ? current : null;
+    });
   }, [topology]);
 
   // Leaving connect mode must never strand a half-made link.
@@ -107,8 +114,63 @@ export default function App() {
   }, []);
 
   /**
-   * What a click on a device means, which depends on the mode.
-   * Both the canvas and the tree route through here, so the two agree.
+   * Resolve a pair of chosen ends into an edit.
+   *
+   * device + device -> a new collision domain joining them
+   * device + domain -> that device joins the existing shared segment
+   * domain + domain -> meaningless; refused rather than guessed at
+   */
+  const completeLink = useCallback(
+    (first: PendingEnd, second: PendingEnd) => {
+      if (first.kind === "domain" && second.kind === "domain") {
+        setNotice("Two collision domains cannot be joined. Choose a device.");
+        return;
+      }
+      // Clearing the notice lets the store's own description be announced.
+      setNotice(null);
+
+      if (first.kind === "device" && second.kind === "device") {
+        dispatch({
+          type: "link",
+          a: first.name,
+          b: second.name,
+          collisionDomain: suggestCollisionDomain(topology),
+        });
+      } else {
+        const device = first.kind === "device" ? first : second;
+        const domain = first.kind === "domain" ? first : second;
+        dispatch({ type: "connect", node: device.name, collisionDomain: domain.name });
+      }
+      // Stay in mode so several links can be drawn in a row.
+      setPending(null);
+    },
+    [dispatch, topology],
+  );
+
+  const choose = useCallback(
+    (end: PendingEnd) => {
+      if (pending === null) {
+        setPending(end);
+        setNotice(
+          end.kind === "device"
+            ? `${end.name} selected. Now choose a device or a collision domain to link it to.`
+            : `Collision domain ${end.name} selected. Now choose a device to add to it.`,
+        );
+        return;
+      }
+      if (pending.kind === end.kind && pending.name === end.name) {
+        setPending(null);
+        setNotice(`${end.name} deselected. Choose the first end.`);
+        return;
+      }
+      completeLink(pending, end);
+    },
+    [completeLink, pending],
+  );
+
+  /**
+   * What a click on a device means, which depends on the mode. Both the canvas
+   * and the tree route through here, so the two cannot drift apart.
    */
   const activate = useCallback(
     (name: string | null, additive: boolean) => {
@@ -119,32 +181,20 @@ export default function App() {
       if (name === null) {
         // Clicking empty space abandons the half-made link but stays in mode.
         setPending(null);
-        setNotice("Cancelled. Choose the first device.");
+        setNotice("Cancelled. Choose the first end.");
         return;
       }
-      if (pending === null) {
-        setPending(name);
-        setNotice(`${name} selected. Now choose the device to link it to.`);
-        return;
-      }
-      if (pending === name) {
-        setPending(null);
-        setNotice(`${name} deselected. Choose the first device.`);
-        return;
-      }
-
-      // Clearing the notice lets the store's own description be announced.
-      setNotice(null);
-      dispatch({
-        type: "link",
-        a: pending,
-        b: name,
-        collisionDomain: suggestCollisionDomain(topology),
-      });
-      // Stay in mode so several links can be drawn in a row.
-      setPending(null);
+      choose({ kind: "device", name });
     },
-    [connectMode, dispatch, pending, select, topology],
+    [choose, connectMode, select],
+  );
+
+  const activateDomain = useCallback(
+    (name: string) => {
+      if (!connectMode) return;
+      choose({ kind: "domain", name });
+    },
+    [choose, connectMode],
   );
 
   const addDevice = useCallback(
@@ -285,6 +335,8 @@ export default function App() {
             topology={topology}
             selected={selected}
             pending={pending}
+            connectMode={connectMode}
+            onSelectCollisionDomain={activateDomain}
             onSelect={activate}
             onRemove={(name) => dispatch({ type: "removeNode", name })}
           />
@@ -296,6 +348,7 @@ export default function App() {
             selected={selected}
             pending={pending}
             onSelect={activate}
+            onSelectCollisionDomain={activateDomain}
             onMove={(name, position) => dispatch({ type: "moveNode", name, position })}
           />
         </main>

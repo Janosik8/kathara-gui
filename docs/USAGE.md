@@ -101,7 +101,8 @@ there is no "Deploy" button yet.
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
 | Connect two devices | Turn on **Connect mode** (button, or press `C`), click one device, then click another. A link appears. |
 | Draw several links | Connect mode stays on after each link, so keep clicking pairs. |
-| Cancel a half-made link | Click the same device again, or click empty canvas. |
+| Add a device to an existing network | In connect mode, click the device, then click the **link or collision domain** it should join. All of them then share one collision domain. |
+| Cancel a half-made link | Click the same end again, or click empty canvas. |
 | Leave connect mode | Press `Escape`, or the toggle again. |
 | Rename | Select a device → **Details** → Name → Enter or click away. |
 | Set an address | Select a device → **Details** → Interfaces → address field, e.g. `10.0.0.1/24`. |
@@ -130,7 +131,7 @@ report anything that is not.
 | `Home` / `End` | First / last row. |
 | `Enter` | Select the focused device. |
 | `Ctrl/Cmd + Enter` | Add to the selection. |
-| `C` | Toggle connect mode. In it, `Enter` picks each end of the link. |
+| `C` | Toggle connect mode. In it, `Enter` on a device picks it, and `Enter` on an interface row picks that row's collision domain. |
 | `Delete` | Remove the focused or selected device. Ignored while typing in a field. |
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
