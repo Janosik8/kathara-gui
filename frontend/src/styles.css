@@ -748,3 +748,19 @@ select {
 .state[data-outcome="skipped"] {
   border-left-style: dashed;
 }
+
+/* The minimap sizes its rectangles from each node's measured dimensions, so
+   these only appear once TopologyCanvas persists the measurements it is sent.
+   Fill plus stroke keeps a device visible against either theme. */
+.react-flow__minimap-node {
+  fill: var(--fg-muted);
+  stroke: var(--fg);
+}
+
+/* The viewport box: the mask dims everything currently off-screen, so the
+   clear rectangle shows how far in you are zoomed. */
+.react-flow__minimap-mask {
+  fill: var(--minimap-mask);
+  stroke: var(--accent);
+  stroke-width: 2;
+}

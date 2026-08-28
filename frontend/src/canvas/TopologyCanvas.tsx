@@ -25,7 +25,7 @@ import {
   applyNodeChanges,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PendingEnd, Topology } from "../types";
 
 interface Props {
@@ -40,6 +40,28 @@ interface Props {
    * itself when only two devices share it and there is no node to click.
    */
   onSelectCollisionDomain?: (name: string) => void;
+}
+
+/**
+ * Re-derive nodes from the topology while carrying measurements across.
+ *
+ * React Flow measures each rendered node and reports the size back through a
+ * `dimensions` change. The minimap sizes its rectangles from `node.measured`,
+ * so dropping those measurements on a re-render leaves it blank and gives the
+ * viewport box no content bounds to sit against.
+ *
+ * Exported for testing: jsdom cannot lay anything out, so the merge is where
+ * the behaviour can actually be verified.
+ */
+export function mergeMeasurements(
+  derived: FlowNode[],
+  previous: readonly FlowNode[],
+): FlowNode[] {
+  const measured = new Map(previous.map((n) => [n.id, n.measured]));
+  return derived.map((node) => ({
+    ...node,
+    measured: measured.get(node.id) ?? node.measured,
+  }));
 }
 
 /** Where to place a collision-domain node: the centroid of its members. */
@@ -60,7 +82,7 @@ export function TopologyCanvas({
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: derivedNodes, edges } = useMemo(() => {
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       position: node.position,
@@ -119,8 +141,25 @@ export function TopologyCanvas({
     return { nodes: flowNodes, edges: flowEdges };
   }, [topology, selected, pendingDevice, pendingDomain]);
 
+  /**
+   * React Flow's own view of the nodes.
+   *
+   * The topology stays the source of truth for *what* exists and where it
+   * sits, but React Flow measures each rendered node and reports the size
+   * back through a `dimensions` change. Those measurements have to be kept:
+   * the minimap sizes its rectangles from `node.measured`, so discarding them
+   * leaves it with nothing to draw and no content bounds for the viewport box.
+   */
+  const [nodes, setNodes] = useState<FlowNode[]>(derivedNodes);
+
+  useEffect(() => {
+    setNodes((current) => mergeMeasurements(derivedNodes, current));
+  }, [derivedNodes]);
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      setNodes((current) => applyNodeChanges(changes, current));
+
       for (const change of changes) {
         // Commit only when the drag ends: recording every intermediate frame
         // would flood the operation log and make undo useless.
@@ -128,11 +167,8 @@ export function TopologyCanvas({
           if (!change.id.startsWith("cd:")) onMove(change.id, change.position);
         }
       }
-      // React Flow needs the call for its internal bookkeeping; the topology
-      // itself remains driven by the store.
-      applyNodeChanges(changes, nodes);
     },
-    [nodes, onMove],
+    [onMove],
   );
 
   return (
@@ -160,7 +196,15 @@ export function TopologyCanvas({
       >
         <Background gap={16} />
         <Controls />
-        <MiniMap pannable zoomable />
+        <MiniMap
+          pannable
+          zoomable
+          ariaLabel={null}
+          // Outline as well as fill, so a device is still discernible in the
+          // minimap when the fill is close to the background.
+          nodeStrokeWidth={2}
+          nodeBorderRadius={3}
+        />
       </ReactFlow>
     </div>
   );
