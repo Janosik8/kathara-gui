@@ -31,13 +31,7 @@ __all__ = [
     "deploy",
     "undeploy",
     "status",
-    "lab_dir_for",
 ]
-
-#: Where generated labs live. A stable, predictable location rather than a
-#: temporary directory, so `kathara connect` from a terminal reaches the same
-#: lab and a crash does not lose the generated files.
-WORKING_ROOT = Path.home() / ".kathara-gui" / "labs"
 
 
 class DeviceState(StrEnum):
@@ -81,34 +75,28 @@ class LabStatus:
         return bool(self.running)
 
 
-def _safe_dir_name(name: str) -> str:
-    """A lab name is user text; a directory name is not."""
-    cleaned = "".join(c if c.isalnum() or c in "-_" else "-" for c in name).strip("-")
-    return cleaned or "untitled"
-
-
-def lab_dir_for(topology: Topology) -> Path:
-    return WORKING_ROOT / _safe_dir_name(topology.name)
-
-
-def _load(topology: Topology) -> tuple[Any, Path]:
-    """Write the lab to disk and hand it to Kathará's parser.
+def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
+    """Write the lab to ``lab_dir`` and hand it to Kathará's parser.
 
     Deployment goes through the generated files rather than an in-memory Lab
     so that what runs is exactly what the user would get by exporting — if the
     two ever diverged, a lab that worked in the GUI could fail when shared.
+
+    The directory is passed in rather than derived here: Kathará identifies a
+    lab by its path, so the caller that knows where the project lives must be
+    the one to decide.
     """
-    directory = write_lab(topology, lab_dir_for(topology))
+    directory = write_lab(topology, Path(lab_dir))
     return LabParser.parse(str(directory)), directory
 
 
-def deploy(topology: Topology, *, timeout: float = 180.0) -> LabStatus:
+def deploy(topology: Topology, lab_dir: Path, *, timeout: float = 180.0) -> LabStatus:
     """Start every device in ``topology`` and wait for their startup scripts."""
     if not topology.nodes:
         return LabStatus(message="There is nothing to deploy.")
 
     manager = Kathara.get_instance()
-    lab, directory = _load(topology)
+    lab, directory = _load(topology, lab_dir)
 
     manager.deploy_lab(lab)
     message = None
@@ -119,29 +107,29 @@ def deploy(topology: Topology, *, timeout: float = 180.0) -> LabStatus:
         # reporting, but not worth tearing the lab down over.
         message = str(exc)
 
-    result = status(topology)
+    result = status(topology, lab_dir)
     result.lab_dir = str(directory)
     result.message = message
     return result
 
 
-def undeploy(topology: Topology) -> LabStatus:
+def undeploy(topology: Topology, lab_dir: Path) -> LabStatus:
     """Stop everything belonging to this lab."""
     manager = Kathara.get_instance()
     try:
-        lab, _ = _load(topology)
+        lab, _ = _load(topology, lab_dir)
         manager.undeploy_lab(lab=lab)
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         return LabStatus(message=f"Could not stop the lab cleanly: {exc}")
-    return status(topology)
+    return status(topology, lab_dir)
 
 
-def status(topology: Topology) -> LabStatus:
+def status(topology: Topology, lab_dir: Path) -> LabStatus:
     """Reconcile the topology against what Docker is actually running."""
     manager = Kathara.get_instance()
 
     try:
-        lab, directory = _load(topology)
+        lab, directory = _load(topology, lab_dir)
     except Exception as exc:  # noqa: BLE001
         return LabStatus(message=f"Could not read the lab: {exc}")
 

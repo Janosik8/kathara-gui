@@ -525,6 +525,7 @@ export default function App() {
             onDeploy={() => runLabAction("deploy")}
             onUndeploy={() => runLabAction("undeploy")}
             onVerify={() => runLabAction("verify")}
+            onAnnounce={setNotice}
           />
         </aside>
       </div>

@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from kathara_gui import __version__
 from kathara_gui.api import addressing, lab, topology
+from kathara_gui.project.session import configure_session
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -30,10 +31,15 @@ _PUBLIC_PATHS = frozenset(["/", "/index.html", "/favicon.ico"])
 _TOKEN_HEADER = "x-kgui-token"
 
 
-def create_app(token: str | None = None) -> FastAPI:
-    """Build the application. ``token`` of ``None`` mints a fresh one."""
+def create_app(token: str | None = None, workspace: Path | None = None) -> FastAPI:
+    """Build the application.
+
+    ``token`` of ``None`` mints a fresh one. ``workspace`` is where labs are
+    generated; ``None`` uses `kathara-labs` beside the working directory.
+    """
     app = FastAPI(title="Kathara GUI", version=__version__)
     app.state.token = token or secrets.token_urlsafe(32)
+    app.state.workspace = configure_session(workspace).workspace_root
 
     @app.middleware("http")
     async def guard(request: Request, call_next):

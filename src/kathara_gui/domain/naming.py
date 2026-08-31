@@ -20,7 +20,13 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-__all__ = ["NameError_", "validate_device_name", "check_unique_names", "RESERVED_WINDOWS_NAMES"]
+__all__ = [
+    "NameError_",
+    "validate_device_name",
+    "check_unique_names",
+    "safe_dir_name",
+    "RESERVED_WINDOWS_NAMES",
+]
 
 # Reserved DOS device names, still special-cased by the Win32 API today.
 RESERVED_WINDOWS_NAMES = frozenset(
@@ -96,3 +102,23 @@ def check_unique_names(names: Iterable[str]) -> None:
                 "They would collide on macOS and Windows."
             )
         seen[key] = name
+
+
+def safe_dir_name(name: str) -> str:
+    """Turn a lab name into something usable as a directory name.
+
+    A lab name is free text the user typed; a directory name is not. This is
+    deliberately more forgiving than :func:`validate_device_name` — a lab may
+    reasonably be called "BGP exam, group A" — so it *transforms* rather than
+    rejects, replacing anything unsafe with a dash.
+    """
+    cleaned = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
+    # Collapse runs of dashes so "BGP exam, group A" does not become
+    # "BGP-exam--group-A".
+    while "--" in cleaned:
+        cleaned = cleaned.replace("--", "-")
+    cleaned = cleaned.strip("-")
+
+    if not cleaned or cleaned.split(".", 1)[0].lower() in RESERVED_WINDOWS_NAMES:
+        return "untitled"
+    return cleaned[:MAX_NAME_LENGTH]

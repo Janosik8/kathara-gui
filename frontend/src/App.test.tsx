@@ -953,3 +953,89 @@ describe("deploying and verifying", () => {
     expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 });
+
+describe("finding the lab on disk", () => {
+  /**
+   * navigator.clipboard is getter-only in jsdom, so it must be redefined —
+   * and `userEvent.setup()` installs a stub of its own, so this has to run
+   * *after* the user session is created or it is silently replaced.
+   */
+  function stubClipboard(writeText: () => Promise<void>) {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  const deployedAt = (dir: string): StatusResponse => ({
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    deployed: true,
+    lab_dir: dir,
+    message: null,
+  });
+
+  it("shows nothing about a directory before anything is deployed", async () => {
+    await renderApp();
+    expect(screen.queryByText("Lab directory")).toBeNull();
+  });
+
+  it("shows where the lab was written", async () => {
+    deploy.mockResolvedValue(deployedAt("/home/jan/KatharaGUI/kathara-labs/untitled"));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(
+      await screen.findByText("/home/jan/KatharaGUI/kathara-labs/untitled"),
+    ).toBeInTheDocument();
+  });
+
+  it("gives a connect command that cds first", async () => {
+    // Without the cd, kathara connect fails with MachineNotRunningError even
+    // though the container is running: Kathará keys a lab by its directory.
+    deploy.mockResolvedValue(deployedAt("/labs/untitled"));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(
+      await screen.findByText("cd /labs/untitled && kathara connect r1"),
+    ).toBeInTheDocument();
+  });
+
+  it("copies the command and confirms in the live region", async () => {
+    deploy.mockResolvedValue(deployedAt("/labs/untitled"));
+    const user = await renderApp();
+
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Copy command" }));
+
+    expect(writeText).toHaveBeenCalledWith("cd /labs/untitled && kathara connect r1");
+    await waitFor(() =>
+      expect(within(screen.getByRole("status")).getByText(/copied/i)).toBeTruthy(),
+    );
+  });
+
+  it("says so when the clipboard is refused, rather than failing silently", async () => {
+    deploy.mockResolvedValue(deployedAt("/labs/untitled"));
+    const user = await renderApp();
+
+    stubClipboard(async () => {
+      throw new Error("denied");
+    });
+
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Copy command" }));
+
+    await waitFor(() =>
+      expect(within(screen.getByRole("status")).getByText(/Could not copy/)).toBeTruthy(),
+    );
+  });
+})

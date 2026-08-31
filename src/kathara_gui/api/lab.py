@@ -96,21 +96,25 @@ def environment() -> ProbeResponse:
 
 
 @router.post("/status", response_model=StatusResponse)
-def lab_status(request: TopologyRequest) -> StatusResponse:
+def lab_status(
+    request: TopologyRequest, session: Session = Depends(get_session)
+) -> StatusResponse:
     """Reconcile the topology against what Docker is actually running.
 
     A POST rather than a GET because it carries the topology. The user can
     stop containers from a terminal at any moment, so the interface polls this
     rather than trusting that its last action still holds.
     """
-    return _status_response(runner.status(request.topology))
+    return _status_response(runner.status(request.topology, session.lab_dir()))
 
 
 @router.post("/deploy", response_model=StatusResponse)
 def deploy(
     request: TopologyRequest, session: Session = Depends(get_session)
 ) -> StatusResponse:
-    result = runner.deploy(request.topology)
+    # The session decides where the lab lives, so deploy and verify always
+    # agree on the directory Kathará keys the lab by.
+    result = runner.deploy(request.topology, session.lab_dir())
     # Deploying makes this topology the one on disk, so adopt it as the
     # session's — otherwise a later save could overwrite what is running.
     session.replace(request.topology, dirty=False)
@@ -118,8 +122,10 @@ def deploy(
 
 
 @router.post("/undeploy", response_model=StatusResponse)
-def undeploy(request: TopologyRequest) -> StatusResponse:
-    return _status_response(runner.undeploy(request.topology))
+def undeploy(
+    request: TopologyRequest, session: Session = Depends(get_session)
+) -> StatusResponse:
+    return _status_response(runner.undeploy(request.topology, session.lab_dir()))
 
 
 @router.post("/verify", response_model=DiagnosticsResponse)
@@ -129,7 +135,7 @@ def verify(
     """Ping between every pair sharing a collision domain (Capability 4)."""
     session.features.require("infrastructure_verification")
 
-    report = diagnostics.verify(request.topology)
+    report = diagnostics.verify(request.topology, session.lab_dir())
     return DiagnosticsResponse(
         checks=[
             LinkCheckModel(

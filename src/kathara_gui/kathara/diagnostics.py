@@ -18,13 +18,13 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
 
 from kathara_gui.domain.model import Topology
-from kathara_gui.kathara.runner import lab_dir_for
 
 __all__ = ["Outcome", "LinkCheck", "DiagnosticsReport", "verify"]
 
@@ -108,14 +108,19 @@ def _ping(manager: Any, lab: Any, source: str, target_ip: str) -> tuple[bool, st
     return False, reason.splitlines()[-1].strip() if reason else "no reply"
 
 
-def verify(topology: Topology) -> DiagnosticsReport:
-    """Ping between every pair sharing a collision domain."""
+def verify(topology: Topology, lab_dir: Path) -> DiagnosticsReport:
+    """Ping between every pair sharing a collision domain.
+
+    ``lab_dir`` must be the directory the lab was deployed from. Kathará keys a
+    lab by its path, so resolving it independently here would silently target a
+    different lab than the one that is running.
+    """
     if not topology.nodes:
         return DiagnosticsReport(message="There is nothing to verify.")
 
     manager = Kathara.get_instance()
     try:
-        lab = LabParser.parse(str(lab_dir_for(topology)))
+        lab = LabParser.parse(str(lab_dir))
     except Exception as exc:  # noqa: BLE001
         return DiagnosticsReport(
             message=f"The lab is not on disk. Deploy it before verifying. ({exc})"

@@ -20,10 +20,14 @@ pytestmark = pytest.mark.docker
 IMAGE = "kathara/base"
 
 
-@pytest.fixture(autouse=True)
-def isolated_lab_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep test labs out of the developer's real ~/.kathara-gui directory."""
-    monkeypatch.setattr(runner, "WORKING_ROOT", tmp_path / "labs")
+@pytest.fixture
+def lab_dir(tmp_path: Path) -> Path:
+    """Where these tests generate their lab.
+
+    Passed explicitly rather than patched into a global: the directory is now
+    an argument, which is the whole point of the change.
+    """
+    return tmp_path / "labs" / "integration"
 
 
 def two_routers(*, matching_subnets: bool) -> Topology:
@@ -52,45 +56,45 @@ def two_routers(*, matching_subnets: bool) -> Topology:
 
 
 @pytest.fixture
-def working_lab() -> Iterator[Topology]:
+def working_lab(lab_dir: Path) -> Iterator[Topology]:
     topology = two_routers(matching_subnets=True)
     try:
         yield topology
     finally:
-        runner.undeploy(topology)
+        runner.undeploy(topology, lab_dir)
 
 
 @pytest.fixture
-def broken_lab() -> Iterator[Topology]:
+def broken_lab(lab_dir: Path) -> Iterator[Topology]:
     topology = two_routers(matching_subnets=False)
     try:
         yield topology
     finally:
-        runner.undeploy(topology)
+        runner.undeploy(topology, lab_dir)
 
 
-def test_deploy_starts_every_device(working_lab: Topology) -> None:
-    status = runner.deploy(working_lab)
+def test_deploy_starts_every_device(working_lab: Topology, lab_dir: Path) -> None:
+    status = runner.deploy(working_lab, lab_dir)
     assert sorted(status.running) == ["r1", "r2"]
     assert status.deployed is True
 
 
-def test_status_reconciles_against_docker(working_lab: Topology) -> None:
-    assert runner.status(working_lab).deployed is False
-    runner.deploy(working_lab)
-    assert runner.status(working_lab).deployed is True
+def test_status_reconciles_against_docker(working_lab: Topology, lab_dir: Path) -> None:
+    assert runner.status(working_lab, lab_dir).deployed is False
+    runner.deploy(working_lab, lab_dir)
+    assert runner.status(working_lab, lab_dir).deployed is True
 
 
-def test_undeploy_stops_everything(working_lab: Topology) -> None:
-    runner.deploy(working_lab)
-    status = runner.undeploy(working_lab)
+def test_undeploy_stops_everything(working_lab: Topology, lab_dir: Path) -> None:
+    runner.deploy(working_lab, lab_dir)
+    status = runner.undeploy(working_lab, lab_dir)
     assert status.running == []
     assert status.deployed is False
 
 
-def test_diagnostics_pass_on_a_correct_link(working_lab: Topology) -> None:
-    runner.deploy(working_lab)
-    report = diagnostics.verify(working_lab)
+def test_diagnostics_pass_on_a_correct_link(working_lab: Topology, lab_dir: Path) -> None:
+    runner.deploy(working_lab, lab_dir)
+    report = diagnostics.verify(working_lab, lab_dir)
 
     assert report.failed == 0
     assert report.passed == 1
@@ -99,7 +103,7 @@ def test_diagnostics_pass_on_a_correct_link(working_lab: Topology) -> None:
 
 
 def test_diagnostics_catch_a_link_that_looks_configured_but_is_not(
-    broken_lab: Topology,
+    broken_lab: Topology, lab_dir: Path
 ) -> None:
     """The failure Capability 4 exists for.
 
@@ -107,17 +111,17 @@ def test_diagnostics_catch_a_link_that_looks_configured_but_is_not(
     configuration looks wrong — but the two ends are on different networks and
     cannot reach each other.
     """
-    runner.deploy(broken_lab)
-    report = diagnostics.verify(broken_lab)
+    runner.deploy(broken_lab, lab_dir)
+    report = diagnostics.verify(broken_lab, lab_dir)
 
     assert report.failed == 1
     assert report.healthy is False
     assert report.checks[0].outcome is Outcome.FAIL
 
 
-def test_diagnostics_report_where_the_fault_is(broken_lab: Topology) -> None:
-    runner.deploy(broken_lab)
-    check = diagnostics.verify(broken_lab).checks[0]
+def test_diagnostics_report_where_the_fault_is(broken_lab: Topology, lab_dir: Path) -> None:
+    runner.deploy(broken_lab, lab_dir)
+    check = diagnostics.verify(broken_lab, lab_dir).checks[0]
 
     assert check.collision_domain == "A"
     assert {check.source, check.target} == {"r1", "r2"}
@@ -126,14 +130,14 @@ def test_diagnostics_report_where_the_fault_is(broken_lab: Topology) -> None:
 def test_verifying_before_deploying_explains_itself(tmp_path: Path) -> None:
     topology = two_routers(matching_subnets=True)
     topology.name = "kgui-never-deployed"
-    report = diagnostics.verify(topology)
+    report = diagnostics.verify(topology, tmp_path / "never-written")
 
     assert report.checks == []
     assert report.message is not None
     assert "Deploy it" in report.message
 
 
-def test_unaddressed_links_are_skipped_not_failed() -> None:
+def test_unaddressed_links_are_skipped_not_failed(lab_dir: Path) -> None:
     topology = Topology(
         name="kgui-unaddressed",
         nodes=[
@@ -142,15 +146,15 @@ def test_unaddressed_links_are_skipped_not_failed() -> None:
         ],
     )
     try:
-        runner.deploy(topology)
-        report = diagnostics.verify(topology)
+        runner.deploy(topology, lab_dir)
+        report = diagnostics.verify(topology, lab_dir)
         assert report.skipped == 1
         assert report.failed == 0
     finally:
-        runner.undeploy(topology)
+        runner.undeploy(topology, lab_dir)
 
 
-def test_deploying_nothing_says_so() -> None:
-    status = runner.deploy(Topology(name="kgui-empty"))
+def test_deploying_nothing_says_so(lab_dir: Path) -> None:
+    status = runner.deploy(Topology(name="kgui-empty"), lab_dir)
     assert status.deployed is False
     assert status.message == "There is nothing to deploy."

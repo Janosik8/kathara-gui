@@ -30,6 +30,8 @@ interface Props {
   onDeploy: () => void;
   onUndeploy: () => void;
   onVerify: () => void;
+  /** Routed to the app's live region, so a copy is confirmed audibly too. */
+  onAnnounce?: (message: string) => void;
 }
 
 const DEVICE_STATE: Record<string, { glyph: string; label: string }> = {
@@ -43,6 +45,17 @@ const OUTCOME: Record<string, { glyph: string; label: string }> = {
   fail: { glyph: "✕", label: "Fail" },
   skipped: { glyph: "–", label: "Skipped" },
 };
+
+/**
+ * The command that opens a shell on a device.
+ *
+ * The `cd` is not decoration: Kathará identifies a lab by its directory, so
+ * `kathara connect r1` from anywhere else fails with MachineNotRunningError
+ * even while the container is plainly running.
+ */
+function connectCommand(labDir: string, device: string | undefined): string {
+  return `cd ${labDir} && kathara connect ${device ?? "<device>"}`;
+}
 
 function describeLink(check: LinkCheck): string {
   return (
@@ -62,6 +75,7 @@ export function LabPanel({
   onDeploy,
   onUndeploy,
   onVerify,
+  onAnnounce,
 }: Props) {
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
@@ -111,6 +125,37 @@ export function LabPanel({
       )}
 
       {status?.message && <p className="lab__message">{status.message}</p>}
+
+      {status?.lab_dir && (
+        <div className="lab__location">
+          <h3 className="panel__heading">Lab directory</h3>
+          <p className="lab__path">
+            <code>{status.lab_dir}</code>
+          </p>
+          <p className="field__hint">
+            Open a shell on a device from a terminal:
+          </p>
+          <p className="lab__path">
+            <code>{connectCommand(status.lab_dir, status.running[0])}</code>
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              const command = connectCommand(status.lab_dir!, status.running[0]);
+              try {
+                await navigator.clipboard.writeText(command);
+                onAnnounce?.("Command copied to the clipboard.");
+              } catch {
+                // Clipboard access can be refused; the text is on screen
+                // anyway, so say so rather than failing silently.
+                onAnnounce?.("Could not copy. Select the command above instead.");
+              }
+            }}
+          >
+            Copy command
+          </button>
+        </div>
+      )}
 
       {status && status.devices.length > 0 && (
         <>

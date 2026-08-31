@@ -28,3 +28,6 @@ src/kathara_gui/static/
 
 
 .DS_Store
+
+# Generated labs (see --workspace)
+kathara-labs/

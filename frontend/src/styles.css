@@ -764,3 +764,24 @@ select {
   stroke: var(--accent);
   stroke-width: 2;
 }
+
+.lab__location {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.lab__path {
+  margin: 0 0 6px;
+  overflow-x: auto;
+}
+
+.lab__path code {
+  font: 0.78rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  display: inline-block;
+  white-space: pre;
+}

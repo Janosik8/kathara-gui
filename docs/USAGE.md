@@ -56,6 +56,7 @@ uv run kathara-gui --no-browser     # print the URL instead of opening a browser
 uv run kathara-gui --port 8080      # fixed port instead of an unused one
 uv run kathara-gui --version
 uv run kathara-gui --check          # verify startup and exit; used by CI
+uv run kathara-gui --workspace DIR  # where generated labs go (default ./kathara-labs)
 ```
 
 A fresh port is chosen each run by default, because hardcoding 8000 collides with whatever
@@ -195,7 +196,24 @@ curl -s -X POST -H "X-KGUI-Token: $TOKEN" -H "Content-Type: application/json" \
   http://127.0.0.1:8150/api/topology/import
 ```
 
-Then run it for real:
+### Getting a shell on a running device
+
+Deploying writes the lab to `./kathara-labs/<name>` — beside wherever you started
+`kathara-gui`, and printed at startup. The Laboratory panel shows the exact path and a
+copy-able command once a lab is running.
+
+```bash
+cd kathara-labs/untitled
+kathara connect r1
+```
+
+**The `cd` matters.** Kathará identifies a lab by its directory, so `kathara connect r1`
+from anywhere else fails with `MachineNotRunningError` even while `kathara list` shows the
+device running.
+
+Use `--workspace DIR` to put labs somewhere else.
+
+### Running an exported lab by hand
 
 ```bash
 mkdir mylab && cd mylab

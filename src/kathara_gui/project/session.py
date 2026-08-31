@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 
 from kathara_gui.domain.model import Topology
+from kathara_gui.domain.naming import safe_dir_name
 from kathara_gui.features import Features
 
 
@@ -26,12 +27,33 @@ class Session:
     overlapping writes to a nested model could otherwise interleave.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, workspace_root: Path | None = None) -> None:
         self._lock = threading.RLock()
         self._topology = Topology(name="untitled")
         self._path: Path | None = None
         self._dirty = False
         self._features = Features()
+        # Resolved once, at construction. Re-reading the process's working
+        # directory later would mean the answer could change under us.
+        root = Path(workspace_root) if workspace_root else default_workspace_root()
+        self._workspace_root = root.expanduser().resolve()
+
+    @property
+    def workspace_root(self) -> Path:
+        """Where labs are generated when they have no folder of their own."""
+        return self._workspace_root
+
+    def lab_dir(self) -> Path:
+        """The directory this lab is generated into and deployed from.
+
+        A lab that has been saved somewhere deploys from that folder, so the
+        files the user edits and the files that run are the same ones. An
+        unsaved lab gets a folder in the workspace named after it.
+        """
+        with self._lock:
+            if self._path is not None:
+                return self._path
+            return self._workspace_root / safe_dir_name(self._topology.name)
 
     @property
     def features(self) -> Features:
@@ -85,10 +107,30 @@ class Session:
             return self._topology
 
 
+def default_workspace_root() -> Path:
+    """`kathara-labs` beside wherever the application was launched.
+
+    Deliberately visible rather than hidden in the home directory: Kathará
+    identifies a lab by its directory, so a lab you cannot easily `cd` into is
+    a lab you cannot reach with `kathara connect`.
+    """
+    return Path.cwd() / "kathara-labs"
+
+
 # The application's single session. Injected via a dependency so tests can
 # supply their own rather than mutating global state.
-_session = Session()
+_session: Session | None = None
+
+
+def configure_session(workspace_root: Path | None = None) -> Session:
+    """Create the process-wide session. Called once, at startup."""
+    global _session
+    _session = Session(workspace_root=workspace_root)
+    return _session
 
 
 def get_session() -> Session:
+    global _session
+    if _session is None:
+        _session = Session()
     return _session

@@ -6,6 +6,7 @@ import argparse
 import socket
 import threading
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
@@ -32,10 +33,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=None, help="Port (default: an unused one)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open a browser")
     parser.add_argument("--check", action="store_true", help="Verify startup, then exit")
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="Directory for generated labs (default: ./kathara-labs)",
+    )
     args = parser.parse_args(argv)
 
     port = args.port or _free_port()
-    app = create_app()
+    app = create_app(workspace=args.workspace)
     url = f"http://{HOST}:{port}/?token={app.state.token}"
 
     if args.check:
@@ -45,7 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     # flush matters: stdout is block-buffered when it is not a terminal, so a
     # user piping to a file or a log would never see the URL — and the token in
     # it is the only way to reach the application.
-    print(f"Kathara GUI running at:\n  {url}\n\nPress Ctrl+C to stop.", flush=True)
+    # The workspace is printed because Kathará keys a lab by its directory:
+    # without knowing it, `kathara connect` cannot be used at all.
+    print(
+        f"Kathara GUI running at:\n  {url}\n\n"
+        f"Labs are written to:\n  {app.state.workspace}\n\n"
+        "Press Ctrl+C to stop.",
+        flush=True,
+    )
     if not args.no_browser:
         # Deferred so the server is accepting connections before the tab loads.
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
