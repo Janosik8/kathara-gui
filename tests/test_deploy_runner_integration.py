@@ -158,3 +158,95 @@ def test_deploying_nothing_says_so(lab_dir: Path) -> None:
     status = runner.deploy(Topology(name="kgui-empty"), lab_dir)
     assert status.deployed is False
     assert status.message == "There is nothing to deploy."
+
+
+# -- redeploying over a running lab ------------------------------------
+
+
+def test_deploying_twice_does_not_fail(working_lab: Topology, lab_dir: Path) -> None:
+    """The ordinary working loop: edit, deploy, look, edit, deploy.
+
+    This used to raise MachineAlreadyExistsError straight out of Kathará
+    unless the user remembered to press Stop in between.
+    """
+    runner.deploy(working_lab, lab_dir)
+    status = runner.deploy(working_lab, lab_dir)
+
+    assert sorted(status.running) == ["r1", "r2"]
+    assert status.message is not None
+    assert "Replaced the running lab" in status.message
+
+
+def test_a_redeploy_picks_up_topology_changes(working_lab: Topology, lab_dir: Path) -> None:
+    """Deploying after an edit must actually apply the edit."""
+    runner.deploy(working_lab, lab_dir)
+
+    working_lab.nodes.append(
+        Node(
+            name="r3",
+            image=IMAGE,
+            interfaces=[Interface(number=0, collision_domain="A", ip="172.31.11.3/24")],
+        )
+    )
+    status = runner.deploy(working_lab, lab_dir)
+    assert sorted(status.running) == ["r1", "r2", "r3"]
+
+
+def test_diagnostics_still_work_after_a_redeploy(working_lab: Topology, lab_dir: Path) -> None:
+    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir)
+
+    report = diagnostics.verify(working_lab, lab_dir)
+    assert report.failed == 0
+    assert report.passed == 1
+
+
+def test_a_first_deploy_reports_no_replacement(working_lab: Topology, lab_dir: Path) -> None:
+    # The note should only appear when something was actually torn down.
+    assert runner.deploy(working_lab, lab_dir).message is None
+
+
+def test_a_failure_is_reported_rather_than_raised(lab_dir: Path) -> None:
+    """A bad image must produce a message, not a 500 and a stack trace."""
+    topology = Topology(
+        name="kgui-bad-image",
+        nodes=[
+            Node(
+                name="r1",
+                image="kathara-gui/definitely-not-a-real-image:v0",
+                interfaces=[Interface(number=0, collision_domain="A")],
+            )
+        ],
+    )
+    try:
+        status = runner.deploy(topology, lab_dir)
+        assert status.deployed is False
+        assert status.message is not None
+        assert "Could not deploy" in status.message
+    finally:
+        runner.undeploy(topology, lab_dir)
+
+
+def test_two_labs_with_the_same_device_names_coexist(tmp_path: Path) -> None:
+    """Kathará namespaces containers per lab, so this is not a conflict.
+
+    Worth pinning: it means r1 in one lab and r1 in another are different
+    containers, and stopping one does not touch the other.
+    """
+    one = two_routers(matching_subnets=True)
+    one.name = "kgui-coexist-one"
+    two = two_routers(matching_subnets=True)
+    two.name = "kgui-coexist-two"
+
+    dir_one, dir_two = tmp_path / "one", tmp_path / "two"
+    try:
+        assert sorted(runner.deploy(one, dir_one).running) == ["r1", "r2"]
+        assert sorted(runner.deploy(two, dir_two).running) == ["r1", "r2"]
+
+        # Stopping one leaves the other alone.
+        runner.undeploy(one, dir_one)
+        assert runner.status(one, dir_one).running == []
+        assert sorted(runner.status(two, dir_two).running) == ["r1", "r2"]
+    finally:
+        runner.undeploy(one, dir_one)
+        runner.undeploy(two, dir_two)

@@ -1039,3 +1039,62 @@ describe("finding the lab on disk", () => {
     );
   });
 })
+
+describe("redeploying a running lab", () => {
+  const running: StatusResponse = {
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    deployed: true,
+    lab_dir: "/labs/untitled",
+    message: null,
+  };
+
+  it("names the button for what it will do", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    expect(await screen.findByRole("button", { name: "Deploy" })).toBeInTheDocument();
+
+    deploy.mockResolvedValue(running);
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+
+    // Pressing it again replaces the lab, so it should not still say "Deploy".
+    expect(await screen.findByRole("button", { name: "Redeploy" })).toBeInTheDocument();
+  });
+
+  it("warns that a redeploy loses in-container changes", async () => {
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/Redeploying replaces the running lab/)).toBeInTheDocument();
+  });
+
+  it("stays usable after a redeploy", async () => {
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Redeploy" }));
+
+    expect(deploy).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Redeploy" })).toBeEnabled();
+  });
+
+  it("reports a deploy failure as a message rather than breaking", async () => {
+    // The backend now returns 200 with a reason instead of raising.
+    deploy.mockResolvedValue({
+      devices: [],
+      running: [],
+      deployed: false,
+      lab_dir: null,
+      message: "Could not deploy: image not found",
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/Could not deploy: image not found/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deploy" })).toBeEnabled();
+  });
+})

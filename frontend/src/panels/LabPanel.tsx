@@ -108,7 +108,9 @@ export function LabPanel({
           onClick={onDeploy}
           disabled={!canDeploy || busy !== null || deviceCount === 0}
         >
-          {busy === "deploy" ? "Deploying…" : "Deploy"}
+          {/* Named for what it will do. Deploying over a running lab replaces
+              it, and a button that still said "Deploy" would hide that. */}
+          {busy === "deploy" ? "Deploying…" : deployed ? "Redeploy" : "Deploy"}
         </button>
         <button type="button" onClick={onUndeploy} disabled={busy !== null || !deployed}>
           {busy === "undeploy" ? "Stopping…" : "Stop"}
@@ -122,6 +124,13 @@ export function LabPanel({
 
       {deviceCount === 0 && (
         <p className="field__hint">Add a device before deploying.</p>
+      )}
+
+      {deployed && deviceCount > 0 && (
+        <p className="field__hint">
+          Redeploying replaces the running lab, so anything changed inside a container is
+          lost. Deploy again after editing to apply your changes.
+        </p>
       )}
 
       {status?.message && <p className="lab__message">{status.message}</p>}

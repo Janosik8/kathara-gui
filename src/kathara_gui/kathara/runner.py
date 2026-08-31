@@ -91,26 +91,55 @@ def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
 
 
 def deploy(topology: Topology, lab_dir: Path, *, timeout: float = 180.0) -> LabStatus:
-    """Start every device in ``topology`` and wait for their startup scripts."""
+    """Start every device in ``topology``, replacing the lab if it is running.
+
+    Deploying over a running lab used to raise ``MachineAlreadyExistsError``
+    straight out of Kathará. That made the ordinary working loop — edit,
+    deploy, look, edit again — fail unless the user remembered to press Stop
+    in between, which is exactly the friction this tool exists to remove.
+
+    So a redeploy tears the old lab down first. The containers are rebuilt
+    from the generated files either way, so nothing is preserved across a
+    deploy that would not also be lost on a stop; anything worth keeping
+    should be exported first (Capability 5).
+    """
     if not topology.nodes:
         return LabStatus(message="There is nothing to deploy.")
 
     manager = Kathara.get_instance()
-    lab, directory = _load(topology, lab_dir)
+    notes: list[str] = []
 
-    manager.deploy_lab(lab)
-    message = None
+    existing = status(topology, lab_dir)
+    if existing.deployed:
+        notes.append(f"Replaced the running lab ({len(existing.running)} devices).")
+        undeploy(topology, lab_dir)
+
+    try:
+        lab, directory = _load(topology, lab_dir)
+        manager.deploy_lab(lab)
+    except Exception as exc:  # noqa: BLE001 - surfaced to the user, not raised
+        # Anything Kathará or Docker refuses: an image that cannot be pulled,
+        # a name still held by a container we did not manage to remove. A
+        # readable message beats a 500 and a stack trace.
+        return LabStatus(message=f"Could not deploy: {_reason(exc)}")
+
     try:
         wait_for_lab(manager, lab, timeout=timeout)
     except StartupTimeout as exc:
         # The containers exist; their startup scripts have not finished. Worth
         # reporting, but not worth tearing the lab down over.
-        message = str(exc)
+        notes.append(str(exc))
 
     result = status(topology, lab_dir)
     result.lab_dir = str(directory)
-    result.message = message
+    result.message = " ".join(notes) or None
     return result
+
+
+def _reason(exc: Exception) -> str:
+    """Kathará's own wording where it has one, else the exception text."""
+    text = str(exc).strip()
+    return text or exc.__class__.__name__
 
 
 def undeploy(topology: Topology, lab_dir: Path) -> LabStatus:

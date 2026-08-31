@@ -196,6 +196,18 @@ curl -s -X POST -H "X-KGUI-Token: $TOKEN" -H "Content-Type: application/json" \
   http://127.0.0.1:8150/api/topology/import
 ```
 
+### Redeploying
+
+Pressing **Deploy** while a lab is already running **replaces** it: the old containers are
+stopped and new ones started from the current design. The button says **Redeploy** to make
+that clear, and anything changed inside a container is lost — export first if you need it.
+
+This is the normal working loop. Edit the topology, press Redeploy, look again.
+
+Two labs with the same device names do not conflict. Kathará namespaces containers per
+lab, so `r1` in one lab and `r1` in another are different containers and stopping one does
+not touch the other. `kathara list` shows both; `kathara wipe` removes everything.
+
 ### Getting a shell on a running device
 
 Deploying writes the lab to `./kathara-labs/<name>` — beside wherever you started
