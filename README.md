@@ -11,15 +11,19 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 ## Status
 
-Under development. Phases 0 (integration spike, CI) and 1 (domain model, `lab.conf` codec)
-complete; Phase 2 (topology editor) in progress.
+Under development. Phases 0–3 complete — integration spike and CI, domain model and
+`lab.conf` codec, topology editor, and addressing with conflict detection. Phase 4 (deploy,
+diagnostics, terminal) is in progress: labs deploy and links are verified; the in-app
+terminal is outstanding.
 
+- **[docs/DESIGN.md](docs/DESIGN.md)** — why this application exists, how each capability is
+  served, and the reasoning behind every significant technology choice.
 - **[docs/USAGE.md](docs/USAGE.md)** — how to run it, every command, what the UI can do
   today, keyboard shortcuts, the API, and troubleshooting.
 - **[PLAN.md](PLAN.md)** — development plan, phase status, capability traceability and the
   decision log.
 
-Both are living documents kept in step with the code.
+All three are living documents kept in step with the code.
 
 ## Requirements
 
