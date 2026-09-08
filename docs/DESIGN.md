@@ -155,6 +155,13 @@ returned the stale version, and the editor adopted it, clearing the canvas.
 runs is exactly what an export would produce. If those diverged, a lab that worked in the
 GUI could fail when shared.
 
+**Stopping someone else's work requires consent.** Kathará derives a lab's identity from a
+hash of its *name*, so two labs called `untitled` in different folders are one lab to it.
+From inside a deploy, a routine redeploy and the destruction of an unrelated lab are
+indistinguishable — so the deploy reports the conflict and changes nothing until confirmed.
+A device running under our name but absent from our topology is the signal that another lab
+holds it, and is warned about specifically.
+
 ## 6. How it is verified
 
 Three layers, because each catches what the others cannot:

@@ -19,6 +19,7 @@ from typing import Any
 
 from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
+from Kathara.utils import generate_urlsafe_hash
 
 from kathara_gui.domain.model import Topology
 from kathara_gui.kathara.readiness import StartupTimeout, wait_for_lab
@@ -28,6 +29,8 @@ __all__ = [
     "DeviceState",
     "DeviceStatus",
     "LabStatus",
+    "Conflicts",
+    "find_conflicts",
     "deploy",
     "undeploy",
     "status",
@@ -49,6 +52,36 @@ class DeviceStatus:
     state: DeviceState
 
 
+@dataclass(frozen=True)
+class Conflicts:
+    """Devices already running under the lab name we are about to deploy.
+
+    Kathará identifies a lab by a hash of its **name**, not its directory
+    (``Lab.hash = generate_urlsafe_hash(name)``). Two labs called "untitled" in
+    different folders are therefore the same lab as far as Kathará is
+    concerned, and deploying one stops the other.
+
+    That is why this cannot be resolved automatically: a redeploy of your own
+    lab and a clobbering of somebody else's are indistinguishable from here.
+    Only the user knows which it is, so only the user can decide.
+    """
+
+    lab_name: str
+    #: Running devices whose names are in the topology being deployed.
+    expected: tuple[str, ...] = ()
+    #: Running under this lab name but absent from the topology. A strong hint
+    #: that a *different* lab is using the same name.
+    unexpected: tuple[str, ...] = ()
+
+    @property
+    def exists(self) -> bool:
+        return bool(self.expected or self.unexpected)
+
+    @property
+    def all_devices(self) -> tuple[str, ...]:
+        return tuple(sorted({*self.expected, *self.unexpected}))
+
+
 @dataclass
 class LabStatus:
     """What is running, compared with what the topology says should be.
@@ -61,6 +94,12 @@ class LabStatus:
     devices: list[DeviceStatus] = field(default_factory=list)
     lab_dir: str | None = None
     message: str | None = None
+    #: Set when a deploy stopped to ask. Nothing was changed.
+    conflicts: Conflicts | None = None
+
+    @property
+    def needs_confirmation(self) -> bool:
+        return self.conflicts is not None
 
     @property
     def running(self) -> list[str]:
@@ -73,6 +112,33 @@ class LabStatus:
     @property
     def deployed(self) -> bool:
         return bool(self.running)
+
+
+def find_conflicts(topology: Topology, lab_dir: Path) -> Conflicts:
+    """What is already running under this topology's lab name.
+
+    Computed from the name alone, so nothing is written to disk just to find
+    out whether asking is necessary.
+    """
+    our_hash = generate_urlsafe_hash(topology.name)
+    ours = {node.name for node in topology.nodes}
+
+    running: set[str] = set()
+    try:
+        manager = Kathara.get_instance()
+        for batch in manager.get_machines_stats():
+            for stats in batch.values():
+                if getattr(stats, "lab_hash", None) == our_hash:
+                    running.add(stats.name)
+            break  # the generator re-polls; one snapshot is enough
+    except Exception:  # noqa: BLE001 - no daemon means nothing is running
+        return Conflicts(lab_name=topology.name)
+
+    return Conflicts(
+        lab_name=topology.name,
+        expected=tuple(sorted(running & ours)),
+        unexpected=tuple(sorted(running - ours)),
+    )
 
 
 def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
@@ -90,18 +156,21 @@ def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
     return LabParser.parse(str(directory)), directory
 
 
-def deploy(topology: Topology, lab_dir: Path, *, timeout: float = 180.0) -> LabStatus:
-    """Start every device in ``topology``, replacing the lab if it is running.
+def deploy(
+    topology: Topology, lab_dir: Path, *, confirm: bool = False, timeout: float = 180.0
+) -> LabStatus:
+    """Start every device in ``topology``, after clearing the way if asked.
 
-    Deploying over a running lab used to raise ``MachineAlreadyExistsError``
-    straight out of Kathará. That made the ordinary working loop — edit,
-    deploy, look, edit again — fail unless the user remembered to press Stop
-    in between, which is exactly the friction this tool exists to remove.
+    Deploying over a running lab raises ``MachineAlreadyExistsError`` from
+    Kathará, so something already running has to be stopped first. But
+    stopping it is not always harmless: Kathará keys a lab by a hash of its
+    *name*, so a lab called "untitled" in one folder and another called
+    "untitled" elsewhere are the same lab to it, and "replacing" one destroys
+    the other.
 
-    So a redeploy tears the old lab down first. The containers are rebuilt
-    from the generated files either way, so nothing is preserved across a
-    deploy that would not also be lost on a stop; anything worth keeping
-    should be exported first (Capability 5).
+    With ``confirm=False`` this therefore reports the conflict and changes
+    nothing, leaving the decision to the user. With ``confirm=True`` it stops
+    what is running and deploys.
     """
     if not topology.nodes:
         return LabStatus(message="There is nothing to deploy.")
@@ -109,9 +178,15 @@ def deploy(topology: Topology, lab_dir: Path, *, timeout: float = 180.0) -> LabS
     manager = Kathara.get_instance()
     notes: list[str] = []
 
-    existing = status(topology, lab_dir)
-    if existing.deployed:
-        notes.append(f"Replaced the running lab ({len(existing.running)} devices).")
+    conflicts = find_conflicts(topology, lab_dir)
+    if conflicts.exists and not confirm:
+        # Stop and ask. Replacing could be a routine redeploy or could destroy
+        # a different lab that happens to share this name; we cannot tell.
+        return LabStatus(conflicts=conflicts, lab_dir=str(lab_dir))
+
+    if conflicts.exists:
+        count = len(conflicts.all_devices)
+        notes.append(f"Stopped {count} device{'s' if count != 1 else ''} already running.")
         undeploy(topology, lab_dir)
 
     try:

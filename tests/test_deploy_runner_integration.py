@@ -74,26 +74,26 @@ def broken_lab(lab_dir: Path) -> Iterator[Topology]:
 
 
 def test_deploy_starts_every_device(working_lab: Topology, lab_dir: Path) -> None:
-    status = runner.deploy(working_lab, lab_dir)
+    status = runner.deploy(working_lab, lab_dir, confirm=True)
     assert sorted(status.running) == ["r1", "r2"]
     assert status.deployed is True
 
 
 def test_status_reconciles_against_docker(working_lab: Topology, lab_dir: Path) -> None:
     assert runner.status(working_lab, lab_dir).deployed is False
-    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
     assert runner.status(working_lab, lab_dir).deployed is True
 
 
 def test_undeploy_stops_everything(working_lab: Topology, lab_dir: Path) -> None:
-    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
     status = runner.undeploy(working_lab, lab_dir)
     assert status.running == []
     assert status.deployed is False
 
 
 def test_diagnostics_pass_on_a_correct_link(working_lab: Topology, lab_dir: Path) -> None:
-    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
     report = diagnostics.verify(working_lab, lab_dir)
 
     assert report.failed == 0
@@ -111,7 +111,7 @@ def test_diagnostics_catch_a_link_that_looks_configured_but_is_not(
     configuration looks wrong — but the two ends are on different networks and
     cannot reach each other.
     """
-    runner.deploy(broken_lab, lab_dir)
+    runner.deploy(broken_lab, lab_dir, confirm=True)
     report = diagnostics.verify(broken_lab, lab_dir)
 
     assert report.failed == 1
@@ -120,7 +120,7 @@ def test_diagnostics_catch_a_link_that_looks_configured_but_is_not(
 
 
 def test_diagnostics_report_where_the_fault_is(broken_lab: Topology, lab_dir: Path) -> None:
-    runner.deploy(broken_lab, lab_dir)
+    runner.deploy(broken_lab, lab_dir, confirm=True)
     check = diagnostics.verify(broken_lab, lab_dir).checks[0]
 
     assert check.collision_domain == "A"
@@ -146,7 +146,7 @@ def test_unaddressed_links_are_skipped_not_failed(lab_dir: Path) -> None:
         ],
     )
     try:
-        runner.deploy(topology, lab_dir)
+        runner.deploy(topology, lab_dir, confirm=True)
         report = diagnostics.verify(topology, lab_dir)
         assert report.skipped == 1
         assert report.failed == 0
@@ -155,7 +155,7 @@ def test_unaddressed_links_are_skipped_not_failed(lab_dir: Path) -> None:
 
 
 def test_deploying_nothing_says_so(lab_dir: Path) -> None:
-    status = runner.deploy(Topology(name="kgui-empty"), lab_dir)
+    status = runner.deploy(Topology(name="kgui-empty"), lab_dir, confirm=True)
     assert status.deployed is False
     assert status.message == "There is nothing to deploy."
 
@@ -169,17 +169,17 @@ def test_deploying_twice_does_not_fail(working_lab: Topology, lab_dir: Path) -> 
     This used to raise MachineAlreadyExistsError straight out of Kathará
     unless the user remembered to press Stop in between.
     """
-    runner.deploy(working_lab, lab_dir)
-    status = runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
+    status = runner.deploy(working_lab, lab_dir, confirm=True)
 
     assert sorted(status.running) == ["r1", "r2"]
     assert status.message is not None
-    assert "Replaced the running lab" in status.message
+    assert "Stopped 2 devices already running" in status.message
 
 
 def test_a_redeploy_picks_up_topology_changes(working_lab: Topology, lab_dir: Path) -> None:
     """Deploying after an edit must actually apply the edit."""
-    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
 
     working_lab.nodes.append(
         Node(
@@ -188,13 +188,13 @@ def test_a_redeploy_picks_up_topology_changes(working_lab: Topology, lab_dir: Pa
             interfaces=[Interface(number=0, collision_domain="A", ip="172.31.11.3/24")],
         )
     )
-    status = runner.deploy(working_lab, lab_dir)
+    status = runner.deploy(working_lab, lab_dir, confirm=True)
     assert sorted(status.running) == ["r1", "r2", "r3"]
 
 
 def test_diagnostics_still_work_after_a_redeploy(working_lab: Topology, lab_dir: Path) -> None:
-    runner.deploy(working_lab, lab_dir)
-    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir, confirm=True)
+    runner.deploy(working_lab, lab_dir, confirm=True)
 
     report = diagnostics.verify(working_lab, lab_dir)
     assert report.failed == 0
@@ -203,7 +203,7 @@ def test_diagnostics_still_work_after_a_redeploy(working_lab: Topology, lab_dir:
 
 def test_a_first_deploy_reports_no_replacement(working_lab: Topology, lab_dir: Path) -> None:
     # The note should only appear when something was actually torn down.
-    assert runner.deploy(working_lab, lab_dir).message is None
+    assert runner.deploy(working_lab, lab_dir, confirm=True).message is None
 
 
 def test_a_failure_is_reported_rather_than_raised(lab_dir: Path) -> None:
@@ -219,7 +219,7 @@ def test_a_failure_is_reported_rather_than_raised(lab_dir: Path) -> None:
         ],
     )
     try:
-        status = runner.deploy(topology, lab_dir)
+        status = runner.deploy(topology, lab_dir, confirm=True)
         assert status.deployed is False
         assert status.message is not None
         assert "Could not deploy" in status.message
@@ -227,11 +227,12 @@ def test_a_failure_is_reported_rather_than_raised(lab_dir: Path) -> None:
         runner.undeploy(topology, lab_dir)
 
 
-def test_two_labs_with_the_same_device_names_coexist(tmp_path: Path) -> None:
-    """Kathará namespaces containers per lab, so this is not a conflict.
+def test_labs_with_different_names_coexist(tmp_path: Path) -> None:
+    """Different *lab names* coexist, even with identical device names.
 
-    Worth pinning: it means r1 in one lab and r1 in another are different
-    containers, and stopping one does not touch the other.
+    Note what this does and does not say. Kathará keys a lab by a hash of its
+    name, not its directory, so this holds only because the two labs are named
+    differently — see the same-name test below, which behaves very differently.
     """
     one = two_routers(matching_subnets=True)
     one.name = "kgui-coexist-one"
@@ -240,8 +241,8 @@ def test_two_labs_with_the_same_device_names_coexist(tmp_path: Path) -> None:
 
     dir_one, dir_two = tmp_path / "one", tmp_path / "two"
     try:
-        assert sorted(runner.deploy(one, dir_one).running) == ["r1", "r2"]
-        assert sorted(runner.deploy(two, dir_two).running) == ["r1", "r2"]
+        assert sorted(runner.deploy(one, dir_one, confirm=True).running) == ["r1", "r2"]
+        assert sorted(runner.deploy(two, dir_two, confirm=True).running) == ["r1", "r2"]
 
         # Stopping one leaves the other alone.
         runner.undeploy(one, dir_one)
@@ -250,3 +251,92 @@ def test_two_labs_with_the_same_device_names_coexist(tmp_path: Path) -> None:
     finally:
         runner.undeploy(one, dir_one)
         runner.undeploy(two, dir_two)
+
+
+# -- asking before stopping something ----------------------------------
+
+
+def test_a_first_deploy_needs_no_confirmation(working_lab: Topology, lab_dir: Path) -> None:
+    """Nothing is running, so there is nothing to ask about."""
+    status = runner.deploy(working_lab, lab_dir)
+    assert status.needs_confirmation is False
+    assert sorted(status.running) == ["r1", "r2"]
+
+
+def test_deploying_over_a_running_lab_asks_first(
+    working_lab: Topology, lab_dir: Path
+) -> None:
+    runner.deploy(working_lab, lab_dir)
+    status = runner.deploy(working_lab, lab_dir)
+
+    assert status.needs_confirmation is True
+    assert status.conflicts is not None
+    assert sorted(status.conflicts.expected) == ["r1", "r2"]
+
+
+def test_asking_changes_nothing(working_lab: Topology, lab_dir: Path) -> None:
+    """The point of asking is that the lab is still there afterwards."""
+    runner.deploy(working_lab, lab_dir)
+    runner.deploy(working_lab, lab_dir)  # refused, awaiting confirmation
+
+    assert sorted(runner.status(working_lab, lab_dir).running) == ["r1", "r2"]
+
+
+def test_confirming_stops_and_redeploys(working_lab: Topology, lab_dir: Path) -> None:
+    runner.deploy(working_lab, lab_dir)
+    status = runner.deploy(working_lab, lab_dir, confirm=True)
+
+    assert status.needs_confirmation is False
+    assert sorted(status.running) == ["r1", "r2"]
+    assert status.message is not None
+    assert "Stopped 2 devices" in status.message
+
+
+def test_a_different_lab_sharing_the_name_is_reported_as_unexpected(
+    tmp_path: Path,
+) -> None:
+    """The case that makes confirmation necessary rather than merely polite.
+
+    Kathará hashes the lab *name*, so two labs called "untitled" in different
+    folders are one lab to it. Deploying the second would destroy the first,
+    and from inside a deploy that is indistinguishable from a redeploy.
+
+    A device running under our name that is *not* in our topology is the
+    signal that something else is using it.
+    """
+    first = Topology(
+        name="kgui-shared-name",
+        nodes=[
+            Node(
+                name="alpha",
+                image=IMAGE,
+                interfaces=[Interface(number=0, collision_domain="A", ip="10.7.7.1/24")],
+            )
+        ],
+    )
+    second = Topology(
+        name="kgui-shared-name",  # same name, different folder and devices
+        nodes=[
+            Node(
+                name="beta",
+                image=IMAGE,
+                interfaces=[Interface(number=0, collision_domain="A", ip="10.7.7.2/24")],
+            )
+        ],
+    )
+
+    try:
+        runner.deploy(first, tmp_path / "one")
+        status = runner.deploy(second, tmp_path / "two")
+
+        assert status.needs_confirmation is True
+        assert status.conflicts is not None
+        # `alpha` is not in the second topology, so it can only be another lab.
+        assert status.conflicts.unexpected == ("alpha",)
+        assert status.conflicts.expected == ()
+
+        # And it is still running, because we asked instead of assuming.
+        assert runner.status(first, tmp_path / "one").running == ["alpha"]
+    finally:
+        runner.undeploy(first, tmp_path / "one")
+        runner.undeploy(second, tmp_path / "two")

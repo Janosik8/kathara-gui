@@ -124,12 +124,22 @@ export interface DeviceStatus {
   state: DeviceState;
 }
 
+export interface Conflicts {
+  lab_name: string;
+  /** Running devices that are also in the topology being deployed. */
+  expected: string[];
+  /** Running under this lab name but absent from it — probably another lab. */
+  unexpected: string[];
+}
+
 export interface StatusResponse {
   devices: DeviceStatus[];
   running: string[];
   deployed: boolean;
   lab_dir: string | null;
   message: string | null;
+  needs_confirmation: boolean;
+  conflicts: Conflicts | null;
 }
 
 export type LinkOutcome = "pass" | "fail" | "skipped";
@@ -218,10 +228,14 @@ export const api = {
       body: JSON.stringify({ topology }),
     }),
 
-  deploy: (topology: Topology) =>
+  /**
+   * `confirm` stops whatever is already running under this lab name. Without
+   * it the server reports the conflict and changes nothing.
+   */
+  deploy: (topology: Topology, confirm = false) =>
     request<StatusResponse>("/api/lab/deploy", {
       method: "POST",
-      body: JSON.stringify({ topology }),
+      body: JSON.stringify({ topology, confirm }),
     }),
 
   undeploy: (topology: Topology) =>

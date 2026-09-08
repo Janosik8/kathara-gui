@@ -40,16 +40,34 @@ class DeviceStatusModel(BaseModel):
     state: str
 
 
+class ConflictsModel(BaseModel):
+    lab_name: str
+    expected: list[str]
+    unexpected: list[str]
+
+
 class StatusResponse(BaseModel):
     devices: list[DeviceStatusModel]
     running: list[str]
     deployed: bool
     lab_dir: str | None = None
     message: str | None = None
+    needs_confirmation: bool = False
+    conflicts: ConflictsModel | None = None
 
 
 class TopologyRequest(BaseModel):
     topology: Topology
+
+
+class DeployRequest(TopologyRequest):
+    confirm: bool = Field(
+        default=False,
+        description=(
+            "Stop whatever is already running under this lab name and deploy anyway. "
+            "Without it, a conflict is reported and nothing is changed."
+        ),
+    )
 
 
 class LinkCheckModel(BaseModel):
@@ -79,6 +97,16 @@ def _status_response(status: runner.LabStatus) -> StatusResponse:
         deployed=status.deployed,
         lab_dir=status.lab_dir,
         message=status.message,
+        needs_confirmation=status.needs_confirmation,
+        conflicts=(
+            ConflictsModel(
+                lab_name=status.conflicts.lab_name,
+                expected=list(status.conflicts.expected),
+                unexpected=list(status.conflicts.unexpected),
+            )
+            if status.conflicts
+            else None
+        ),
     )
 
 
@@ -110,11 +138,16 @@ def lab_status(
 
 @router.post("/deploy", response_model=StatusResponse)
 def deploy(
-    request: TopologyRequest, session: Session = Depends(get_session)
+    request: DeployRequest, session: Session = Depends(get_session)
 ) -> StatusResponse:
     # The session decides where the lab lives, so deploy and verify always
     # agree on the directory Kathará keys the lab by.
-    result = runner.deploy(request.topology, session.lab_dir())
+    result = runner.deploy(request.topology, session.lab_dir(), confirm=request.confirm)
+
+    if result.needs_confirmation:
+        # Nothing was changed, so the session must not be updated either.
+        return _status_response(result)
+
     # Deploying makes this topology the one on disk, so adopt it as the
     # session's — otherwise a later save could overwrite what is running.
     session.replace(request.topology, dirty=False)

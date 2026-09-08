@@ -47,6 +47,8 @@ const { MockApiError, checkAddressing, allocateAddressing, probe, features, depl
     deployed: false,
     lab_dir: null,
     message: null,
+    needs_confirmation: false,
+    conflicts: null,
   });
   return {
     MockApiError,
@@ -118,6 +120,8 @@ vi.mock("./api/client", () => ({
       deployed: false,
       lab_dir: null,
       message: null,
+      needs_confirmation: false,
+      conflicts: null,
     })),
   },
   initialiseToken: vi.fn(),
@@ -139,6 +143,8 @@ beforeEach(() => {
     deployed: false,
     lab_dir: null,
     message: null,
+    needs_confirmation: false,
+    conflicts: null,
   };
   probe.mockReset().mockResolvedValue({ checks: [], can_deploy: true });
   features.mockReset().mockResolvedValue({
@@ -814,6 +820,8 @@ describe("deploying and verifying", () => {
     deployed: true,
     lab_dir: "/tmp/lab",
     message: null,
+    needs_confirmation: false,
+    conflicts: null,
   };
 
   it("will not deploy an empty topology", async () => {
@@ -974,6 +982,8 @@ describe("finding the lab on disk", () => {
     deployed: true,
     lab_dir: dir,
     message: null,
+    needs_confirmation: false,
+    conflicts: null,
   });
 
   it("shows nothing about a directory before anything is deployed", async () => {
@@ -1047,6 +1057,8 @@ describe("redeploying a running lab", () => {
     deployed: true,
     lab_dir: "/labs/untitled",
     message: null,
+    needs_confirmation: false,
+    conflicts: null,
   };
 
   it("names the button for what it will do", async () => {
@@ -1089,6 +1101,8 @@ describe("redeploying a running lab", () => {
       deployed: false,
       lab_dir: null,
       message: "Could not deploy: image not found",
+      needs_confirmation: false,
+      conflicts: null,
     });
     const user = await renderApp();
     await addRouter(user);
@@ -1096,5 +1110,97 @@ describe("redeploying a running lab", () => {
 
     expect(await screen.findByText(/Could not deploy: image not found/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deploy" })).toBeEnabled();
+  });
+})
+
+describe("confirming before stopping a running lab", () => {
+  const conflicted = (expected: string[], unexpected: string[]): StatusResponse => ({
+    devices: [],
+    running: [],
+    deployed: false,
+    lab_dir: "/labs/untitled",
+    message: null,
+    needs_confirmation: true,
+    conflicts: { lab_name: "untitled", expected, unexpected },
+  });
+
+  const deployed: StatusResponse = {
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    deployed: true,
+    lab_dir: "/labs/untitled",
+    message: "Stopped 1 device already running.",
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  it("asks instead of deploying when something is already running", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText(/already running/i)).toBeInTheDocument();
+  });
+
+  it("does not send confirm on the first attempt", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(deploy).toHaveBeenLastCalledWith(expect.anything(), false);
+  });
+
+  it("warns hard when another lab is using the name", async () => {
+    // Kathará keys a lab by its name, so this would stop somebody else's lab.
+    deploy.mockResolvedValue(conflicted([], ["alpha", "beta"]));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/another lab is probably using it/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Renaming this lab avoids the clash/)).toBeInTheDocument();
+  });
+
+  it("deploys with confirm once the user agrees", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    deploy.mockResolvedValue(deployed);
+    await user.click(
+      await screen.findByRole("button", { name: "Stop them and deploy" }),
+    );
+
+    expect(deploy).toHaveBeenLastCalledWith(expect.anything(), true);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("cancelling changes nothing and says so", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    // One call only: the cancel must not have deployed anything.
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
+  });
+
+  it("has no axe violations while asking", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], ["alpha"]));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByRole("alertdialog");
+
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 })

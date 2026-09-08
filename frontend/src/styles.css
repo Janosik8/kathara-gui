@@ -785,3 +785,28 @@ select {
   display: inline-block;
   white-space: pre;
 }
+
+/* A blocking question, not a toast: it must be read before continuing. */
+.confirm {
+  border: 2px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 0.88rem;
+}
+
+.confirm__heading {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+}
+
+.confirm p {
+  margin: 0 0 6px;
+}
+
+.confirm__warning {
+  border-left: 4px solid var(--danger);
+  padding-left: 8px;
+  color: var(--fg);
+}

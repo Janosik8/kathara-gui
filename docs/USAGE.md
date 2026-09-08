@@ -204,9 +204,16 @@ that clear, and anything changed inside a container is lost — export first if 
 
 This is the normal working loop. Edit the topology, press Redeploy, look again.
 
-Two labs with the same device names do not conflict. Kathará namespaces containers per
-lab, so `r1` in one lab and `r1` in another are different containers and stopping one does
-not touch the other. `kathara list` shows both; `kathara wipe` removes everything.
+**Kathará identifies a lab by its name, not its folder.** `Lab.hash` is derived from
+`LAB_NAME`, so two labs both called `untitled` in different directories are *the same lab*
+to Kathará — deploying one stops the other.
+
+Because of that, deploying when something is already running under the same lab name asks
+first, listing what will be stopped. If a device is running under your lab name that is not
+in your topology, another lab is probably using the name, and the warning says so.
+**Renaming your lab is the reliable fix**: distinct names get distinct containers.
+
+`kathara list` shows everything running; `kathara wipe` removes it all.
 
 ### Getting a shell on a running device
 

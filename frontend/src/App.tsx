@@ -5,6 +5,7 @@ import {
   type AddressingIssue,
   ApiError,
   type DiagnosticsResponse,
+  type Conflicts,
   type EnvironmentCheck,
   type StatusResponse,
   api,
@@ -86,6 +87,7 @@ export default function App() {
   const [canDeploy, setCanDeploy] = useState(false);
   const [canVerify, setCanVerify] = useState(true);
   const [labBusy, setLabBusy] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<Conflicts | null>(null);
 
   const canConnect = topology.nodes.length >= 2;
 
@@ -312,14 +314,25 @@ export default function App() {
   }, []);
 
   const runLabAction = useCallback(
-    async (action: "deploy" | "undeploy" | "verify") => {
+    async (action: "deploy" | "undeploy" | "verify", confirm = false) => {
       setLabBusy(action);
       try {
         if (action === "verify") {
           setDiagnostics(await api.verify(topology));
         } else {
           const result =
-            action === "deploy" ? await api.deploy(topology) : await api.undeploy(topology);
+            action === "deploy"
+              ? await api.deploy(topology, confirm)
+              : await api.undeploy(topology);
+
+          if (result.needs_confirmation) {
+            // Nothing was changed, so the last known status still holds.
+            setConflicts(result.conflicts);
+            setNotice("Something is already running under this lab name.");
+            return;
+          }
+
+          setConflicts(null);
           setLabStatus(result);
           // A previous run's results describe a lab that is no longer there.
           setDiagnostics(null);
@@ -525,6 +538,12 @@ export default function App() {
             onDeploy={() => runLabAction("deploy")}
             onUndeploy={() => runLabAction("undeploy")}
             onVerify={() => runLabAction("verify")}
+            conflicts={conflicts}
+            onConfirmDeploy={() => runLabAction("deploy", true)}
+            onCancelDeploy={() => {
+              setConflicts(null);
+              setNotice("Deployment cancelled. Nothing was changed.");
+            }}
             onAnnounce={setNotice}
           />
         </aside>

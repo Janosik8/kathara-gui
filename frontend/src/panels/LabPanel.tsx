@@ -12,6 +12,7 @@
  */
 
 import type {
+  Conflicts,
   DeviceStatus,
   DiagnosticsResponse,
   EnvironmentCheck,
@@ -30,6 +31,11 @@ interface Props {
   onDeploy: () => void;
   onUndeploy: () => void;
   onVerify: () => void;
+  /** Deploy anyway, stopping whatever is already running. */
+  onConfirmDeploy: () => void;
+  onCancelDeploy: () => void;
+  /** Set when the server refused to deploy without being asked. */
+  conflicts: Conflicts | null;
   /** Routed to the app's live region, so a copy is confirmed audibly too. */
   onAnnounce?: (message: string) => void;
 }
@@ -75,6 +81,9 @@ export function LabPanel({
   onDeploy,
   onUndeploy,
   onVerify,
+  onConfirmDeploy,
+  onCancelDeploy,
+  conflicts,
   onAnnounce,
 }: Props) {
   const blockers = environment.filter((c) => c.status === "blocked");
@@ -100,6 +109,48 @@ export function LabPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {conflicts && (
+        // Deliberately blocking: Kathará keys a lab by a hash of its *name*,
+        // so "replace" may be a routine redeploy or may destroy a different
+        // lab that happens to share the name. Only the user can tell.
+        <div className="confirm" role="alertdialog" aria-labelledby="confirm-heading">
+          <h3 className="confirm__heading" id="confirm-heading">
+            Something is already running
+          </h3>
+
+          <p>
+            {conflicts.expected.length + conflicts.unexpected.length} device(s) are running
+            under the lab name <strong>{conflicts.lab_name}</strong>. Deploying will stop
+            them first.
+          </p>
+
+          {conflicts.expected.length > 0 && (
+            <p className="field__hint">
+              From this topology: {conflicts.expected.join(", ")}.
+            </p>
+          )}
+
+          {conflicts.unexpected.length > 0 && (
+            <p className="confirm__warning">
+              <strong>Warning:</strong> {conflicts.unexpected.join(", ")}{" "}
+              {conflicts.unexpected.length === 1 ? "is" : "are"} running under this name but
+              not in your topology, so another lab is probably using it. Kathará identifies a
+              lab by its name, so continuing will stop that lab too. Renaming this lab avoids
+              the clash.
+            </p>
+          )}
+
+          <div className="lab__actions">
+            <button type="button" onClick={onConfirmDeploy} disabled={busy !== null}>
+              {busy === "deploy" ? "Deploying…" : "Stop them and deploy"}
+            </button>
+            <button type="button" onClick={onCancelDeploy} disabled={busy !== null}>
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="lab__actions">
