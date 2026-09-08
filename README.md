@@ -16,6 +16,8 @@ Under development. Phases 0–3 complete — integration spike and CI, domain mo
 diagnostics, terminal) is in progress: labs deploy and links are verified; the in-app
 terminal is outstanding.
 
+- **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
+  will not do, with current status against each item.
 - **[docs/DESIGN.md](docs/DESIGN.md)** — why this application exists, how each capability is
   served, and the reasoning behind every significant technology choice.
 - **[docs/USAGE.md](docs/USAGE.md)** — how to run it, every command, what the UI can do
@@ -23,7 +25,7 @@ terminal is outstanding.
 - **[PLAN.md](PLAN.md)** — development plan, phase status, capability traceability and the
   decision log.
 
-All three are living documents kept in step with the code.
+All four are living documents kept in step with the code.
 
 ## Requirements
 

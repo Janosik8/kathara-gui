@@ -100,6 +100,15 @@ there is no equivalent audit tooling, and "we followed WCAG" becomes an unverifi
 A second benefit: users get *their* assistive technology, not whatever a bundled toolkit
 happens to support.
 
+A third follows from the split itself. Because the interface is a client rather than the
+program, the backend need not run on the same machine as the browser — it could sit on a
+university server with students connecting over the network. A monolithic desktop
+application cannot offer this at all, since interface and logic are one process on one
+machine. This implementation binds loopback, because a server that executes commands inside
+containers requires authentication and transport security before being exposed; but the
+capability is a property of the architecture, and it is the clearest avenue for future
+development.
+
 *Rejected:* PySide6/Tkinter. Single language and trivial packaging, but the canvas would be
 hand-built, the terminal and PDF viewer painful, and the accessibility claim unevidenced.
 
@@ -192,13 +201,48 @@ would need, chosen now so that adding either later is additive.
 
 ### Where this sits against existing tools
 
+The starting point was not an empty field. The **Netkit Lab Generator**, linked from
+Kathará's own site, already generates labs through a graphical interface, and it was
+evaluated hands-on before this project's requirements were fixed. Its limitations are the
+main source of those requirements, so it is worth setting out properly rather than
+dismissing.
+
+**What it does well.** The forms are clear and well structured: for anyone who has used
+Kathará, there is no doubt what belongs in each field. Interfaces, addresses and gateways
+are entered directly and written into the generated `.startup` files. Routing protocols —
+RIP, OSPF, BGP — are enabled with a single tick under *Additional functions*, which is a
+genuinely efficient way to handle a common need.
+
+**Where it falls short**, and what each shortcoming became here:
+
+| Observed limitation | Requirement it produced |
+|---|---|
+| Interaction is entirely form-based; the forms are dense, and building a topology means filling fields rather than drawing | **FR-02** — connect devices by direct interaction, not by describing them |
+| Topology and addressing plan are entangled in one form, *all in one* | Addressing is a separate, optional assistant (**FR-06**, **FR-07**) that can be withdrawn for an exam (**FR-27**) |
+| **Existing labs cannot be imported.** It is a generator of new files, not a tool for working with labs that already exist | **FR-11**, **FR-12** — import and export must be first-class, and reach the interface |
+| Two export routes exist, but only one produces something the tool can read back | **FR-13** — a round trip must not lose anything, including options the model does not interpret |
+| The topology preview stays blank until enough fields are filled, so the drawing follows the form rather than leading it | **FR-01**, **FR-30** — the diagram is the document, and its layout persists |
+| No connection to Docker at all: the output is a ZIP the user must unpack and start by hand | **FR-16**, **FR-17** — deploy and stop from the application |
+| No way to recover configuration typed inside a running container | **FR-24** — pull running configuration back out |
+| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-15**, **FR-21** — iterate on a saved project, derive variants, and be told when the canvas has drifted from what is deployed |
+
+The last is the important one. The tool is not *wrong*; it simply assumes a scenario is
+written once. The observed reality — an exam judged too easy, a link that creates an
+unintended loop, a lab extended the following week — is that a scenario is rewritten
+repeatedly, and that is where the time goes.
+
+**The other tools** each cover a different part of the ground:
+
 | Tool | Does | Doesn't |
 |---|---|---|
-| Netkit-Lab-Generator (official) | form-based config, topology preview | no drag-drop, no deploy, no config retrieval |
-| NetGUI-Kathará | topology design | no live state |
-| Katharsis | start/stop labs, container shell | no editor |
-| net-vis | parses `lab.conf` to a diagram | read-only |
+| NetGUI-Kathará | topology design, 3D visualisation export | no live state, no deployment loop |
+| Katharsis | start and stop labs, shell into containers | no editor |
+| net-vis | renders an existing `lab.conf` as a diagram | read-only |
 
-Each covers part of the ground. None combines visual editing, one-click deployment, live
-configuration extraction and accessibility — and it is the combination, closing the loop from
-idea to running network and back, that this work contributes.
+Katharsis and net-vis are each roughly one half of what is needed — running a lab, or
+drawing one — without the other.
+
+**The gap.** No existing tool combines visual editing, one-click deployment, extraction of
+live configuration and accessibility. It is the combination that matters: closing the loop
+from an idea to a running network and back again, rather than serving one point on that
+path. That combination is what this work contributes.
