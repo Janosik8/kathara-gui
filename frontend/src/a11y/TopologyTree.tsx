@@ -32,6 +32,8 @@ interface Props {
   /** `additive` extends the selection rather than replacing it. */
   onSelect: (name: string, additive: boolean) => void;
   onRemove?: (name: string) => void;
+  /** Delete on an interface row: the keyboard route to removing a link. */
+  onDisconnect?: (device: string, number: number) => void;
 }
 
 type Row =
@@ -80,6 +82,7 @@ export function TopologyTree({
   onSelectCollisionDomain,
   onSelect,
   onRemove,
+  onDisconnect,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
@@ -189,9 +192,13 @@ export function TopologyTree({
 
       case "Delete":
       case "Backspace":
-        if (row.kind === "device" && onRemove) {
-          event.preventDefault();
-          onRemove(row.node.name);
+        event.preventDefault();
+        if (row.kind === "device") {
+          onRemove?.(row.node.name);
+        } else {
+          // Removing a link without a pointer: the canvas route needs a click.
+          const iface = row.node.interfaces[row.index];
+          if (iface) onDisconnect?.(row.node.name, iface.number);
         }
         return;
     }

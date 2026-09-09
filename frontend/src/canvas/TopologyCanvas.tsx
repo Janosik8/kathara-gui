@@ -22,11 +22,19 @@ import {
   type Node as FlowNode,
   type NodeChange,
   ReactFlow,
+  ReactFlowProvider,
   applyNodeChanges,
+  useUpdateNodeInternals,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PendingEnd, Topology } from "../types";
+import { DeviceNode } from "./DeviceNode";
+import { type Placement, computePlacements } from "./layout";
+
+// Registered outside the component: a new object each render would remount
+// every node and lose their measurements.
+const NODE_TYPES = { device: DeviceNode };
 
 interface Props {
   topology: Topology;
@@ -40,6 +48,12 @@ interface Props {
    * itself when only two devices share it and there is no node to click.
    */
   onSelectCollisionDomain?: (name: string) => void;
+  /** A link was clicked outside connect mode, so it becomes the selection. */
+  onSelectLink?: (collisionDomain: string | null) => void;
+  /** The link currently selected, if any. */
+  selectedLink?: string | null;
+  /** True while connect mode is on, when a click means "pick an end" instead. */
+  connectMode?: boolean;
 }
 
 /**
@@ -64,6 +78,36 @@ export function mergeMeasurements(
   }));
 }
 
+/**
+ * A fingerprint of where every handle currently sits.
+ *
+ * React Flow caches the measured bounds of each handle. Those bounds go stale
+ * whenever a handle appears, disappears **or moves** — and handles move here
+ * whenever the geometry changes, since an interface sits on the face pointing
+ * at its peer. A stale bound leaves the edge drawn to the old spot, which is
+ * why a freshly made link looked misaligned until the node was dragged.
+ *
+ * Deliberately covers side and offset but not node position: dragging must
+ * not force a re-measure on every frame.
+ *
+ * Computed from the *rendered* nodes rather than the topology, so it changes
+ * only once the DOM actually carries the new placements. Measuring earlier
+ * would measure the previous layout.
+ */
+export function placementSignature(nodes: readonly FlowNode[]): string {
+  return nodes
+    .map((node) => {
+      const placements = (node.data as { placements?: Map<number, Placement> })?.placements;
+      if (!placements) return node.id;
+      const handles = [...placements.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([number, p]) => `${number}${p.position}${p.offset}`)
+        .join(",");
+      return `${node.id}[${handles}]`;
+    })
+    .join("|");
+}
+
 /** Where to place a collision-domain node: the centroid of its members. */
 function centroid(points: { x: number; y: number }[]): { x: number; y: number } {
   if (points.length === 0) return { x: 0, y: 0 };
@@ -71,24 +115,37 @@ function centroid(points: { x: number; y: number }[]): { x: number; y: number } 
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-export function TopologyCanvas({
+function CanvasInner({
   topology,
   selected,
   pending,
   onSelect,
   onMove,
   onSelectCollisionDomain,
+  onSelectLink,
+  selectedLink,
+  connectMode,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
 
   const { nodes: derivedNodes, edges } = useMemo(() => {
+    // Interfaces sit on the face pointing at whatever they connect to, so a
+    // link leaves in the direction it actually travels.
+    const placements = computePlacements(topology);
+
     const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
+      type: "device",
       position: node.position,
       selected: selected.includes(node.name),
-      data: { label: `${node.name}\n${node.kind}` },
-      className: `device device--${node.kind}${node.name === pendingDevice ? " device--pending" : ""}`,
+      data: {
+        label: node.name,
+        kind: node.kind,
+        interfaces: [...node.interfaces].sort((a, b) => a.number - b.number),
+        placements: placements.get(node.name) ?? new Map(),
+        pending: node.name === pendingDevice,
+      },
     }));
 
     const flowEdges: Edge[] = [];
@@ -107,11 +164,17 @@ export function TopologyCanvas({
           id: `cd:${cd.name}`,
           source: a.node.name,
           target: b.node.name,
+          // Terminate at the interface actually in use, so the diagram shows
+          // which port a link enters.
+          sourceHandle: `eth${a.iface.number}`,
+          targetHandle: `eth${b.iface.number}`,
           label: cd.subnet ? `${cd.name} · ${cd.subnet}` : cd.name,
           // Carried in data so a click can resolve the domain without
           // having to parse it back out of the id.
           data: { collisionDomain: cd.name },
-          className: `link${cd.name === pendingDomain ? " link--pending" : ""}`,
+          className: `link${cd.name === pendingDomain ? " link--pending" : ""}${
+            cd.name === selectedLink ? " link--selected" : ""
+          }`,
         });
         continue;
       }
@@ -132,14 +195,17 @@ export function TopologyCanvas({
           id: `${hubId}->${member.node.name}:${member.iface.number}`,
           source: member.node.name,
           target: hubId,
+          sourceHandle: `eth${member.iface.number}`,
           data: { collisionDomain: cd.name },
-          className: `link${cd.name === pendingDomain ? " link--pending" : ""}`,
+          className: `link${cd.name === pendingDomain ? " link--pending" : ""}${
+            cd.name === selectedLink ? " link--selected" : ""
+          }`,
         });
       }
     }
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [topology, selected, pendingDevice, pendingDomain]);
+  }, [topology, selected, pendingDevice, pendingDomain, selectedLink]);
 
   /**
    * React Flow's own view of the nodes.
@@ -155,6 +221,18 @@ export function TopologyCanvas({
   useEffect(() => {
     setNodes((current) => mergeMeasurements(derivedNodes, current));
   }, [derivedNodes]);
+
+  // Re-measure whenever a handle appears, disappears or moves. Keyed off the
+  // rendered nodes so the DOM already carries the new placements.
+  const updateNodeInternals = useUpdateNodeInternals();
+  const signature = useMemo(() => placementSignature(nodes), [nodes]);
+
+  useEffect(() => {
+    for (const node of nodes) updateNodeInternals(node.id);
+    // `signature` is the real dependency; `nodes` changes on every drag frame
+    // and re-measuring then would be pure waste.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, updateNodeInternals]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -176,6 +254,7 @@ export function TopologyCanvas({
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
         onNodeClick={(event, node) => {
           const domain = node.data?.collisionDomain;
@@ -183,12 +262,18 @@ export function TopologyCanvas({
           else onSelect(node.id, event.ctrlKey || event.metaKey);
         }}
         onEdgeClick={(_, edge) => {
-          // A two-device domain has no node of its own, so the link stands in
-          // for it. Clicking a link therefore means "this collision domain".
           const domain = edge.data?.collisionDomain;
-          if (typeof domain === "string") onSelectCollisionDomain?.(domain);
+          if (typeof domain !== "string") return;
+          // In connect mode a link stands in for its collision domain, since a
+          // two-device domain has no node of its own to click. Otherwise
+          // clicking a link selects it, so it can be deleted.
+          if (connectMode) onSelectCollisionDomain?.(domain);
+          else onSelectLink?.(domain);
         }}
-        onPaneClick={() => onSelect(null, false)}
+        onPaneClick={() => {
+          onSelect(null, false);
+          onSelectLink?.(null);
+        }}
         snapToGrid
         snapGrid={[16, 16]}
         fitView
@@ -207,5 +292,18 @@ export function TopologyCanvas({
         />
       </ReactFlow>
     </div>
+  );
+}
+
+/**
+ * `useUpdateNodeInternals` reads React Flow's store, so it may only be called
+ * from a component *inside* `ReactFlow` or a provider — not from the one that
+ * renders it. Hence the wrapper.
+ */
+export function TopologyCanvas(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner {...props} />
+    </ReactFlowProvider>
   );
 }

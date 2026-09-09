@@ -1204,3 +1204,144 @@ describe("confirming before stopping a running lab", () => {
     expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 })
+
+describe("deleting a link", () => {
+  async function twoLinkedRouters(user: ReturnType<typeof userEvent.setup>) {
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+  }
+
+  it("removes both ends from the keyboard, via the interface row", async () => {
+    // The canvas route needs a click; this is how it is done without one.
+    const user = await renderApp();
+    await twoLinkedRouters(user);
+
+    await user.click(row("r1"));
+    await user.keyboard("{ArrowRight}{ArrowDown}"); // expand, move to eth0
+    await user.keyboard("{Delete}");
+
+    expect(screen.getByRole("treeitem", { name: /r1, router, 0 interfaces/ })).toBeInTheDocument();
+  });
+
+  it("keeps deleting a device working from a device row", async () => {
+    const user = await renderApp();
+    await twoLinkedRouters(user);
+
+    await user.click(row("r1"));
+    await user.keyboard("{Delete}");
+
+    expect(screen.queryByRole("treeitem", { name: /^r1/ })).toBeNull();
+  });
+
+  it("undoes a disconnection", async () => {
+    const user = await renderApp();
+    await twoLinkedRouters(user);
+
+    await user.click(row("r1"));
+    await user.keyboard("{ArrowRight}{ArrowDown}{Delete}");
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(screen.getByRole("treeitem", { name: /r1, router, 1 interface/ })).toBeInTheDocument();
+  });
+
+  it("offers nothing to delete until something is selected", async () => {
+    await renderApp();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+  });
+
+  it("enables delete for the device just added", async () => {
+    // Adding a device selects it, so it is immediately deletable.
+    const user = await renderApp();
+    await addRouter(user);
+    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+  });
+})
+
+describe("deleting several links in a row", () => {
+  /** Build the triangle: r1-r2 on A, r2-r3 on B, r1-r3 on C. */
+  async function triangle(user: ReturnType<typeof userEvent.setup>) {
+    await addRouter(user);
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+    await link(user, "r2", "r3");
+    await link(user, "r1", "r3");
+  }
+
+  const interfaceCount = (device: string) => {
+    const item = screen.getByRole("treeitem", { name: new RegExp(`^${device}`) });
+    return /(\d+) interface/.exec(item.textContent ?? "")?.[1];
+  };
+
+  /**
+   * Disconnect a device's first interface through the tree.
+   *
+   * Expands only when collapsed and clicks the interface row directly: a
+   * fixed ArrowRight/ArrowDown sequence walks onto the *next device* once the
+   * tree is already open, and deletes that instead.
+   */
+  async function disconnectFirst(
+    user: ReturnType<typeof userEvent.setup>,
+    device: string,
+  ) {
+    await user.click(row(device));
+    if (row(device).getAttribute("aria-expanded") === "false") {
+      await user.keyboard("{ArrowRight}");
+    }
+
+    // Interface rows are aria-level 2 and follow their device. Matching on
+    // text is unreliable — the row begins with a tree glyph, not "eth".
+    const rows = screen.getAllByRole("treeitem");
+    const start = rows.indexOf(row(device));
+    const iface = rows.slice(start + 1).find((el) => el.getAttribute("aria-level") === "2");
+    if (!iface) throw new Error(`${device} has no interface row to delete`);
+
+    await user.click(iface);
+    await user.keyboard("{Delete}");
+  }
+
+  it("keeps working after the first link is removed", async () => {
+    // The reported defect: one link could be deleted, then no more.
+    const user = await renderApp();
+    await triangle(user);
+    expect(interfaceCount("r1")).toBe("2");
+
+    // Remove r1's first link, then its second.
+    await disconnectFirst(user, "r1");
+    expect(interfaceCount("r1")).toBe("1");
+
+    await disconnectFirst(user, "r1");
+    expect(interfaceCount("r1")).toBe("0");
+  });
+
+  it("detaches only the end that was disconnected", async () => {
+    // Disconnecting is not the same as deleting the link: the far end stays
+    // attached to a domain nothing else is on. That asymmetry is the reason
+    // removeLink exists, and clicking a link on the canvas uses it.
+    const user = await renderApp();
+    await triangle(user);
+
+    await disconnectFirst(user, "r1");
+    await disconnectFirst(user, "r1");
+
+    expect(interfaceCount("r1")).toBe("0");
+    // r2 and r3 each keep the far end of a link r1 has left.
+    expect(interfaceCount("r2")).toBe("2");
+    expect(interfaceCount("r3")).toBe("2");
+  });
+
+  it("undoes each removal separately", async () => {
+    const user = await renderApp();
+    await triangle(user);
+
+    await disconnectFirst(user, "r1");
+    await disconnectFirst(user, "r1");
+    expect(interfaceCount("r1")).toBe("0");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(interfaceCount("r1")).toBe("1");
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(interfaceCount("r1")).toBe("2");
+  });
+})

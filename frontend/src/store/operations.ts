@@ -36,6 +36,10 @@ export type Operation =
   // undo step — not two `connect`s the user must undo twice.
   | { type: "link"; a: string; b: string; collisionDomain: string }
   | { type: "disconnect"; node: string; number: number }
+  // Removing a whole link, rather than one end of it. Disconnecting a single
+  // interface leaves the other device still attached to a domain nothing else
+  // is on, which is not what "delete this link" means.
+  | { type: "removeLink"; collisionDomain: string }
   | { type: "updateInterface"; node: string; number: number; changes: Partial<Interface> }
   | { type: "setSubnet"; collisionDomain: string; subnet: string | null }
   | { type: "setLabMetadata"; changes: Partial<Omit<Topology, "nodes" | "collision_domains">> }
@@ -53,6 +57,19 @@ function mapNode(topology: Topology, name: string, fn: (node: Node) => Node): To
   });
   if (!found) throw new OperationError(`No device named "${name}".`);
   return { ...topology, nodes };
+}
+
+/**
+ * Drop collision domains that no remaining device is attached to.
+ *
+ * Only ever called for deletion, never for disconnection — see `removeNode`.
+ */
+function pruneEmptyDomains(topology: Topology, remaining: Node[]): CollisionDomain[] {
+  const used = new Set<string>();
+  for (const node of remaining) {
+    for (const iface of node.interfaces) used.add(iface.collision_domain);
+  }
+  return topology.collision_domains.filter((cd) => used.has(cd.name));
 }
 
 /** Register a collision domain if this is the first reference to it. */
@@ -78,9 +95,16 @@ export function apply(topology: Topology, op: Operation): Topology {
       if (nodes.length === topology.nodes.length) {
         throw new OperationError(`No device named "${op.name}".`);
       }
-      // Collision domains are deliberately left in place: a user who
-      // disconnects a link briefly should not lose its planned subnet.
-      return { ...topology, nodes };
+      // Deleting a device leaves its collision domains behind. One that is
+      // now empty is invisible on the canvas but still in the model, and it
+      // would silently consume address space at the next allocation — so it
+      // goes with the device.
+      //
+      // A domain that still has members is kept, along with any planned
+      // subnet: those are still in use. `disconnect` keeps empty domains
+      // deliberately, since briefly detaching a cable should not discard the
+      // plan; deleting the device is a clearer statement of intent.
+      return { ...topology, collision_domains: pruneEmptyDomains(topology, nodes), nodes };
     }
 
     case "moveNode":
@@ -144,6 +168,32 @@ export function apply(topology: Topology, op: Operation): Topology {
         { type: "connect", node: op.a, collisionDomain: op.collisionDomain },
         { type: "connect", node: op.b, collisionDomain: op.collisionDomain },
       ]);
+    }
+
+    case "removeLink": {
+      const attached = topology.nodes.some((node) =>
+        node.interfaces.some((iface) => iface.collision_domain === op.collisionDomain),
+      );
+      if (!attached) {
+        throw new OperationError(`Nothing is connected to ${op.collisionDomain}.`);
+      }
+
+      const nodes = topology.nodes.map((node) => ({
+        ...node,
+        interfaces: node.interfaces.filter(
+          (iface) => iface.collision_domain !== op.collisionDomain,
+        ),
+      }));
+      // The domain goes too: unlike a single disconnect, deleting the link is
+      // an unambiguous statement that this segment is no longer wanted, so
+      // keeping its planned subnet would only clutter the addressing panel.
+      return {
+        ...topology,
+        nodes,
+        collision_domains: topology.collision_domains.filter(
+          (cd) => cd.name !== op.collisionDomain,
+        ),
+      };
     }
 
     case "disconnect":
@@ -217,6 +267,8 @@ export function describe(op: Operation): string {
       return `Linked ${op.a} and ${op.b} on ${op.collisionDomain}`;
     case "disconnect":
       return `Disconnected eth${op.number} on ${op.node}`;
+    case "removeLink":
+      return `Removed the link on ${op.collisionDomain}`;
     case "updateInterface":
       return `Changed eth${op.number} on ${op.node}`;
     case "setSubnet":

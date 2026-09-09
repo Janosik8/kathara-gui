@@ -177,6 +177,7 @@ describe("describe", () => {
     { type: "connect", node: "r1", collisionDomain: "A" },
     { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
     { type: "disconnect", node: "r1", number: 0 },
+    { type: "removeLink", collisionDomain: "A" },
     { type: "updateInterface", node: "r1", number: 0, changes: {} },
     { type: "setSubnet", collisionDomain: "A", subnet: "10.0.0.0/24" },
     { type: "setSubnet", collisionDomain: "A", subnet: null },
@@ -188,5 +189,119 @@ describe("describe", () => {
   // this text to know an edit happened at all.
   it.each(cases)("describes $type", (op) => {
     expect(label(op)).toBeTruthy();
+  });
+});
+
+describe("removeNode and collision domains", () => {
+  it("drops a domain left with nothing attached", () => {
+    // An empty domain is invisible on the canvas but still in the model, and
+    // would silently consume address space at the next allocation.
+    const linked = apply(base(), { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+    const next = applyAll(linked, [
+      { type: "removeNode", name: "r1" },
+      { type: "removeNode", name: "r2" },
+    ]);
+    expect(next.collision_domains).toEqual([]);
+  });
+
+  it("keeps a domain that other devices still use", () => {
+    const start = applyAll(base(), [
+      { type: "addNode", node: newNode("r3", "router", at(0, 0)) },
+      { type: "connect", node: "r1", collisionDomain: "A" },
+      { type: "connect", node: "r2", collisionDomain: "A" },
+      { type: "connect", node: "r3", collisionDomain: "A" },
+    ]);
+    const next = apply(start, { type: "removeNode", name: "r1" });
+    expect(next.collision_domains.map((cd) => cd.name)).toEqual(["A"]);
+  });
+
+  it("keeps the planned subnet of a domain still in use", () => {
+    const start = applyAll(base(), [
+      { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
+      { type: "addNode", node: newNode("r3", "router", at(0, 0)) },
+      { type: "connect", node: "r3", collisionDomain: "A" },
+      { type: "setSubnet", collisionDomain: "A", subnet: "10.0.0.0/24" },
+    ]);
+    const next = apply(start, { type: "removeNode", name: "r1" });
+    expect(next.collision_domains[0]).toEqual({ name: "A", subnet: "10.0.0.0/24" });
+  });
+
+  it("still keeps an empty domain after a mere disconnect", () => {
+    // Detaching a cable briefly should not discard the addressing plan;
+    // deleting the device is the clearer statement of intent.
+    const start = applyAll(base(), [
+      { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
+      { type: "setSubnet", collisionDomain: "A", subnet: "10.0.0.0/24" },
+    ]);
+    const next = applyAll(start, [
+      { type: "disconnect", node: "r1", number: 0 },
+      { type: "disconnect", node: "r2", number: 0 },
+    ]);
+    expect(next.collision_domains[0]?.subnet).toBe("10.0.0.0/24");
+  });
+
+  it("is undoable, restoring the domain with the device", () => {
+    const start = apply(base(), { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+    const after = applyAll(start, [
+      { type: "removeNode", name: "r1" },
+      { type: "removeNode", name: "r2" },
+    ]);
+    // The reducer is pure, so undo is simply the earlier value.
+    expect(after.collision_domains).toEqual([]);
+    expect(start.collision_domains.map((cd) => cd.name)).toEqual(["A"]);
+  });
+});
+
+describe("removeLink", () => {
+  const linked = () =>
+    apply(base(), { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+
+  it("detaches both ends, not just one", () => {
+    // Disconnecting a single interface leaves the other device attached to a
+    // domain nothing else is on, which is not what deleting a link means.
+    const next = apply(linked(), { type: "removeLink", collisionDomain: "A" });
+    expect(next.nodes.every((n) => n.interfaces.length === 0)).toBe(true);
+  });
+
+  it("removes the collision domain with it", () => {
+    const next = apply(linked(), { type: "removeLink", collisionDomain: "A" });
+    expect(next.collision_domains).toEqual([]);
+  });
+
+  it("detaches every device on a shared segment", () => {
+    const shared = applyAll(base(), [
+      { type: "addNode", node: newNode("r3", "router", at(0, 0)) },
+      { type: "connect", node: "r1", collisionDomain: "A" },
+      { type: "connect", node: "r2", collisionDomain: "A" },
+      { type: "connect", node: "r3", collisionDomain: "A" },
+    ]);
+    const next = apply(shared, { type: "removeLink", collisionDomain: "A" });
+    expect(next.nodes.every((n) => n.interfaces.length === 0)).toBe(true);
+  });
+
+  it("leaves other links alone", () => {
+    const two = applyAll(base(), [
+      { type: "addNode", node: newNode("r3", "router", at(0, 0)) },
+      { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
+      { type: "link", a: "r2", b: "r3", collisionDomain: "B" },
+    ]);
+    const next = apply(two, { type: "removeLink", collisionDomain: "A" });
+
+    expect(next.collision_domains.map((cd) => cd.name)).toEqual(["B"]);
+    // r2 keeps the interface belonging to the link that survived.
+    expect(next.nodes[1]!.interfaces.map((i) => i.collision_domain)).toEqual(["B"]);
+  });
+
+  it("refuses a domain nothing is connected to", () => {
+    expect(() =>
+      apply(base(), { type: "removeLink", collisionDomain: "Z" }),
+    ).toThrow(/Nothing is connected to Z/);
+  });
+
+  it("does not mutate the original", () => {
+    const start = linked();
+    const snapshot = structuredClone(start);
+    apply(start, { type: "removeLink", collisionDomain: "A" });
+    expect(start).toEqual(snapshot);
   });
 });

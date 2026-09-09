@@ -61,6 +61,7 @@ export default function App() {
   } = useTopologyStore();
 
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedLink, setSelectedLink] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   // Connect mode: click one device, then another, and a link appears — the
@@ -105,6 +106,12 @@ export default function App() {
       const present = current.filter((name) => topology.nodes.some((n) => n.name === name));
       return present.length === current.length ? current : present;
     });
+    setSelectedLink((current) =>
+      current &&
+      !topology.nodes.some((n) => n.interfaces.some((i) => i.collision_domain === current))
+        ? null
+        : current,
+    );
     setPending((current) => {
       if (current === null) return null;
       const stillThere =
@@ -135,6 +142,7 @@ export default function App() {
   }, [connectMode, leaveConnectMode]);
 
   const select = useCallback((name: string | null, additive: boolean) => {
+    setSelectedLink(null);
     setSelected((current) => {
       if (name === null) return [];
       if (!additive) return [name];
@@ -369,9 +377,16 @@ export default function App() {
   );
 
   const removeSelected = useCallback(() => {
+    // Selecting a link clears any device selection and vice versa, so at most
+    // one of these branches can apply.
+    if (selectedLink) {
+      dispatch({ type: "removeLink", collisionDomain: selectedLink });
+      setSelectedLink(null);
+      return;
+    }
     for (const name of selected) dispatch({ type: "removeNode", name });
     setSelected([]);
-  }, [dispatch, selected]);
+  }, [dispatch, selected, selectedLink]);
 
   const align = useCallback(
     (action: AlignmentAction) => {
@@ -422,7 +437,9 @@ export default function App() {
       // The tree implements Delete itself, so do not act twice.
       if (
         (event.key === "Delete" || event.key === "Backspace") &&
-        selected.length > 0 &&
+        // A selected link counts too; requiring a selected *device* meant
+        // Delete silently did nothing when only a link was chosen.
+        (selected.length > 0 || selectedLink !== null) &&
         !isTreeItem(event.target)
       ) {
         event.preventDefault();
@@ -436,6 +453,7 @@ export default function App() {
     redo,
     removeSelected,
     selected,
+    selectedLink,
     connectMode,
     leaveConnectMode,
     toggleConnectMode,
@@ -467,8 +485,12 @@ export default function App() {
           <button type="button" onClick={redo} disabled={!canRedo()}>
             Redo
           </button>
-          <button type="button" onClick={removeSelected} disabled={selected.length === 0}>
-            Delete
+          <button
+            type="button"
+            onClick={removeSelected}
+            disabled={selected.length === 0 && !selectedLink}
+          >
+            {selectedLink ? "Delete link" : "Delete"}
           </button>
           <button type="button" onClick={save}>
             Save
@@ -500,6 +522,7 @@ export default function App() {
             onSelectCollisionDomain={activateDomain}
             onSelect={activate}
             onRemove={(name) => dispatch({ type: "removeNode", name })}
+            onDisconnect={(node, number) => dispatch({ type: "disconnect", node, number })}
           />
         </aside>
 
@@ -511,6 +534,14 @@ export default function App() {
             onSelect={activate}
             onSelectCollisionDomain={activateDomain}
             onMove={(name, position) => dispatch({ type: "moveNode", name, position })}
+            onSelectLink={(domain) => {
+              // Exactly one thing is selected at a time, so Delete is never
+              // ambiguous about what it will remove.
+              setSelectedLink(domain);
+              if (domain !== null) setSelected([]);
+            }}
+            selectedLink={selectedLink}
+            connectMode={connectMode}
           />
         </main>
 
