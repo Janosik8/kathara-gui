@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-08-23 (Phase 2 complete)
+- **Last updated:** 2026-09-09 (Phases 0–3 complete; Phase 4 mostly done)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -92,8 +92,9 @@ uv tool uninstall kathara-gui
 
 ## 3. What you can do in the UI today
 
-Phase 2 is complete, so the editor works end to end. Deployment and diagnostics are Phase 4;
-there is no "Deploy" button yet.
+The editor, addressing and deployment all work. What is still missing is the in-app
+terminal, saving to a project file, and pulling configuration back out of running
+containers — see [PLAN.md](../PLAN.md).
 
 | Action | How |
 |---|---|
@@ -112,7 +113,9 @@ there is no "Deploy" button yet.
 | Move a device | Drag on the canvas. Snaps to a 16px grid. |
 | Tidy up | Select 2+ devices → **Arrange** → align. Distribute needs 3+. |
 | Disconnect an interface | **Details** → Interfaces → Disconnect ethN. |
-| Delete | Select, then the **Delete** button or the Delete key. |
+| Delete a device | Select it, then the **Delete** button or the Delete key. |
+| Delete a link | Click the link on the canvas — it thickens — then Delete. Both ends are detached and the collision domain goes with them. |
+| Detach one end only | **Details** → Interfaces → Disconnect ethN, or Delete on an interface row in the tree. The far device stays attached. |
 | Undo / redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or the toolbar. |
 | Pin a subnet to a collision domain | Left panel → **Collision domains** → type the network for that domain, e.g. `192.168.1.0/24`, then Enter. |
 | Let a domain be allocated | Leave its subnet field blank. |
@@ -122,6 +125,21 @@ there is no "Deploy" button yet.
 | Save | **Save** sends the topology to the backend. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
+
+### Reading the diagram
+
+Each interface is drawn as a labelled point on the device's edge — `eth0`, `eth1` — and a
+link terminates at the interface it actually uses, so you can see which port it enters. That
+matters: wiring `eth0` but configuring `eth1` is a common mistake, and a diagram that hides
+the port cannot help you find it.
+
+An interface sits on the face pointing at whatever it is connected to, and moves as you drag
+devices around. Two interfaces on the same face go to opposite corners, ordered so their
+links do not cross.
+
+A collision domain with exactly two devices is drawn as a plain link. With three or more it
+gets a node of its own, because a Kathará collision domain is a shared medium rather than a
+cable, and drawing a shared segment as a single line would misrepresent it.
 
 ### Keyboard
 
@@ -138,7 +156,7 @@ report anything that is not.
 | `Enter` | Select the focused device. |
 | `Ctrl/Cmd + Enter` | Add to the selection. |
 | `C` | Toggle connect mode. In it, `Enter` on a device picks it, and `Enter` on an interface row picks that row's collision domain. |
-| `Delete` | Remove the focused or selected device. Ignored while typing in a field. |
+| `Delete` | On a device row, remove the device. On an interface row, disconnect that interface. Ignored while typing in a field. |
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
 

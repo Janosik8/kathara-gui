@@ -164,6 +164,15 @@ returned the stale version, and the editor adopted it, clearing the canvas.
 runs is exactly what an export would produce. If those diverged, a lab that worked in the
 GUI could fail when shared.
 
+**The diagram is accurate about the network, not merely suggestive of it.** Two choices
+follow from that. A collision domain shared by three or more devices is drawn as its own
+node rather than as lines between every pair, because in Kathará it *is* a shared medium and
+not a bundle of cables. And a link terminates at the specific interface it uses, labelled,
+rather than at the device in general — wiring `eth0` while configuring `eth1` is the
+canonical teaching-lab fault, and a diagram that omits the port cannot help anyone find it.
+Which face an interface sits on is derived from where its peer is, so the drawing rearranges
+itself as devices move instead of forcing the user to tidy it.
+
 **Stopping someone else's work requires consent.** Kathará derives a lab's identity from a
 hash of its *name*, so two labs called `untitled` in different folders are one lab to it.
 From inside a deploy, a routine redeploy and the destruction of an unrelated lab are
