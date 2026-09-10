@@ -1,0 +1,155 @@
+"""Hibernating a lab: configure, capture, stop, redeploy, and find it intact.
+
+This is Capability 5 end to end, and the thing the prior art cannot do at all.
+Requires a running Docker daemon; enable with ``pytest -m docker``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from kathara_gui.domain.model import Interface, Node, Topology
+from kathara_gui.kathara import runner, state
+from kathara_gui.project.kgui import extract_lab, read_package, write_package
+
+pytestmark = pytest.mark.docker
+
+#: FRR rather than the base image: there is no routing daemon to interrogate
+#: otherwise, which is the whole point here.
+IMAGE = "kathara/frr"
+
+
+@pytest.fixture
+def lab_dir(tmp_path: Path) -> Path:
+    return tmp_path / "labs" / "capture"
+
+
+@pytest.fixture
+def topology() -> Iterator[Topology]:
+    yield Topology(
+        name="kgui-capture-integration",
+        nodes=[
+            Node(
+                name="r1",
+                image=IMAGE,
+                daemons=["zebra", "bgpd"],
+                interfaces=[Interface(number=0, collision_domain="A", ip="172.31.21.1/24")],
+            )
+        ],
+    )
+
+
+@pytest.fixture
+def deployed(topology: Topology, lab_dir: Path) -> Iterator[Topology]:
+    runner.deploy(topology, lab_dir, confirm=True)
+    try:
+        yield topology
+    finally:
+        runner.undeploy(topology, lab_dir)
+
+
+def configure(topology: Topology, lab_dir: Path, command: str) -> None:
+    """Configure the router the way a student would, inside the container."""
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    lab = LabParser.parse(str(lab_dir))
+    Kathara.get_instance().exec(
+        "r1",
+        ["vtysh", "-c", "configure terminal", "-c", command],
+        lab=lab,
+        wait=False,
+        stream=False,
+    )
+
+
+def test_captures_configuration_typed_inside_the_container(
+    deployed: Topology, lab_dir: Path
+) -> None:
+    configure(deployed, lab_dir, "router bgp 65001")
+
+    report = state.capture(deployed, lab_dir)
+
+    assert report.any_captured
+    assert report.captured[0].device == "r1"
+    written = (lab_dir / "r1" / "etc" / "frr" / "frr.conf").read_text()
+    assert "router bgp 65001" in written
+
+
+def test_the_capture_is_valid_configuration_not_chatter(
+    deployed: Topology, lab_dir: Path
+) -> None:
+    configure(deployed, lab_dir, "router bgp 65001")
+    state.capture(deployed, lab_dir)
+
+    written = (lab_dir / "r1" / "etc" / "frr" / "frr.conf").read_text()
+    assert "Building configuration" not in written
+    assert "\r" not in written  # it runs inside a Linux container
+
+
+def test_configuration_survives_a_stop_and_redeploy(
+    deployed: Topology, lab_dir: Path
+) -> None:
+    """The hibernate-and-resume loop: capture, stop, deploy, still there."""
+    configure(deployed, lab_dir, "router bgp 65099")
+    state.capture(deployed, lab_dir)
+
+    runner.undeploy(deployed, lab_dir)
+    runner.deploy(deployed, lab_dir, confirm=True)
+
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    lab = LabParser.parse(str(lab_dir))
+    stdout, _, _ = Kathara.get_instance().exec(
+        "r1", ["vtysh", "-c", "show running-config"], lab=lab, wait=False, stream=False
+    )
+    assert "65099" in stdout.decode(errors="replace")
+
+
+def test_a_captured_lab_travels_inside_a_package(
+    deployed: Topology, lab_dir: Path, tmp_path: Path
+) -> None:
+    """Capability 5's exam submission: one file carrying the student's work."""
+    configure(deployed, lab_dir, "router bgp 65123")
+    state.capture(deployed, lab_dir)
+
+    package = write_package(deployed, tmp_path / "submission.kgui", lab_dir=lab_dir)
+
+    # The instructor opens it elsewhere and finds both topology and config.
+    assert read_package(package).topology.node("r1") is not None
+    restored = extract_lab(package, tmp_path / "marking")
+    assert "65123" in (restored / "r1" / "etc" / "frr" / "frr.conf").read_text()
+
+
+def test_a_device_without_routing_is_skipped_not_failed(lab_dir: Path) -> None:
+    topology = Topology(
+        name="kgui-capture-plain",
+        nodes=[
+            Node(
+                name="pc1",
+                kind="pc",
+                image="kathara/base",
+                interfaces=[Interface(number=0, collision_domain="A", ip="172.31.22.1/24")],
+            )
+        ],
+    )
+    try:
+        runner.deploy(topology, lab_dir, confirm=True)
+        report = state.capture(topology, lab_dir)
+
+        assert report.any_captured is False
+        assert report.skipped == [("pc1", "no running FRR configuration")]
+        assert report.message is not None
+    finally:
+        runner.undeploy(topology, lab_dir)
+
+
+def test_capturing_before_deploying_explains_itself(topology: Topology, tmp_path: Path) -> None:
+    report = state.capture(topology, tmp_path / "never-written")
+    assert report.any_captured is False
+    assert report.message is not None
+    assert "Deploy it" in report.message
