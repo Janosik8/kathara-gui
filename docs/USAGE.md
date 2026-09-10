@@ -206,8 +206,9 @@ A `.kgui` file is a zip containing the topology (including canvas positions), th
 Kathará lab, and any configuration captured from running containers. Someone with Kathará
 and not this application can unzip it and run `kathara lstart`.
 
-| Button | What it does |
+| Control | What it does |
 |---|---|
+| **Scenario name** | Renames the lab. Press Enter or move away to commit. |
 | **Save** | Writes `<name>.kgui` into the workspace folder. Also on the header bar. |
 | **Save as…** | The same, under a name you choose. |
 | **Open…** | Lists the scenarios in your workspace; pick one to open it. |
@@ -216,6 +217,12 @@ and not this application can unzip it and run `kathara lstart`.
 | **Import lab.conf…** | Reads an existing Kathará lab written by hand or another tool. |
 | **Export lab.conf** | Downloads just the `lab.conf`. |
 | **Capture running state** | Copies what each router is *actually* running into the lab folder. |
+
+**The name is not cosmetic.** It decides the lab folder, the saved file name, and — because
+Kathará identifies a lab by a hash of its name — which containers belong to this scenario.
+That is why renaming is the reliable fix when two labs collide. Rename *before* deploying
+where you can: containers already running keep the old name, and need stopping or a
+`kathara wipe`.
 
 **Save keeps the file on this machine; Download sends it out.** Scenario files live in the
 workspace folder (`./kathara-labs` unless `--workspace` says otherwise), which is also where

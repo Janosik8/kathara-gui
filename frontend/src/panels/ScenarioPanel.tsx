@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CaptureResponse, PackageSummary } from "../api/client";
+import { CommittedInput } from "./CommittedInput";
 
 interface Props {
   /** Null until the scenario has been written to disk at least once. */
@@ -37,6 +38,9 @@ interface Props {
   onExportLabConf: () => void;
   /** Lines the importer could not understand, from the last import. */
   importWarnings: string[];
+  /** The scenario's name, which is also Kathará's identity for the lab. */
+  name: string;
+  onRename: (name: string) => void;
 }
 
 function fileName(path: string): string {
@@ -66,6 +70,8 @@ export function ScenarioPanel({
   onImportLabConf,
   onExportLabConf,
   importWarnings,
+  name,
+  onRename,
 }: Props) {
   const [opening, setOpening] = useState(false);
   const [namingAs, setNamingAs] = useState(false);
@@ -91,6 +97,36 @@ export function ScenarioPanel({
       <h2 className="panel__heading" id="scenario-heading">
         Scenario
       </h2>
+
+      <CommittedInput
+        id="scenario-name"
+        // Not just "Name": the device inspector has a Name field too, and two
+        // controls with the same label are indistinguishable read aloud.
+        label="Scenario name"
+        value={name}
+        hint="Names the lab folder and the saved file. Kathará identifies a lab by this name."
+        validate={(value) => (value.trim() ? null : "The scenario needs a name.")}
+        onCommit={(value) => {
+          const trimmed = value.trim();
+          if (trimmed && trimmed !== name) onRename(trimmed);
+        }}
+      />
+
+      {anyRunning && (
+        // Renaming is the advice given when two labs collide, so it has to be
+        // possible while one is running — but Kathará keys a lab by its name,
+        // so the containers already up keep the old one and stop being this
+        // scenario's as far as the tool is concerned.
+        // Deliberately not a live region. This is standing advice about a
+        // state the user just created by deploying, not an event; announcing
+        // it would compete with the deploy result in the app's live region.
+        // Contrast the exited-devices warning in LabPanel, which reports
+        // something the user did not do.
+        <p className="lab__warning">
+          This lab is running. Renaming it leaves those containers under the old name — stop
+          the lab first, or clean them up with <code>kathara wipe</code> afterwards.
+        </p>
+      )}
 
       <p className="field__hint">
         {projectFile ? (

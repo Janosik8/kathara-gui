@@ -755,6 +755,8 @@ export default function App() {
             onImportLabConf={importLabConf}
             onExportLabConf={exportLabConf}
             importWarnings={importWarnings}
+            name={topology.name}
+            onRename={(name) => dispatch({ type: "setLabMetadata", changes: { name } })}
           />
 
           <LabPanel

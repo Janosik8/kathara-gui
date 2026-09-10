@@ -276,7 +276,12 @@ export function describe(op: Operation): string {
         ? `Set ${op.collisionDomain} subnet to ${op.subnet}`
         : `Cleared ${op.collisionDomain} subnet`;
     case "setLabMetadata":
-      return "Changed lab details";
+      // The name is the field users actually change, and it is the one that
+      // decides the lab folder and Kathará's identity for the lab, so it is
+      // worth naming rather than announcing "changed lab details".
+      return op.changes.name !== undefined
+        ? `Renamed the scenario to ${op.changes.name}`
+        : "Changed lab details";
     case "replaceTopology":
       return "Replaced the topology";
   }

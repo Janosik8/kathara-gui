@@ -1285,6 +1285,95 @@ describe("the scenario as a file", () => {
   });
 });
 
+describe("naming the scenario", () => {
+  // Reported: "i can not change the lab name". The operation existed and
+  // nothing dispatched it — and the name is not cosmetic. It decides the lab
+  // folder, the saved file name, and Kathará's identity for the lab, which is
+  // why the conflict dialog advises renaming as the fix.
+
+  it("renames the scenario", async () => {
+    const user = await renderApp();
+    const field = await screen.findByLabelText("Scenario name");
+    await user.clear(field);
+    await user.type(field, "bgp exam{Enter}");
+
+    // The header shows the scenario's name, so it is the honest check.
+    expect(await screen.findByText("bgp exam")).toBeInTheDocument();
+  });
+
+  it("commits on blur as well as Enter", async () => {
+    const user = await renderApp();
+    const field = await screen.findByLabelText("Scenario name");
+    await user.clear(field);
+    await user.type(field, "ospf lab");
+    await user.tab();
+
+    expect(await screen.findByText("ospf lab")).toBeInTheDocument();
+  });
+
+  it("refuses an empty name rather than silently keeping the old one", async () => {
+    const user = await renderApp();
+    const field = await screen.findByLabelText("Scenario name");
+    await user.clear(field);
+    await user.type(field, "{Enter}");
+
+    expect(await screen.findByText("The scenario needs a name.")).toBeInTheDocument();
+  });
+
+  it("saves under the new name", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    const field = await screen.findByLabelText("Scenario name");
+    await user.clear(field);
+    await user.type(field, "submission{Enter}");
+    await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
+
+    await waitFor(() =>
+      expect(saveProject).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "submission" }),
+        undefined,
+      ),
+    );
+  });
+
+  it("is undoable in one step", async () => {
+    // CommittedInput exists so a rename is one operation, not one per key.
+    const user = await renderApp();
+    const field = await screen.findByLabelText("Scenario name");
+    await user.clear(field);
+    await user.type(field, "renamed{Enter}");
+    expect(await screen.findByText("renamed")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("untitled")).toBeInTheDocument();
+  });
+
+  it("warns that renaming strands a running lab", async () => {
+    // Kathará keys a lab by its name, so the containers already up keep the
+    // old one.
+    deploy.mockResolvedValue({
+      devices: [{ name: "r1", state: "running" }],
+      running: ["r1"],
+      exited: [],
+      deployed: true,
+      lab_dir: "/workspace/untitled",
+      message: null,
+      needs_confirmation: false,
+      conflicts: null,
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/leaves those containers under the old name/)).toBeInTheDocument();
+  });
+
+  it("says nothing about running containers when none are up", async () => {
+    await renderApp();
+    expect(screen.queryByText(/leaves those containers under the old name/)).toBeNull();
+  });
+});
+
 describe("working with an existing lab.conf", () => {
   // FR-11/FR-12. The prior art can generate new labs and cannot open one that
   // already exists, which is the gap this is meant to close — so it has to be
