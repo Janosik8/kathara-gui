@@ -12,9 +12,13 @@ running configuration back out of the containers — without hand-editing `lab.c
 ## Status
 
 Under development. Phases 0–3 complete — integration spike and CI, domain model and
-`lab.conf` codec, topology editor, and addressing with conflict detection. Phase 4 (deploy,
-diagnostics, terminal) is in progress: labs deploy and links are verified; the in-app
-terminal is outstanding.
+`lab.conf` codec, topology editor, and addressing with conflict detection.
+
+Phase 4 (deploy, diagnostics, terminal) is in progress: labs deploy, conflicting deployments
+are caught, and links are verified; the in-app terminal is outstanding. Phase 5 has started —
+the `.kgui` scenario package and capture of a container's running configuration both work
+and are tested against live containers, but neither is reachable from the interface yet, so
+there is still no way to save or open a file from the UI.
 
 - **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
   will not do, with current status against each item.
@@ -62,10 +66,15 @@ kathara-gui
 
 Your browser opens automatically. To stop the server, press Ctrl+C.
 
+Deploying writes each lab to `./kathara-labs/<name>`, beside wherever you started the
+command, and the path is printed at startup — so `cd` into it and `kathara connect r1`
+works from a terminal.
+
 ```
-kathara-gui --help          # options
-kathara-gui --no-browser    # print the URL instead of opening a browser
-kathara-gui --port 8080     # fixed port instead of an unused one
+kathara-gui --help              # options
+kathara-gui --no-browser        # print the URL instead of opening a browser
+kathara-gui --port 8080         # fixed port instead of an unused one
+kathara-gui --workspace ~/labs  # where deployed labs are written
 ```
 
 ## Development

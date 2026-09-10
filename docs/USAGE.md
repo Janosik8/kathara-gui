@@ -109,7 +109,7 @@ containers — see [PLAN.md](../PLAN.md).
 | Rename | Select a device → **Details** → Name → Enter or click away. |
 | Set an address | Select a device → **Details** → Interfaces → address field, e.g. `10.0.0.1/24`. |
 | Enable routing daemons | **Details** → Routing daemons. Ticking any protocol also ticks `zebra`. |
-| Change the image | **Details** → Container image. Blank uses the default for the kind. |
+| Change the image | **Details** → Container image. See the warning below before clearing it. |
 | Move a device | Drag on the canvas. Snaps to a 16px grid. |
 | Tidy up | Select 2+ devices → **Arrange** → align. Distribute needs 3+. |
 | Disconnect an interface | **Details** → Interfaces → Disconnect ethN. |
@@ -125,6 +125,16 @@ containers — see [PLAN.md](../PLAN.md).
 | Save | **Save** sends the topology to the backend. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
+
+### Container images
+
+A new device is given an image for its kind: `kathara/frr` for a router, `kathara/base` for
+everything else. Changing the kind follows the image, unless you have typed one yourself.
+
+**Clearing the image field does not fall back to the kind's default** — it falls back to
+*Kathará's*, which is `kathara/base` for everything. `kathara/base` has no routing daemons
+at all: no `vtysh`, nothing to read `/etc/frr/daemons`, and no way to configure routing. A
+router with a blank image cannot run a routing lab.
 
 ### Reading the diagram
 
@@ -190,8 +200,18 @@ every later request.
 
 ### Not built yet
 
-Deploy, diagnostics, in-app terminal, addressing auto-allocation and conflict detection,
-`.kgui` import/export, PDF manuals, exam mode. See [PLAN.md](../PLAN.md).
+- **In-app terminal.** Use `kathara connect` in a real terminal for now — see §4.
+- **Opening and saving files.** There is no File menu: a topology lives only in the browser
+  session. Import and export of `lab.conf` exist as API endpoints (below) but have no
+  control in the UI, and the `.kgui` package format is implemented and tested without being
+  reachable either.
+- **Capturing a running configuration.** Works and is tested against live containers, but,
+  like the above, has no button yet.
+- **PDF manuals**, and a **built-in lab library**.
+- **Setting exam-mode toggles.** The server enforces them and the UI hides what they
+  withdraw, but nothing can change them from their defaults yet, so everything is on.
+
+See [PLAN.md](../PLAN.md).
 
 ---
 
@@ -250,6 +270,24 @@ device running.
 
 Use `--workspace DIR` to put labs somewhere else.
 
+### When a device says "Exited"
+
+Docker does not restart Kathará containers, so restarting Docker Desktop, rebooting, or
+letting the machine sleep overnight stops a running lab. The containers are not removed,
+which makes the symptom confusing: `kathara list` still lists every device, but connecting
+fails with a 409 rather than opening a shell.
+
+```
+CRITICAL (APIError) 409 Client Error ... Conflict ("container … is not running")
+```
+
+The Laboratory panel marks those devices **Exited** and says so in plain words. Press
+**Deploy** to bring the lab back — it will ask first, because the stopped containers still
+hold their names and have to be cleared before new ones can take them.
+
+Nothing that was changed *inside* a container survives this. Deploy again and reapply, or
+capture the configuration next time before you stop for the day.
+
 ### Running an exported lab by hand
 
 ```bash
@@ -273,6 +311,20 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/topology/reset` | back to empty |
 | POST | `/api/topology/import` | parse `lab.conf` text; returns warnings |
 | GET | `/api/topology/export` | render the topology as `lab.conf` |
+| GET | `/api/topology/addressing/issues` | addressing problems in the stored topology |
+| POST | `/api/topology/addressing/check` | validate a supplied topology without storing it |
+| POST | `/api/topology/addressing/allocate` | assign addresses; optional per-domain subnets |
+| GET | `/api/lab/probe` | preflight: Docker, Kathará, WSL2 |
+| GET | `/api/lab/features` | which assistive features this scenario allows |
+| POST | `/api/lab/status` | reconcile a topology against the running containers |
+| POST | `/api/lab/deploy` | deploy; reports conflicts unless `confirm` is set |
+| POST | `/api/lab/undeploy` | stop the lab |
+| POST | `/api/lab/verify` | ping across every direct link |
+
+The `POST` endpoints for addressing and lab operations take the topology in the request body
+rather than acting on the stored one, because the browser normally holds newer work than the
+server does. `GET /api/topology/addressing/issues` is the exception and reports on the
+stored topology.
 
 Interactive docs while the server runs: `http://127.0.0.1:8150/docs?token=<token>`
 
@@ -347,6 +399,10 @@ only** ("Use Windows Containers" must be off), and the drive holding your labs s
 Docker settings. The Kathará CLI works in PowerShell, not `cmd`.
 
 **Containers left running** — `kathara wipe` removes all of them.
+
+**Every device shows "Exited" after a break** — Docker stopped them; the containers are
+still there but nothing is running inside. Press **Deploy** and confirm. See *When a device
+says "Exited"* above.
 
 ---
 

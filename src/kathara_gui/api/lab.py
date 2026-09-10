@@ -49,6 +49,10 @@ class ConflictsModel(BaseModel):
 class StatusResponse(BaseModel):
     devices: list[DeviceStatusModel]
     running: list[str]
+    #: Containers that exist but have stopped. They still hold their names, so
+    #: the lab must be undeployed before it can be deployed again.
+    exited: list[str] = []
+    #: True when any container exists, running or exited.
     deployed: bool
     lab_dir: str | None = None
     message: str | None = None
@@ -94,6 +98,7 @@ def _status_response(status: runner.LabStatus) -> StatusResponse:
     return StatusResponse(
         devices=[DeviceStatusModel(name=d.name, state=d.state.value) for d in status.devices],
         running=status.running,
+        exited=status.exited,
         deployed=status.deployed,
         lab_dir=status.lab_dir,
         message=status.message,
@@ -133,7 +138,7 @@ def lab_status(
     stop containers from a terminal at any moment, so the interface polls this
     rather than trusting that its last action still holds.
     """
-    return _status_response(runner.status(request.topology, session.lab_dir()))
+    return _status_response(runner.status(request.topology, session.lab_dir(request.topology)))
 
 
 @router.post("/deploy", response_model=StatusResponse)
@@ -142,7 +147,9 @@ def deploy(
 ) -> StatusResponse:
     # The session decides where the lab lives, so deploy and verify always
     # agree on the directory Kathará keys the lab by.
-    result = runner.deploy(request.topology, session.lab_dir(), confirm=request.confirm)
+    result = runner.deploy(
+        request.topology, session.lab_dir(request.topology), confirm=request.confirm
+    )
 
     if result.needs_confirmation:
         # Nothing was changed, so the session must not be updated either.
@@ -158,7 +165,9 @@ def deploy(
 def undeploy(
     request: TopologyRequest, session: Session = Depends(get_session)
 ) -> StatusResponse:
-    return _status_response(runner.undeploy(request.topology, session.lab_dir()))
+    return _status_response(
+        runner.undeploy(request.topology, session.lab_dir(request.topology))
+    )
 
 
 @router.post("/verify", response_model=DiagnosticsResponse)
@@ -168,7 +177,7 @@ def verify(
     """Ping between every pair sharing a collision domain (Capability 4)."""
     session.features.require("infrastructure_verification")
 
-    report = diagnostics.verify(request.topology, session.lab_dir())
+    report = diagnostics.verify(request.topology, session.lab_dir(request.topology))
     return DiagnosticsResponse(
         checks=[
             LinkCheckModel(

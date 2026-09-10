@@ -41,6 +41,13 @@ class DeviceState(StrEnum):
     RUNNING = "running"
     #: In the topology but not deployed.
     STOPPED = "stopped"
+    #: The container exists but is not running. Docker does not restart
+    #: Kathará containers, so a daemon restart, a machine sleeping overnight or
+    #: a manual ``docker stop`` all leave the lab in this state: ``kathara
+    #: list`` still shows the devices, and ``kathara connect`` fails with a 409
+    #: "container is not running". Distinct from STOPPED because the name is
+    #: still taken — deploying again needs the old containers removed first.
+    EXITED = "exited"
     #: Running, but no longer in the topology — the user deleted it after
     #: deploying, or a stale container was left behind.
     ORPHANED = "orphaned"
@@ -54,7 +61,11 @@ class DeviceStatus:
 
 @dataclass(frozen=True)
 class Conflicts:
-    """Devices already running under the lab name we are about to deploy.
+    """Devices already present under the lab name we are about to deploy.
+
+    Present, not running: a container that has exited still owns its name, so
+    it blocks a fresh deployment just as a live one does and must be cleared
+    the same way.
 
     Kathará identifies a lab by a hash of its **name**, not its directory
     (``Lab.hash = generate_urlsafe_hash(name)``). Two labs called "untitled" in
@@ -67,9 +78,9 @@ class Conflicts:
     """
 
     lab_name: str
-    #: Running devices whose names are in the topology being deployed.
+    #: Existing devices whose names are in the topology being deployed.
     expected: tuple[str, ...] = ()
-    #: Running under this lab name but absent from the topology. A strong hint
+    #: Present under this lab name but absent from the topology. A strong hint
     #: that a *different* lab is using the same name.
     unexpected: tuple[str, ...] = ()
 
@@ -106,38 +117,49 @@ class LabStatus:
         return [d.name for d in self.devices if d.state is DeviceState.RUNNING]
 
     @property
+    def exited(self) -> list[str]:
+        return [d.name for d in self.devices if d.state is DeviceState.EXITED]
+
+    @property
     def orphaned(self) -> list[str]:
         return [d.name for d in self.devices if d.state is DeviceState.ORPHANED]
 
     @property
     def deployed(self) -> bool:
-        return bool(self.running)
+        """Whether any container exists, running or not.
+
+        Exited devices count: they still hold their names, so the lab needs
+        undeploying before it can be deployed again. Ask :attr:`running` when
+        the question is whether the lab actually works.
+        """
+        return bool(self.running or self.exited)
 
 
 def find_conflicts(topology: Topology, lab_dir: Path) -> Conflicts:
-    """What is already running under this topology's lab name.
+    """What already exists under this topology's lab name.
 
     Computed from the name alone, so nothing is written to disk just to find
-    out whether asking is necessary.
+    out whether asking is necessary. Includes containers that have exited,
+    because those still occupy the names we are about to claim.
     """
     our_hash = generate_urlsafe_hash(topology.name)
     ours = {node.name for node in topology.nodes}
 
-    running: set[str] = set()
+    present: set[str] = set()
     try:
         manager = Kathara.get_instance()
         for batch in manager.get_machines_stats():
             for stats in batch.values():
                 if getattr(stats, "lab_hash", None) == our_hash:
-                    running.add(stats.name)
+                    present.add(stats.name)
             break  # the generator re-polls; one snapshot is enough
     except Exception:  # noqa: BLE001 - no daemon means nothing is running
         return Conflicts(lab_name=topology.name)
 
     return Conflicts(
         lab_name=topology.name,
-        expected=tuple(sorted(running & ours)),
-        unexpected=tuple(sorted(running - ours)),
+        expected=tuple(sorted(present & ours)),
+        unexpected=tuple(sorted(present - ours)),
     )
 
 
@@ -238,18 +260,35 @@ def status(topology: Topology, lab_dir: Path) -> LabStatus:
         return LabStatus(message=f"Could not read the lab: {exc}")
 
     expected = {node.name for node in topology.nodes}
-    running: set[str] = set()
+    states: dict[str, DeviceState] = {}
 
     for name in expected:
         try:
             stats = next(manager.get_machine_stats(name, lab=lab), None)
         except Exception:  # noqa: BLE001 - a missing container is not an error
             stats = None
-        if stats is not None:
-            running.add(name)
+        states[name] = _state_of(stats)
 
-    devices = [
-        DeviceStatus(name, DeviceState.RUNNING if name in running else DeviceState.STOPPED)
-        for name in sorted(expected)
-    ]
+    devices = [DeviceStatus(name, states[name]) for name in sorted(expected)]
     return LabStatus(devices=devices, lab_dir=str(directory))
+
+
+def _state_of(stats: Any) -> DeviceState:
+    """Read a device's state from Kathará's stats, or its absence.
+
+    Getting stats back is *not* proof of life: Docker keeps reporting a
+    container after it stops, so an exited device arrives here with
+    ``status == "exited"`` and a pid count of zero. Treating the object's mere
+    presence as "running" made the interface claim a healthy lab while every
+    ``kathara connect`` failed with a 409.
+    """
+    if stats is None:
+        return DeviceState.STOPPED
+    # Anything that is not running cannot be connected to — exited, dead,
+    # paused, still being created. The user's next move is the same for all of
+    # them, so they do not need separate names here.
+    return (
+        DeviceState.RUNNING
+        if getattr(stats, "status", None) == "running"
+        else DeviceState.EXITED
+    )

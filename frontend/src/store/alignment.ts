@@ -13,6 +13,20 @@
 
 import type { Node, Position } from "../types";
 
+/**
+ * The closest two devices may be placed by distribution, centre to centre.
+ *
+ * Distributing evenly between the outermost devices packs them as tightly as
+ * those extremes allow, which can leave their interface labels overlapping and
+ * unreadable — the labels sit *outside* the node, so the visible width of a
+ * device is considerably more than the box. These are floors, not targets:
+ * spacing wider than this is left alone.
+ *
+ * Horizontal needs more room because a device is drawn wide and its labels
+ * extend to the left and right of it.
+ */
+const MINIMUM_SPACING = { x: 190, y: 120 } as const;
+
 export type AlignmentAction =
   | "left"
   | "right"
@@ -37,6 +51,25 @@ export const ALIGNMENT_LABELS: Record<AlignmentAction, string> = {
 /** Aligning needs two nodes; distributing needs three to have any effect. */
 export function minimumSelection(action: AlignmentAction): number {
   return action === "distributeX" || action === "distributeY" ? 3 : 2;
+}
+
+/**
+ * The gap to leave between adjacent devices when distributing.
+ *
+ * Normally the outermost devices stay put and the rest are spaced evenly
+ * between them. When that would pack them closer than `minimum`, the spacing
+ * opens out instead and the far end moves: an evenly spaced row nobody can
+ * read is worse than one that grew slightly wider than asked.
+ */
+export function distributionStep(
+  from: number,
+  to: number,
+  count: number,
+  minimum: number,
+): number {
+  if (count < 2) return 0;
+  const even = (to - from) / (count - 1);
+  return Math.max(even, minimum);
 }
 
 function average(values: number[]): number {
@@ -97,11 +130,14 @@ export function computeAlignment(
       break;
     }
     case "distributeX": {
-      // Outermost nodes stay put; the rest are spaced evenly between them.
       const ordered = [...nodes].sort((a, b) => a.position.x - b.position.x);
       const first = ordered[0]!;
-      const last = ordered[ordered.length - 1]!;
-      const step = (last.position.x - first.position.x) / (ordered.length - 1);
+      const step = distributionStep(
+        first.position.x,
+        ordered[ordered.length - 1]!.position.x,
+        ordered.length,
+        MINIMUM_SPACING.x,
+      );
       ordered.forEach((node, index) =>
         set(node, { x: first.position.x + step * index, y: node.position.y }),
       );
@@ -110,8 +146,12 @@ export function computeAlignment(
     case "distributeY": {
       const ordered = [...nodes].sort((a, b) => a.position.y - b.position.y);
       const first = ordered[0]!;
-      const last = ordered[ordered.length - 1]!;
-      const step = (last.position.y - first.position.y) / (ordered.length - 1);
+      const step = distributionStep(
+        first.position.y,
+        ordered[ordered.length - 1]!.position.y,
+        ordered.length,
+        MINIMUM_SPACING.y,
+      );
       ordered.forEach((node, index) =>
         set(node, { x: node.position.x, y: first.position.y + step * index }),
       );

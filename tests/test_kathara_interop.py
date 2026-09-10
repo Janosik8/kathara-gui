@@ -155,3 +155,37 @@ def test_unrelated_files_survive_regeneration(tmp_path: Path, triangle: Topology
 
     write_lab(triangle, lab_dir)
     assert manual.read_bytes() == b"%PDF-1.4 fake"
+
+
+# -- device images ------------------------------------------------------
+
+
+def test_a_router_reaches_kathara_with_a_routing_image(tmp_path: Path) -> None:
+    """A router on kathara/base has no FRR, so no vtysh and no routing at all.
+
+    The editor sets the image when the device is created, because serialize
+    only writes an image line when one is set and Kathará's own default is
+    kathara/base for everything.
+    """
+    topo = Topology(
+        nodes=[
+            Node(
+                name="r1",
+                kind="router",
+                image="kathara/frr",
+                interfaces=[Interface(number=0, collision_domain="A")],
+            )
+        ]
+    )
+    lab = LabParser.parse(str(write_lab(topo, tmp_path / "lab")))
+    assert lab.machines["r1"].get_image() == "kathara/frr"
+
+
+def test_an_unset_image_still_produces_no_image_line(tmp_path: Path) -> None:
+    """Import must stay non-destructive: a lab that named no image keeps
+    naming none, so re-exporting it does not silently add one."""
+    topo = Topology(
+        nodes=[Node(name="r1", interfaces=[Interface(number=0, collision_domain="A")])]
+    )
+    lab_conf = (write_lab(topo, tmp_path / "lab") / "lab.conf").read_text()
+    assert "[image]" not in lab_conf

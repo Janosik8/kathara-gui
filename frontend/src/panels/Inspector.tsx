@@ -7,7 +7,14 @@
 
 import type { Operation } from "../store/operations";
 import { CommittedInput } from "./CommittedInput";
-import { DEVICE_KINDS, type DeviceKind, KNOWN_DAEMONS, type Node, type Topology } from "../types";
+import {
+  DEFAULT_IMAGES,
+  DEVICE_KINDS,
+  type DeviceKind,
+  KNOWN_DAEMONS,
+  type Node,
+  type Topology,
+} from "../types";
 
 interface Props {
   topology: Topology;
@@ -61,7 +68,13 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
         <select
           id="inspector-kind"
           value={node.kind}
-          onChange={(e) => update({ kind: e.target.value as DeviceKind })}
+          onChange={(e) => {
+            const kind = e.target.value as DeviceKind;
+            // Follow the new kind's default image, but never overwrite an
+            // image the user chose themselves.
+            const usingDefault = !node.image || node.image === DEFAULT_IMAGES[node.kind];
+            update(usingDefault ? { kind, image: DEFAULT_IMAGES[kind] } : { kind });
+          }}
         >
           {DEVICE_KINDS.map((kind) => (
             <option key={kind} value={kind}>
@@ -75,7 +88,7 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
         id="inspector-image"
         label="Container image"
         value={node.image ?? ""}
-        placeholder={node.kind === "router" ? "kathara/frr" : "kathara/base"}
+        placeholder={DEFAULT_IMAGES[node.kind]}
         onCommit={(image) => update({ image: image || null })}
       />
 

@@ -117,7 +117,12 @@ export interface ProbeResponse {
   can_deploy: boolean;
 }
 
-export type DeviceState = "running" | "stopped" | "orphaned";
+/**
+ * `exited` is a container that exists but has stopped — Docker does not
+ * restart Kathará containers, so a daemon restart or a sleeping machine leaves
+ * a lab here. It is not the same as `stopped`: the names are still taken.
+ */
+export type DeviceState = "running" | "stopped" | "exited" | "orphaned";
 
 export interface DeviceStatus {
   name: string;
@@ -126,15 +131,18 @@ export interface DeviceStatus {
 
 export interface Conflicts {
   lab_name: string;
-  /** Running devices that are also in the topology being deployed. */
+  /** Existing devices that are also in the topology being deployed. */
   expected: string[];
-  /** Running under this lab name but absent from it — probably another lab. */
+  /** Present under this lab name but absent from it — probably another lab. */
   unexpected: string[];
 }
 
 export interface StatusResponse {
   devices: DeviceStatus[];
   running: string[];
+  /** Devices whose containers exist but have stopped. */
+  exited: string[];
+  /** True when any container exists, running or exited. */
   deployed: boolean;
   lab_dir: string | null;
   message: string | null;

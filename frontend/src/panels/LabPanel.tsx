@@ -43,6 +43,9 @@ interface Props {
 const DEVICE_STATE: Record<string, { glyph: string; label: string }> = {
   running: { glyph: "●", label: "Running" },
   stopped: { glyph: "○", label: "Stopped" },
+  // A container that exists but has died. Worth its own row state: it looks
+  // deployed in `kathara list` yet refuses every connection.
+  exited: { glyph: "◼", label: "Exited" },
   orphaned: { glyph: "◍", label: "Orphaned" },
 };
 
@@ -88,6 +91,10 @@ export function LabPanel({
 }: Props) {
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
+  const exited = status?.exited ?? [];
+  // Verification runs commands inside the containers, so it needs live ones —
+  // `deployed` is true for a lab whose devices have all exited.
+  const anyRunning = (status?.running.length ?? 0) > 0;
 
   return (
     <section className="lab" aria-labelledby="lab-heading">
@@ -167,7 +174,7 @@ export function LabPanel({
           {busy === "undeploy" ? "Stopping…" : "Stop"}
         </button>
         {canVerify && (
-          <button type="button" onClick={onVerify} disabled={busy !== null || !deployed}>
+          <button type="button" onClick={onVerify} disabled={busy !== null || !anyRunning}>
             {busy === "verify" ? "Verifying…" : "Verify links"}
           </button>
         )}
@@ -185,6 +192,22 @@ export function LabPanel({
       )}
 
       {status?.message && <p className="lab__message">{status.message}</p>}
+
+      {exited.length > 0 && (
+        // The symptom this explains is baffling on its own: `kathara list`
+        // still shows the devices, so the lab looks deployed, but every
+        // `kathara connect` fails with a 409 saying the container is not
+        // running.
+        <p className="lab__warning" role="status">
+          <strong>
+            {exited.length === 1 ? "1 device has" : `${exited.length} devices have`} stopped:
+          </strong>{" "}
+          {exited.join(", ")}. The containers still exist but nothing is running inside
+          them, so you cannot open a shell on them. Docker does not restart Kathará
+          containers, so this usually follows a Docker restart or the machine sleeping.
+          Deploy again to bring the lab back.
+        </p>
+      )}
 
       {status?.lab_dir && (
         <div className="lab__location">

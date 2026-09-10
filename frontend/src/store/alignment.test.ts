@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { type Node, newNode } from "../types";
-import { type AlignmentAction, computeAlignment, minimumSelection } from "./alignment";
+import {
+  type AlignmentAction,
+  computeAlignment,
+  distributionStep,
+  minimumSelection,
+} from "./alignment";
 
 function nodes(...coords: [number, number][]): Node[] {
   return coords.map(([x, y], i) => newNode(`r${i + 1}`, "router", { x, y }));
@@ -40,19 +45,20 @@ describe("computeAlignment", () => {
 
 describe("distribute", () => {
   it("spaces evenly and leaves the outermost nodes alone", () => {
-    // 0, 10, 100 -> 0, 50, 100
-    const result = computeAlignment(nodes([0, 0], [10, 0], [100, 0]), "distributeX");
-    expect(result).toEqual({ r2: { x: 50, y: 0 } });
+    // 0, 100, 1000 -> 0, 500, 1000. Wide enough that the minimum gap, which
+    // guards against unreadable labels, does not come into play.
+    const result = computeAlignment(nodes([0, 0], [100, 0], [1000, 0]), "distributeX");
+    expect(result).toEqual({ r2: { x: 500, y: 0 } });
   });
 
   it("distributes by position, not by list order", () => {
-    const result = computeAlignment(nodes([100, 0], [0, 0], [10, 0]), "distributeX");
-    expect(result).toEqual({ r3: { x: 50, y: 0 } });
+    const result = computeAlignment(nodes([1000, 0], [0, 0], [100, 0]), "distributeX");
+    expect(result).toEqual({ r3: { x: 500, y: 0 } });
   });
 
   it("distributes vertically", () => {
-    const result = computeAlignment(nodes([0, 0], [0, 10], [0, 100]), "distributeY");
-    expect(result).toEqual({ r2: { x: 0, y: 50 } });
+    const result = computeAlignment(nodes([0, 0], [0, 100], [0, 1000]), "distributeY");
+    expect(result).toEqual({ r2: { x: 0, y: 500 } });
   });
 });
 
@@ -81,5 +87,52 @@ describe("minimumSelection", () => {
 
   it.each(["distributeX", "distributeY"] as AlignmentAction[])("%s needs three", (action) => {
     expect(minimumSelection(action)).toBe(3);
+  });
+});
+
+describe("distributionStep", () => {
+  it("spaces evenly when there is room", () => {
+    expect(distributionStep(0, 1000, 3, 190)).toBe(500);
+  });
+
+  it("opens out rather than packing below the minimum", () => {
+    // The reported defect: distributing a tight cluster left the interface
+    // labels overlapping and unreadable. The labels sit outside the node, so
+    // the visible width of a device is well beyond its box.
+    expect(distributionStep(0, 100, 3, 190)).toBe(190);
+  });
+
+  it("never returns a step below the minimum", () => {
+    for (const to of [0, 10, 100, 300]) {
+      expect(distributionStep(0, to, 4, 190)).toBeGreaterThanOrEqual(190);
+    }
+  });
+
+  it("is zero for fewer than two devices", () => {
+    expect(distributionStep(0, 500, 1, 190)).toBe(0);
+  });
+});
+
+describe("distribution keeps labels readable", () => {
+  it("does not pack a tight cluster on top of itself", () => {
+    // Three devices within 60px: evenly spaced that is 30px apart, which is
+    // narrower than a device, let alone its labels.
+    const result = computeAlignment(nodes([0, 0], [30, 0], [60, 0]), "distributeX");
+    const xs = [0, result.r2!.x, result.r3!.x];
+    for (let i = 1; i < xs.length; i += 1) {
+      expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(190);
+    }
+  });
+
+  it("anchors on the first device so the row grows one way only", () => {
+    const result = computeAlignment(nodes([100, 0], [130, 0], [160, 0]), "distributeX");
+    // r1 is the leftmost and does not move.
+    expect(result.r1).toBeUndefined();
+    expect(result.r2!.x).toBe(290);
+  });
+
+  it("leaves a comfortably spread row exactly as it was", () => {
+    const result = computeAlignment(nodes([0, 0], [400, 0], [800, 0]), "distributeX");
+    expect(result).toEqual({});
   });
 });

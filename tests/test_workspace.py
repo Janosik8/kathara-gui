@@ -110,3 +110,30 @@ class TestLabDir:
         session.mark_saved(tmp_path / "elsewhere")
         session.reset()
         assert session.lab_dir() == tmp_path / "untitled"
+
+
+class TestLabDirFollowsTheRequest:
+    """The directory must be named after the lab being acted on.
+
+    A deploy computes the directory before adopting the request into the
+    session, so relying on the session's own topology named every lab after
+    whatever was there before — in practice "untitled".
+    """
+
+    def test_an_explicit_topology_names_the_directory(self, tmp_path: Path) -> None:
+        session = Session(workspace_root=tmp_path)
+        # The session still holds the default, as it does during a deploy.
+        assert session.topology.name == "untitled"
+
+        assert session.lab_dir(Topology(name="bgp exam")) == tmp_path / "bgp-exam"
+
+    def test_the_session_is_used_when_none_is_given(self, tmp_path: Path) -> None:
+        session = Session(workspace_root=tmp_path)
+        session.replace(Topology(name="ospf lab"))
+        assert session.lab_dir() == tmp_path / "ospf-lab"
+
+    def test_a_saved_lab_ignores_the_name_entirely(self, tmp_path: Path) -> None:
+        # Once saved somewhere, that folder wins whatever the lab is called.
+        session = Session(workspace_root=tmp_path / "workspace")
+        session.mark_saved(tmp_path / "teaching" / "exam")
+        assert session.lab_dir(Topology(name="something else")) == tmp_path / "teaching" / "exam"

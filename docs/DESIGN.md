@@ -50,11 +50,11 @@ tool removes the transcription.
 | 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified |
 | 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
-| 5 | State extraction | Kathará's `retrieve_files` pulls configuration out of live containers (proven in the Phase 0 spike) |
+| 5 | State extraction | `vtysh -c "show running-config"` captures what a router is *actually* running into the lab directory; `.kgui` packages the lot |
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; palette contrast asserted in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
 | 8 | Exam mode | `features.py`, enforced server-side |
-| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments; a layout algorithm handles files that have none |
+| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens exactly as it was drawn. Laying out a legacy lab that carries no positions is **not yet built** |
 
 ### The idea that ties it together
 
@@ -173,6 +173,22 @@ canonical teaching-lab fault, and a diagram that omits the port cannot help anyo
 Which face an interface sits on is derived from where its peer is, so the drawing rearranges
 itself as devices move instead of forcing the user to tidy it.
 
+**Captured configuration comes from the daemon, not from disk.** FRR keeps its live
+configuration in memory, and `/etc/frr/frr.conf` only matches it if somebody ran
+`write memory` — which in a teaching lab is exactly what nobody does. Reading the file would
+have looked like it worked while capturing nothing. Asking `vtysh` for the running
+configuration also means the capture lands where Kathará copies from on the next deploy, so
+resuming a hibernated lab is capture-then-deploy with no separate restore step to get wrong.
+
+**The interface reports what is running, not what it last did.** A user can stop containers
+from a terminal, and Docker stops the whole lab when it restarts or the machine sleeps — so
+every status is a fresh comparison against the daemon rather than a memory of the last
+deployment. The subtlety is that Docker keeps reporting a container after it dies: reading
+only whether stats *exist* made a lab of dead containers look healthy, which is worse than
+no status at all, because the interface then contradicts the error the user is staring at.
+A stopped container is also distinct from an absent one — it still owns its name, so it
+blocks the next deployment and has to be cleared rather than ignored.
+
 **Stopping someone else's work requires consent.** Kathará derives a lab's identity from a
 hash of its *name*, so two labs called `untitled` in different folders are one lab to it.
 From inside a deploy, a routine redeploy and the destruction of an unrelated lab are
@@ -204,9 +220,13 @@ original requirement list too large for an engineering thesis and directed the w
 capabilities 1–5 plus usability. The value here is a refined, reliable, accessible core
 rather than a broad set of unfinished features.
 
-Both retain seams: an `AIProvider` protocol with a null implementation, and the operation log
-described above. Neither is a stub pretending to be a feature — they are the shapes the code
-would need, chosen now so that adding either later is additive.
+What each would need is nevertheless accounted for. Collaboration has a real substrate
+already in place: edits are discrete operations over a pure reducer, which is what a CRDT or
+an operational-transform layer would sit on, so adding it later is additive rather than a
+rewrite of the editor. The AI assistant has no code at all — the relevant claim is narrower,
+that the same operation log is the interface an assistant would act through, proposing
+operations that the existing validation and undo already handle. That is a design argument
+about where the seam falls, not a component sitting in the tree.
 
 ### Where this sits against existing tools
 

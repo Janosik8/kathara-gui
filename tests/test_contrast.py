@@ -110,6 +110,7 @@ TEXT_PAIRS = [
     ("secondary text on a raised surface", "--fg-muted", "--bg-raised"),
     ("accent text", "--accent", "--bg"),
     ("error text on a panel", "--danger", "--bg-panel"),
+    ("warning text on a panel", "--warning", "--bg-panel"),
 ]
 
 
@@ -135,6 +136,8 @@ NON_TEXT_PAIRS = [
     ("control boundary on a raised surface", "--border-strong", "--bg-raised"),
     ("focus indicator on the canvas", "--focus", "--bg"),
     ("focus indicator on a panel", "--focus", "--bg-panel"),
+    # The bar marking an exited device, and the notice explaining it.
+    ("warning boundary on a panel", "--warning", "--bg-panel"),
 ]
 
 

@@ -340,3 +340,69 @@ def test_a_different_lab_sharing_the_name_is_reported_as_unexpected(
     finally:
         runner.undeploy(first, tmp_path / "one")
         runner.undeploy(second, tmp_path / "two")
+
+
+def test_a_container_that_dies_is_not_reported_as_running(tmp_path: Path) -> None:
+    """The reported defect, reproduced against a real daemon.
+
+    Docker does not restart Kathará containers, so a Docker restart or a
+    machine sleeping overnight leaves the lab exactly like this: ``kathara
+    list`` still lists every device, and ``kathara connect`` answers with a 409
+    saying the container is not running. The interface has to say so rather
+    than reporting a healthy lab.
+    """
+    import docker
+
+    topology = two_routers(matching_subnets=True)
+    lab = tmp_path / "dies"
+
+    try:
+        runner.deploy(topology, lab)
+        assert runner.status(topology, lab).running == ["r1", "r2"]
+
+        # Stop one the way an external event would, leaving the container in
+        # place rather than removing it.
+        client = docker.from_env()
+        (container,) = [
+            c for c in client.containers.list() if c.name.endswith("_r1_" + _hash(topology))
+        ]
+        container.stop(timeout=5)
+
+        status = runner.status(topology, lab)
+        assert status.exited == ["r1"]
+        assert status.running == ["r2"]
+        # Still "deployed": r1's name is taken, so a redeploy needs a stop first.
+        assert status.deployed is True
+    finally:
+        runner.undeploy(topology, lab)
+
+
+def test_the_exited_container_still_blocks_a_fresh_deploy(tmp_path: Path) -> None:
+    """Why EXITED is not the same as STOPPED: the name is still claimed."""
+    import docker
+
+    topology = two_routers(matching_subnets=True)
+    lab = tmp_path / "blocks"
+
+    try:
+        runner.deploy(topology, lab)
+        client = docker.from_env()
+        for container in client.containers.list():
+            if container.name.endswith("_r1_" + _hash(topology)):
+                container.stop(timeout=5)
+
+        conflicts = runner.find_conflicts(topology, lab)
+        assert "r1" in conflicts.expected, "an exited container still owns its name"
+
+        # And confirming really does recover the lab.
+        recovered = runner.deploy(topology, lab, confirm=True)
+        assert sorted(recovered.running) == ["r1", "r2"]
+        assert recovered.exited == []
+    finally:
+        runner.undeploy(topology, lab)
+
+
+def _hash(topology: Topology) -> str:
+    from Kathara.utils import generate_urlsafe_hash
+
+    return generate_urlsafe_hash(topology.name)

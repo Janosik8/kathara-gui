@@ -44,6 +44,7 @@ const { MockApiError, checkAddressing, allocateAddressing, probe, features, depl
   const idleStatus = (): StatusResponse => ({
     devices: [],
     running: [],
+    exited: [],
     deployed: false,
     lab_dir: null,
     message: null,
@@ -117,6 +118,7 @@ vi.mock("./api/client", () => ({
     labStatus: vi.fn(async () => ({
       devices: [],
       running: [],
+      exited: [],
       deployed: false,
       lab_dir: null,
       message: null,
@@ -140,6 +142,7 @@ beforeEach(() => {
   const idleStatus: StatusResponse = {
     devices: [],
     running: [],
+    exited: [],
     deployed: false,
     lab_dir: null,
     message: null,
@@ -817,6 +820,7 @@ describe("deploying and verifying", () => {
       { name: "r2", state: "running" },
     ],
     running: ["r1", "r2"],
+    exited: [],
     deployed: true,
     lab_dir: "/tmp/lab",
     message: null,
@@ -979,6 +983,7 @@ describe("finding the lab on disk", () => {
   const deployedAt = (dir: string): StatusResponse => ({
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
+    exited: [],
     deployed: true,
     lab_dir: dir,
     message: null,
@@ -1050,10 +1055,102 @@ describe("finding the lab on disk", () => {
   });
 })
 
+describe("a lab whose containers have died", () => {
+  // Docker does not restart Kathará containers, so a Docker restart or a
+  // machine sleeping overnight leaves the lab here. The reported symptom was
+  // baffling: `kathara list` still showed every device, the interface said the
+  // lab was running, and every `kathara connect` failed with a 409.
+  const halfDead: StatusResponse = {
+    devices: [
+      { name: "r1", state: "exited" },
+      { name: "r2", state: "running" },
+    ],
+    running: ["r2"],
+    exited: ["r1"],
+    deployed: true,
+    lab_dir: "/labs/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  const allDead: StatusResponse = {
+    devices: [{ name: "r1", state: "exited" }],
+    running: [],
+    exited: ["r1"],
+    deployed: true,
+    lab_dir: "/labs/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  it("says the device stopped rather than calling it running", async () => {
+    deploy.mockResolvedValue(halfDead);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    const rows = await screen.findAllByRole("listitem");
+    const r1 = rows.find((row) => row.textContent?.includes("r1"))!;
+    expect(r1).toHaveTextContent("Exited");
+    expect(r1).not.toHaveTextContent("Running");
+  });
+
+  it("explains why connecting to it fails", async () => {
+    deploy.mockResolvedValue(halfDead);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/1 device has.*stopped/s)).toBeInTheDocument();
+    expect(screen.getByText(/cannot open a shell/)).toBeInTheDocument();
+  });
+
+  it("says nothing when every device is alive", async () => {
+    deploy.mockResolvedValue({
+      ...halfDead,
+      devices: [{ name: "r1", state: "running" }, { name: "r2", state: "running" }],
+      running: ["r1", "r2"],
+      exited: [],
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => expect(screen.queryByText(/stopped:/)).toBeNull());
+  });
+
+  it("will not verify links when nothing is running", async () => {
+    // Verification runs commands inside the containers, so it has nothing to
+    // work with — and `deployed` is true here, which is what used to enable it.
+    deploy.mockResolvedValue(allDead);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Verify links" })).toBeDisabled(),
+    );
+  });
+
+  it("still offers to stop the lab, because the names are taken", async () => {
+    deploy.mockResolvedValue(allDead);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled(),
+    );
+  });
+});
+
 describe("redeploying a running lab", () => {
   const running: StatusResponse = {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
+    exited: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1098,6 +1195,7 @@ describe("redeploying a running lab", () => {
     deploy.mockResolvedValue({
       devices: [],
       running: [],
+      exited: [],
       deployed: false,
       lab_dir: null,
       message: "Could not deploy: image not found",
@@ -1117,6 +1215,7 @@ describe("confirming before stopping a running lab", () => {
   const conflicted = (expected: string[], unexpected: string[]): StatusResponse => ({
     devices: [],
     running: [],
+    exited: [],
     deployed: false,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1127,6 +1226,7 @@ describe("confirming before stopping a running lab", () => {
   const deployed: StatusResponse = {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
+    exited: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: "Stopped 1 device already running.",
@@ -1343,5 +1443,48 @@ describe("deleting several links in a row", () => {
     expect(interfaceCount("r1")).toBe("1");
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(interfaceCount("r1")).toBe("2");
+  });
+})
+
+describe("device images", () => {
+  it("gives a new router an image that actually carries FRR", async () => {
+    // Kathará's own default is kathara/base, which has no routing daemons at
+    // all: no vtysh, nothing for the generated /etc/frr/daemons to configure,
+    // and no way to run a routing lab.
+    const user = await renderApp();
+    await user.click(screen.getByRole("button", { name: /Add router/ }));
+    await user.click(screen.getByRole("treeitem", { name: /^r1/ }));
+
+    expect(screen.getByLabelText("Container image")).toHaveValue("kathara/frr");
+  });
+
+  it("gives a PC the base image", async () => {
+    const user = await renderApp();
+    await user.click(screen.getByRole("button", { name: /Add pc/ }));
+    await user.click(screen.getByRole("treeitem", { name: /^pc1/ }));
+
+    expect(screen.getByLabelText("Container image")).toHaveValue("kathara/base");
+  });
+
+  it("follows the image when the kind is changed", async () => {
+    const user = await renderApp();
+    await user.click(screen.getByRole("button", { name: /Add pc/ }));
+    await user.click(screen.getByRole("treeitem", { name: /^pc1/ }));
+
+    await user.selectOptions(screen.getByLabelText("Kind"), "router");
+    expect(screen.getByLabelText("Container image")).toHaveValue("kathara/frr");
+  });
+
+  it("never overwrites an image the user chose", async () => {
+    const user = await renderApp();
+    await user.click(screen.getByRole("button", { name: /Add router/ }));
+    await user.click(screen.getByRole("treeitem", { name: /^r1/ }));
+
+    const image = screen.getByLabelText("Container image");
+    await user.clear(image);
+    await user.type(image, "my/custom:1{Enter}");
+
+    await user.selectOptions(screen.getByLabelText("Kind"), "pc");
+    expect(screen.getByLabelText("Container image")).toHaveValue("my/custom:1");
   });
 })

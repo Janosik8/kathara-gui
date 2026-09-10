@@ -43,17 +43,24 @@ class Session:
         """Where labs are generated when they have no folder of their own."""
         return self._workspace_root
 
-    def lab_dir(self) -> Path:
+    def lab_dir(self, topology: Topology | None = None) -> Path:
         """The directory this lab is generated into and deployed from.
 
         A lab that has been saved somewhere deploys from that folder, so the
         files the user edits and the files that run are the same ones. An
         unsaved lab gets a folder in the workspace named after it.
+
+        ``topology`` names the lab being acted on. Callers must pass the one
+        they were given rather than relying on the session's: a deploy
+        computes the directory *before* adopting the request, so without this
+        a lab called "bgp exam" was written to a folder named after whatever
+        the session held before — usually "untitled".
         """
         with self._lock:
             if self._path is not None:
                 return self._path
-            return self._workspace_root / safe_dir_name(self._topology.name)
+            named = topology if topology is not None else self._topology
+            return self._workspace_root / safe_dir_name(named.name)
 
     @property
     def features(self) -> Features:

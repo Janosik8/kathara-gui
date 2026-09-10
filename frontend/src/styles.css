@@ -21,6 +21,9 @@
   --accent: #0b5cad; /* 7.0:1 on white — AAA for body text */
   --accent-fg: #ffffff;
   --danger: #a3101b;
+  /* Recoverable trouble, distinct from --danger: a lab whose containers have
+     exited is not broken, it just needs deploying again. 6.0:1 on a panel. */
+  --warning: #8a4f00;
   --focus: #0b5cad;
 
   --radius: 6px;
@@ -43,6 +46,7 @@
     --accent: #6fb3ff; /* lightened to keep contrast on a dark ground */
     --accent-fg: #0a0f16;
     --danger: #ff9098;
+    --warning: #f0b429; /* lightened to keep contrast on a dark ground */
     --focus: #6fb3ff;
     --minimap-mask: rgba(0, 0, 0, 0.5);
   }
@@ -779,6 +783,16 @@ select {
   margin: 6px 0;
 }
 
+/* Not an error — the lab is recoverable — but it must not read as chatter,
+   because it explains a failure the user is otherwise left guessing at. */
+.lab__warning {
+  font-size: 0.85rem;
+  border-left: 4px solid var(--warning);
+  padding-left: 8px;
+  margin: 6px 0;
+  color: var(--fg);
+}
+
 .issue__remedy {
   display: block;
   margin-top: 4px;
@@ -840,6 +854,17 @@ select {
 .state[data-state="stopped"],
 .state[data-outcome="skipped"] {
   border-left-style: dashed;
+}
+
+/* Solid and thick like "running", because the container is really there, but
+   in the warning hue: the difference is that nothing is alive inside it. */
+.state[data-state="exited"] {
+  border-left-color: var(--warning);
+  border-left-width: 6px;
+}
+.state[data-state="exited"] .state__glyph,
+.state[data-state="exited"] .state__label {
+  color: var(--warning);
 }
 
 /* The minimap sizes its rectangles from each node's measured dimensions, so

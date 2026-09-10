@@ -10,6 +10,22 @@ export type DeviceKind = "router" | "switch" | "pc" | "server";
 
 export const DEVICE_KINDS: readonly DeviceKind[] = ["router", "switch", "pc", "server"];
 
+/**
+ * The image each kind runs unless told otherwise.
+ *
+ * Mirrors `DEFAULT_IMAGES` in `domain/model.py`. A router *must* get an image
+ * carrying FRR: Kathará's own default is `kathara/base`, which has no routing
+ * daemons at all, so leaving this unset produced routers with no `vtysh`, an
+ * `/etc/frr/daemons` file nothing reads, and no way to configure routing —
+ * which is the entire point of the tool.
+ */
+export const DEFAULT_IMAGES: Record<DeviceKind, string> = {
+  router: "kathara/frr",
+  switch: "kathara/base",
+  pc: "kathara/base",
+  server: "kathara/base",
+};
+
 /** FRR daemons the backend knows how to enable. */
 export const KNOWN_DAEMONS = [
   "zebra",
@@ -90,6 +106,9 @@ export function newNode(name: string, kind: DeviceKind, position: Position): Nod
   return {
     name,
     kind,
+    // Set explicitly rather than left to Kathará's default, which is
+    // kathara/base for everything and has no routing daemons.
+    image: DEFAULT_IMAGES[kind],
     bridged: false,
     position,
     interfaces: [],
