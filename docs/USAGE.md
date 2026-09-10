@@ -198,18 +198,46 @@ A subnet field rejects a host address (`192.168.1.1/24`) and suggests the networ
 because the model requires a network and an invalid value would otherwise be rejected on
 every later request.
 
+### Saving, sharing and reopening a scenario
+
+The **Scenario** panel holds everything to do with the scenario as a file.
+
+A `.kgui` file is a zip containing the topology (including canvas positions), the generated
+Kathará lab, and any configuration captured from running containers. Someone with Kathará
+and not this application can unzip it and run `kathara lstart`.
+
+| Button | What it does |
+|---|---|
+| **Save** | Writes `<name>.kgui` into the workspace folder. Also on the header bar. |
+| **Save as…** | The same, under a name you choose. |
+| **Open…** | Lists the scenarios in your workspace; pick one to open it. |
+| **Download** | Hands the file to your browser — for submitting or sending it. |
+| **Upload…** | Opens a `.kgui` from anywhere, e.g. a submission you received. |
+| **Import lab.conf…** | Reads an existing Kathará lab written by hand or another tool. |
+| **Export lab.conf** | Downloads just the `lab.conf`. |
+| **Capture running state** | Copies what each router is *actually* running into the lab folder. |
+
+**Save keeps the file on this machine; Download sends it out.** Scenario files live in the
+workspace folder (`./kathara-labs` unless `--workspace` says otherwise), which is also where
+labs are deployed from.
+
+**Hibernating and resuming a lab.** Deploy, configure the routers however you like, press
+**Capture running state**, then **Save**. Reopening that file and deploying brings the lab
+back configured as you left it — the capture is written where Kathará copies from on the
+next deploy, so there is no separate restore step.
+
+**Feature toggles travel with the scenario.** If an instructor withdraws the subnet
+calculator, opening that scenario withdraws it on your machine too.
+
 ### Not built yet
 
 - **In-app terminal.** Use `kathara connect` in a real terminal for now — see §4.
-- **Opening and saving files.** There is no File menu: a topology lives only in the browser
-  session. Import and export of `lab.conf` exist as API endpoints (below) but have no
-  control in the UI, and the `.kgui` package format is implemented and tested without being
-  reachable either.
-- **Capturing a running configuration.** Works and is tested against live containers, but,
-  like the above, has no button yet.
-- **PDF manuals**, and a **built-in lab library**.
-- **Setting exam-mode toggles.** The server enforces them and the UI hides what they
-  withdraw, but nothing can change them from their defaults yet, so everything is on.
+- **Variants** of a scenario (exam groups), **PDF manuals**, and a **built-in lab library**.
+- **Auto-layout for imported labs that carry no positions.** They import, but every device
+  arrives at the same place and has to be dragged apart.
+- **Setting exam-mode toggles.** The server enforces them and they are stored in the package,
+  but there is no interface for an instructor to change them, so a new scenario has
+  everything on.
 
 See [PLAN.md](../PLAN.md).
 
@@ -320,6 +348,13 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/lab/deploy` | deploy; reports conflicts unless `confirm` is set |
 | POST | `/api/lab/undeploy` | stop the lab |
 | POST | `/api/lab/verify` | ping across every direct link |
+| GET | `/api/project` | scenario name, file it was saved to, feature toggles |
+| GET | `/api/project/packages` | `.kgui` files in the workspace |
+| POST | `/api/project/save` | write the scenario into the workspace |
+| POST | `/api/project/download` | the scenario as a `.kgui` for the browser to download |
+| POST | `/api/project/open` | open a package from the workspace |
+| POST | `/api/project/upload` | open a package sent as a raw body |
+| POST | `/api/project/capture` | pull running configuration into the lab directory |
 
 The `POST` endpoints for addressing and lab operations take the topology in the request body
 rather than acting on the stored one, because the browser normally holds newer work than the

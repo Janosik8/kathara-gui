@@ -189,6 +189,17 @@ no status at all, because the interface then contradicts the error the user is s
 A stopped container is also distinct from an absent one — it still owns its name, so it
 blocks the next deployment and has to be cleared rather than ignored.
 
+**A scenario is one file, and the browser moves it.** Everything a laboratory needs travels
+in a single `.kgui` zip: the topology with its canvas positions, the generated Kathará lab,
+the configuration captured from running containers, and the scenario's feature toggles. The
+driving case is an exam — a student submits a file to an e-learning platform, an instructor
+opens that submission — which is also why saving in place is confined to the workspace while
+anything crossing the machine boundary goes through the browser's own download and upload.
+Letting the page name a path for the server to write to would serve those flows no better
+and would hand a local server an arbitrary-write surface. Because it is an ordinary zip, a
+student who cannot open the application on the morning of a deadline can still see what they
+submitted.
+
 **Stopping someone else's work requires consent.** Kathará derives a lab's identity from a
 hash of its *name*, so two labs called `untitled` in different folders are one lab to it.
 From inside a deploy, a routine redeploy and the destruction of an unrelated lab are

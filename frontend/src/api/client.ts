@@ -57,6 +57,29 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Like `request`, but for endpoints that answer with a file.
+ *
+ * Kept separate rather than adding a flag: the JSON path must never try to
+ * parse a zip, and a caller asking for bytes should say so at the call site.
+ */
+async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  if (token === null) initialiseToken();
+
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(token ? { "X-KGUI-Token": token } : {}),
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(await readError(response), response.status);
+  }
+  return await response.blob();
+}
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = await response.json();
@@ -148,6 +171,58 @@ export interface StatusResponse {
   message: string | null;
   needs_confirmation: boolean;
   conflicts: Conflicts | null;
+}
+
+/** Which assistive features this scenario permits (exam mode). */
+export interface Features {
+  subnet_calculator: boolean;
+  addressing_validation: boolean;
+  infrastructure_verification: boolean;
+}
+
+export interface ProjectState {
+  name: string;
+  /** Absolute path of the `.kgui` this was saved to, or null if never saved. */
+  project_file: string | null;
+  dirty: boolean;
+  features: Features;
+  workspace: string;
+}
+
+export interface PackageSummary {
+  filename: string;
+  /** The scenario's own name, which need not match the file it lives in. */
+  name: string;
+  modified: number;
+  size: number;
+}
+
+export interface SaveResponse {
+  path: string;
+  filename: string;
+}
+
+export interface OpenResponse {
+  topology: Topology;
+  features: Features;
+  project_file: string;
+  lab_dir: string;
+  application: string;
+  created: string | null;
+}
+
+export interface CapturedFile {
+  device: string;
+  path: string;
+  lines: number;
+}
+
+export interface CaptureResponse {
+  captured: CapturedFile[];
+  /** Devices nothing was taken from, paired with the reason. */
+  skipped: [string, string][];
+  message: string | null;
+  lab_dir: string;
 }
 
 export type LinkOutcome = "pass" | "fail" | "skipped";
@@ -254,6 +329,54 @@ export const api = {
 
   verify: (topology: Topology) =>
     request<DiagnosticsResponse>("/api/lab/verify", {
+      method: "POST",
+      body: JSON.stringify({ topology }),
+    }),
+
+  // -- the scenario as a file -------------------------------------------
+
+  projectState: () => request<ProjectState>("/api/project"),
+
+  packages: () => request<PackageSummary[]>("/api/project/packages"),
+
+  /** Write the scenario into the workspace, keeping it on this machine. */
+  saveProject: (topology: Topology, filename?: string) =>
+    request<SaveResponse>("/api/project/save", {
+      method: "POST",
+      body: JSON.stringify({ topology, filename: filename ?? null }),
+    }),
+
+  openProject: (filename: string) =>
+    request<OpenResponse>("/api/project/open", {
+      method: "POST",
+      body: JSON.stringify({ filename }),
+    }),
+
+  /** The scenario as bytes, for handing to the browser's download. */
+  downloadProject: (topology: Topology, filename?: string) =>
+    requestBlob("/api/project/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topology, filename: filename ?? null }),
+    }),
+
+  /**
+   * Open a package from outside the workspace — the instructor receiving a
+   * submission. Sent as raw bytes, so the file name travels in a header.
+   */
+  uploadProject: (file: File) =>
+    request<OpenResponse>("/api/project/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-KGUI-Filename": encodeURIComponent(file.name),
+      },
+      body: file,
+    }),
+
+  /** Pull each running device's configuration into the lab directory. */
+  captureState: (topology: Topology) =>
+    request<CaptureResponse>("/api/project/capture", {
       method: "POST",
       body: JSON.stringify({ topology }),
     }),

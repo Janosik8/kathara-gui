@@ -35,6 +35,13 @@ export interface TopologyStore {
   canRedo: () => boolean;
   /** Load a topology from the server without polluting undo history. */
   load: (topology: Topology) => void;
+  /**
+   * Record that the document has been written to a file.
+   *
+   * Distinct from `load`, which also clears undo history: saving does not
+   * make the preceding edits unundoable, it only means they are on disk.
+   */
+  markSaved: () => void;
   clearError: () => void;
 }
 
@@ -113,6 +120,8 @@ export const useTopologyStore = create<TopologyStore>((set, get) => ({
       error: null,
       dirty: false,
     }),
+
+  markSaved: () => set({ dirty: false }),
 
   clearError: () => set({ error: null }),
 }));

@@ -15,10 +15,13 @@ Under development. Phases 0–3 complete — integration spike and CI, domain mo
 `lab.conf` codec, topology editor, and addressing with conflict detection.
 
 Phase 4 (deploy, diagnostics, terminal) is in progress: labs deploy, conflicting deployments
-are caught, and links are verified; the in-app terminal is outstanding. Phase 5 has started —
-the `.kgui` scenario package and capture of a container's running configuration both work
-and are tested against live containers, but neither is reachable from the interface yet, so
-there is still no way to save or open a file from the UI.
+are caught, and links are verified; the in-app terminal is outstanding.
+
+Phase 5 is largely done. A scenario saves to a single `.kgui` file holding the topology, the
+generated lab and configuration captured from running containers — so a lab can be
+configured by hand, captured, saved, reopened and redeployed with that configuration and its
+canvas layout intact. Existing `lab.conf` labs import and export. Variants, a PDF manual
+viewer and auto-layout for imports without positions remain.
 
 - **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
   will not do, with current status against each item.

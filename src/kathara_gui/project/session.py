@@ -31,6 +31,7 @@ class Session:
         self._lock = threading.RLock()
         self._topology = Topology(name="untitled")
         self._path: Path | None = None
+        self._project_file: Path | None = None
         self._dirty = False
         self._features = Features()
         # Resolved once, at construction. Re-reading the process's working
@@ -85,6 +86,18 @@ class Session:
             return self._path
 
     @property
+    def project_file(self) -> Path | None:
+        """The `.kgui` package this scenario was opened from or saved to.
+
+        Deliberately *not* the same thing as :attr:`path`. A package is a file
+        and a lab is a directory; conflating them would have had `lab_dir`
+        return `scenario.kgui` and deployment generate a lab inside a path that
+        is not a directory.
+        """
+        with self._lock:
+            return self._project_file
+
+    @property
     def dirty(self) -> bool:
         """True when there are edits not yet written to disk."""
         with self._lock:
@@ -97,15 +110,24 @@ class Session:
             self._dirty = dirty
             return self._topology
 
-    def mark_saved(self, path: Path) -> None:
+    def mark_saved(self, project_file: Path, *, lab_dir: Path | None = None) -> None:
+        """Record that the scenario now exists on disk as ``project_file``.
+
+        ``lab_dir`` is supplied when opening a package, whose lab was extracted
+        somewhere specific: the scenario should then deploy from those files,
+        including any configuration captured before it was packaged.
+        """
         with self._lock:
-            self._path = Path(path)
+            self._project_file = Path(project_file)
+            if lab_dir is not None:
+                self._path = Path(lab_dir)
             self._dirty = False
 
     def reset(self) -> Topology:
         with self._lock:
             self._topology = Topology(name="untitled")
             self._path = None
+            self._project_file = None
             self._dirty = False
             # Feature toggles belong to the scenario, so a new one starts
             # from the permissive default rather than inheriting an exam's

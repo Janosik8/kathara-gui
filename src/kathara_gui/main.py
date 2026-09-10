@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from kathara_gui import __version__
-from kathara_gui.api import addressing, lab, topology
+from kathara_gui.api import addressing, lab, project, topology
 from kathara_gui.project.session import configure_session
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -72,6 +72,7 @@ def create_app(token: str | None = None, workspace: Path | None = None) -> FastA
     app.include_router(topology.router)
     app.include_router(addressing.router)
     app.include_router(lab.router)
+    app.include_router(project.router)
 
     # Mounted last so API routes win. Absent during early development and in
     # a source checkout that has not built the frontend yet.

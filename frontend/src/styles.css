@@ -793,6 +793,30 @@ select {
   color: var(--fg);
 }
 
+/* The real control is the button that clicks this; see ScenarioPanel. */
+.file-input {
+  display: none;
+}
+
+/* A saved scenario in the Open list: a button filling the row, so the whole
+   entry is the target rather than a small link inside it. */
+.scenario__open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.scenario__open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .issue__remedy {
   display: block;
   margin-top: 4px;
