@@ -233,6 +233,26 @@ labs are deployed from.
 back configured as you left it — the capture is written where Kathará copies from on the
 next deploy, so there is no separate restore step.
 
+**A router's hostname comes from its device name.** Rename the device in the editor and
+redeploy; FRR picks the name up from the container.
+
+Setting it with `hostname NAME` inside `vtysh` does *not* work and is not a fault in the
+capture. In Kathará's FRR image, `hostname` is handled by `vtysh` itself rather than passed
+to the routing daemons, and the image runs with `no service integrated-vtysh-config`, so
+`vtysh` says as much and discards it:
+
+```
+r1(config)# hostname siemanko
+siemanko(config)# end
+siemanko# wr
+Note: this version of vtysh never writes vtysh.conf
+```
+
+The prompt changes for that session only. Open `vtysh` again and the hostname is back, every
+daemon's config on disk still says the old name, and **Capture running state** therefore
+records the old name — correctly. Ordinary routing configuration typed in `vtysh`, such as
+`router ospf`, does reach the daemons and is captured normally.
+
 **Feature toggles travel with the scenario.** If an instructor withdraws the subnet
 calculator, opening that scenario withdraws it on your machine too.
 
