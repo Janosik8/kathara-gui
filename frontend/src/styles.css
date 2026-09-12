@@ -24,6 +24,13 @@
   /* Recoverable trouble, distinct from --danger: a lab whose containers have
      exited is not broken, it just needs deploying again. 6.0:1 on a panel. */
   --warning: #8a4f00;
+  /* The two working areas get their own surfaces so it is obvious at a glance
+     which half of the screen you are in. Blue against amber is the safest
+     possible pair for the common (red-green) colour deficiencies, but neither
+     tint nor hue separates them in greyscale, so the accent edge differs in
+     *style* as well — see .panel--devices / .panel--lab. */
+  --bg-panel-devices: #eaf0f7;
+  --bg-panel-lab: #f7f1e6;
   --focus: #0b5cad;
 
   --radius: 6px;
@@ -47,6 +54,8 @@
     --accent-fg: #0a0f16;
     --danger: #ff9098;
     --warning: #f0b429; /* lightened to keep contrast on a dark ground */
+    --bg-panel-devices: #1a212c;
+    --bg-panel-lab: #252017;
     --focus: #6fb3ff;
     --minimap-mask: rgba(0, 0, 0, 0.5);
   }
@@ -791,6 +800,65 @@ select {
   padding-left: 8px;
   margin: 6px 0;
   color: var(--fg);
+}
+
+/* -- telling the two working areas apart ------------------------------
+   Requested so the device panel does not read as the same surface as the lab
+   panel. Colour does the work for most people; the top edge differs in style
+   and weight as well, because blue and amber sit at almost the same luminance
+   and would be indistinguishable to someone with no colour vision at all. */
+.panel--devices {
+  background: var(--bg-panel-devices);
+  border-top: 4px solid var(--accent);
+}
+
+.panel--lab {
+  background: var(--bg-panel-lab);
+  /* Dashed, not merely a different hue: the one cue that survives greyscale. */
+  border-top: 4px dashed var(--warning);
+}
+
+/* -- the scenario name, edited in place in the header ------------------ */
+.app__lab-name--button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Only on hover and focus: a permanent box would make the title look like a
+   form field rather than the document's name. */
+.app__lab-name--button:hover,
+.app__lab-name--button:focus-visible {
+  border-color: var(--border-strong);
+}
+
+.app__lab-name--button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.app__lab-name--editing {
+  font: inherit;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+.app__rename-refused {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--fg);
+  border-left: 4px solid var(--warning);
+  padding-left: 8px;
+  margin-top: 4px;
+  max-width: 60ch;
 }
 
 /* The real control is the button that clicks this; see ScenarioPanel. */

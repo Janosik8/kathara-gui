@@ -14,10 +14,11 @@ inside the container either way.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from kathara_gui.domain.codec import startup
-from kathara_gui.domain.codec.labconf import serialize
+from kathara_gui.domain.codec.labconf import parse, serialize
 from kathara_gui.domain.model import KNOWN_DAEMONS, Node, Topology
 from kathara_gui.fsutil import write_text_lf
 
@@ -42,17 +43,58 @@ def render_frr_daemons(node: Node) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _previous_device_names(destination: Path) -> set[str]:
+    """Devices named by the ``lab.conf`` already in ``destination``.
+
+    Read before it is overwritten, so a device that has since been renamed or
+    deleted can be told apart from a directory that was never a device at all.
+    """
+    existing = destination / "lab.conf"
+    if not existing.is_file():
+        return set()
+    try:
+        return {node.name for node in parse(existing.read_text(encoding="utf-8")).topology.nodes}
+    except Exception:  # noqa: BLE001 - an unreadable lab.conf is not fatal here
+        # Pruning is a tidiness measure; failing to read the old file means
+        # leaving stale artefacts, which is strictly better than guessing.
+        return set()
+
+
+def _prune_departed_devices(destination: Path, departed: set[str]) -> None:
+    """Remove the files belonging to devices that are no longer in the lab.
+
+    Deliberately keyed on what the *previous* ``lab.conf`` called a device,
+    rather than on anything found lying in the directory. Kathara copies a
+    directory into a container only when it is named after a machine, so a
+    folder like ``docs`` is ignored by Kathara and must be left alone here —
+    deleting by pattern would eat a student's notes.
+    """
+    for name in departed:
+        (destination / f"{name}.startup").unlink(missing_ok=True)
+        shutil.rmtree(destination / name, ignore_errors=True)
+
+
 def write_lab(topology: Topology, destination: Path) -> Path:
     """Write ``topology`` into ``destination``, creating it if needed.
 
-    Returns the directory written. Existing generated files are overwritten;
-    unrelated files in the directory are left alone, so a lab that also holds
-    a PDF manual or student notes survives a regeneration.
+    Returns the directory written. Existing generated files are overwritten,
+    and files belonging to devices the lab no longer has are removed; anything
+    else in the directory is left alone, so a lab that also holds a PDF manual
+    or student notes survives a regeneration.
+
+    The pruning matters beyond tidiness: a renamed device used to leave its
+    ``.startup`` and captured configuration behind, and an exported scenario
+    then carried a device that no longer existed — which reappeared on the next
+    import.
     """
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
 
+    current = {node.name for node in topology.nodes}
+    departed = _previous_device_names(destination) - current
+
     write_text_lf(destination / "lab.conf", serialize(topology))
+    _prune_departed_devices(destination, departed)
 
     for filename, content in startup.render_all(topology).items():
         write_text_lf(destination / filename, content)

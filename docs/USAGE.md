@@ -136,6 +136,14 @@ everything else. Changing the kind follows the image, unless you have typed one 
 at all: no `vtysh`, nothing to read `/etc/frr/daemons`, and no way to configure routing. A
 router with a blank image cannot run a routing lab.
 
+### Finding your way around
+
+The two working areas carry their own surfaces: the device side is tinted blue with a solid
+top edge, the laboratory side amber with a dashed one. Blue against amber is the pair that
+survives the common red-green colour deficiencies — and the edges differ in *style* as well,
+because the two tints sit at almost the same lightness and would otherwise be identical to
+someone with no colour vision at all.
+
 ### Reading the diagram
 
 Each interface is drawn as a labelled point on the device's edge — `eth0`, `eth1` — and a
@@ -168,6 +176,7 @@ report anything that is not.
 | `C` | Toggle connect mode. In it, `Enter` on a device picks it, and `Enter` on an interface row picks that row's collision domain. |
 | `Delete` | On a device row, remove the device. On an interface row, disconnect that interface. Ignored while typing in a field. |
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
+| `Ctrl/Cmd + A` | Select every device. Ignored while typing, where it selects the field's text. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
 
 The first `Tab` on a fresh page reveals a **Skip to topology** link.
@@ -218,11 +227,16 @@ and not this application can unzip it and run `kathara lstart`.
 | **Export lab.conf** | Downloads just the `lab.conf`. |
 | **Capture running state** | Copies what each router is *actually* running into the lab folder. |
 
+**Renaming.** Click the scenario name beside the application title in the top-left corner,
+type, and press Enter. Escape abandons the edit.
+
 **The name is not cosmetic.** It decides the lab folder, the saved file name, and — because
 Kathará identifies a lab by a hash of its name — which containers belong to this scenario.
-That is why renaming is the reliable fix when two labs collide. Rename *before* deploying
-where you can: containers already running keep the old name, and need stopping or a
-`kathara wipe`.
+That is why renaming is the reliable fix when two labs collide.
+
+**A deployed lab cannot be renamed.** Renaming would not rename its containers; it would
+leave them behind under the old name, where the interface can neither see nor stop them.
+Stop the lab, rename, deploy again.
 
 **Save keeps the file on this machine; Download sends it out.** Scenario files live in the
 workspace folder (`./kathara-labs` unless `--workspace` says otherwise), which is also where

@@ -20,6 +20,7 @@ import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
+import { LabTitle } from "./panels/LabTitle";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
@@ -604,6 +605,14 @@ export default function App() {
         else undo();
         return;
       }
+      if (meta && event.key.toLowerCase() === "a") {
+        // Without this the browser selects the page's text instead, which in
+        // an editor is never what Ctrl+A is meant to do.
+        event.preventDefault();
+        setSelectedLink(null);
+        setSelected(topology.nodes.map((n) => n.name));
+        return;
+      }
       if (!meta && event.key.toLowerCase() === "c" && canConnect) {
         event.preventDefault();
         toggleConnectMode();
@@ -644,7 +653,12 @@ export default function App() {
       <header className="app__header">
         <h1 className="app__title">
           Kathara GUI
-          <span className="app__lab-name">{topology.name}</span>
+          <LabTitle
+            name={topology.name}
+            deployed={labStatus?.deployed ?? false}
+            onRename={(name) => dispatch({ type: "setLabMetadata", changes: { name } })}
+            onAnnounce={setStatus}
+          />
           {dirty && (
             <span className="app__dirty" title="Unsaved changes">
               {/* Text, not just a dot: a colour or shape alone is not a status. */}
@@ -678,7 +692,7 @@ export default function App() {
       </header>
 
       <div className="app__body">
-        <aside className="panel" aria-label="Devices">
+        <aside className="panel panel--devices" aria-label="Devices">
           <Palette topology={topology} onAdd={addDevice} />
 
           <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
@@ -724,7 +738,7 @@ export default function App() {
           />
         </main>
 
-        <aside className="panel panel--right" aria-label="Device details">
+        <aside className="panel panel--right panel--lab" aria-label="Device details">
           <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
           <AddressingPanel
             issues={issues}
@@ -755,8 +769,6 @@ export default function App() {
             onImportLabConf={importLabConf}
             onExportLabConf={exportLabConf}
             importWarnings={importWarnings}
-            name={topology.name}
-            onRename={(name) => dispatch({ type: "setLabMetadata", changes: { name } })}
           />
 
           <LabPanel

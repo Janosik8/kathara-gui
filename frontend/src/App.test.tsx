@@ -1286,46 +1286,52 @@ describe("the scenario as a file", () => {
 });
 
 describe("naming the scenario", () => {
-  // Reported: "i can not change the lab name". The operation existed and
-  // nothing dispatched it — and the name is not cosmetic. It decides the lab
-  // folder, the saved file name, and Kathará's identity for the lab, which is
-  // why the conflict dialog advises renaming as the fix.
+  // Reported twice: first that the name could not be changed at all, then that
+  // it should be editable by clicking the title. The name is not decoration —
+  // it names the lab folder, names the export, and is what Kathará hashes to
+  // decide which containers belong to this scenario.
 
-  it("renames the scenario", async () => {
-    const user = await renderApp();
+  const rename = async (user: ReturnType<typeof userEvent.setup>, to: string) => {
+    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
     const field = await screen.findByLabelText("Scenario name");
     await user.clear(field);
-    await user.type(field, "bgp exam{Enter}");
+    await user.type(field, to);
+    return field;
+  };
 
-    // The header shows the scenario's name, so it is the honest check.
-    expect(await screen.findByText("bgp exam")).toBeInTheDocument();
+  it("renames from the title", async () => {
+    const user = await renderApp();
+    await rename(user, "bgp exam{Enter}");
+
+    expect(await screen.findByRole("button", { name: /bgp exam/ })).toBeInTheDocument();
   });
 
   it("commits on blur as well as Enter", async () => {
     const user = await renderApp();
-    const field = await screen.findByLabelText("Scenario name");
-    await user.clear(field);
-    await user.type(field, "ospf lab");
+    await rename(user, "ospf lab");
     await user.tab();
 
-    expect(await screen.findByText("ospf lab")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /ospf lab/ })).toBeInTheDocument();
   });
 
-  it("refuses an empty name rather than silently keeping the old one", async () => {
+  it("abandons the edit on Escape", async () => {
     const user = await renderApp();
-    const field = await screen.findByLabelText("Scenario name");
-    await user.clear(field);
-    await user.type(field, "{Enter}");
+    await rename(user, "discarded{Escape}");
 
-    expect(await screen.findByText("The scenario needs a name.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
+  });
+
+  it("keeps the old name rather than accepting an empty one", async () => {
+    const user = await renderApp();
+    await rename(user, "{Enter}");
+
+    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
   });
 
   it("saves under the new name", async () => {
     const user = await renderApp();
     await addRouter(user);
-    const field = await screen.findByLabelText("Scenario name");
-    await user.clear(field);
-    await user.type(field, "submission{Enter}");
+    await rename(user, "submission{Enter}");
     await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
 
     await waitFor(() =>
@@ -1337,20 +1343,17 @@ describe("naming the scenario", () => {
   });
 
   it("is undoable in one step", async () => {
-    // CommittedInput exists so a rename is one operation, not one per key.
     const user = await renderApp();
-    const field = await screen.findByLabelText("Scenario name");
-    await user.clear(field);
-    await user.type(field, "renamed{Enter}");
-    expect(await screen.findByText("renamed")).toBeInTheDocument();
+    await rename(user, "renamed{Enter}");
+    expect(await screen.findByRole("button", { name: /renamed/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(await screen.findByText("untitled")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
   });
 
-  it("warns that renaming strands a running lab", async () => {
-    // Kathará keys a lab by its name, so the containers already up keep the
-    // old one.
+  it("refuses to rename a deployed lab, and says why", async () => {
+    // Renaming would not rename the containers; it would orphan them under the
+    // old name, leaving a lab the interface can neither see nor stop.
     deploy.mockResolvedValue({
       devices: [{ name: "r1", state: "running" }],
       running: ["r1"],
@@ -1365,12 +1368,59 @@ describe("naming the scenario", () => {
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
-    expect(await screen.findByText(/leaves those containers under the old name/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
+    expect(await screen.findByText(/Stop the lab before renaming/)).toBeInTheDocument();
+    // And no field opened, so the name cannot be edited anyway.
+    expect(screen.queryByLabelText("Scenario name")).toBeNull();
   });
 
-  it("says nothing about running containers when none are up", async () => {
-    await renderApp();
-    expect(screen.queryByText(/leaves those containers under the old name/)).toBeNull();
+  it("allows renaming again once the lab is stopped", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await rename(user, "after stopping{Enter}");
+
+    expect(await screen.findByRole("button", { name: /after stopping/ })).toBeInTheDocument();
+  });
+});
+
+describe("selecting every device", () => {
+  it("selects all devices with the platform shortcut", async () => {
+    // Reported: Cmd+A did nothing. It was not handled, so the browser selected
+    // the page's text instead.
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.keyboard("{Meta>}a{/Meta}");
+
+    // Delete acts on the selection, and names itself for what it will do.
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText("r1")).toBeNull());
+    expect(screen.queryByText("r2")).toBeNull();
+  });
+
+  it("works with Control as well as Command", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.keyboard("{Control>}a{/Control}");
+
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeEnabled();
+  });
+
+  it("does not hijack the shortcut while typing a name", async () => {
+    // Ctrl+A in a text field selects the field's text, which is what someone
+    // renaming a device expects.
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
+    const field = await screen.findByLabelText("Scenario name");
+    await user.click(field);
+    await user.keyboard("{Meta>}a{/Meta}");
+
+    // Still editing, and the canvas selection was not replaced behind us.
+    expect(screen.getByLabelText("Scenario name")).toBeInTheDocument();
   });
 });
 

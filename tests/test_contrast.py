@@ -111,6 +111,12 @@ TEXT_PAIRS = [
     ("accent text", "--accent", "--bg"),
     ("error text on a panel", "--danger", "--bg-panel"),
     ("warning text on a panel", "--warning", "--bg-panel"),
+    # The two working areas have surfaces of their own, so every pairing that
+    # text actually lands on has to be checked, not just the generic panel.
+    ("body text on the device panel", "--fg", "--bg-panel-devices"),
+    ("secondary text on the device panel", "--fg-muted", "--bg-panel-devices"),
+    ("body text on the lab panel", "--fg", "--bg-panel-lab"),
+    ("secondary text on the lab panel", "--fg-muted", "--bg-panel-lab"),
 ]
 
 
@@ -151,6 +157,37 @@ def test_interface_boundaries_meet_wcag_non_text_contrast(
         f"{theme}: {what} — {palette[fg]} on {palette[bg]} is {ratio:.2f}:1, "
         f"below the {NON_TEXT_MINIMUM}:1 required by WCAG 1.4.11"
     )
+
+
+def test_the_panel_accents_are_visible_on_their_own_surfaces() -> None:
+    """WCAG 1.4.11: the edge marking each working area is a UI boundary."""
+    for theme, palette in THEMES:
+        for accent, surface in (
+            ("--accent", "--bg-panel-devices"),
+            ("--warning", "--bg-panel-lab"),
+        ):
+            ratio = contrast_ratio(palette[accent], palette[surface])
+            assert ratio >= NON_TEXT_MINIMUM, (
+                f"{theme}: {accent} on {surface} is {ratio:.2f}:1"
+            )
+
+
+def test_the_two_panels_are_not_told_apart_by_colour_alone() -> None:
+    """The reason .panel--lab uses a dashed edge rather than only a hue.
+
+    Blue and amber are the safest pair for red-green deficiencies, but they sit
+    at almost the same luminance, so to someone with no colour vision the two
+    surfaces are identical. This asserts that they really are that close —
+    which is what makes the differing border *style* load-bearing rather than
+    decorative. If a future palette change separates them properly, this test
+    fails and the styling can be simplified.
+    """
+    for theme, palette in THEMES:
+        ratio = contrast_ratio(palette["--bg-panel-devices"], palette["--bg-panel-lab"])
+        assert ratio < NON_TEXT_MINIMUM, (
+            f"{theme}: the panel surfaces now differ by {ratio:.2f}:1 in greyscale — "
+            "the dashed-versus-solid edge may no longer be needed"
+        )
 
 
 def test_the_strong_border_is_stronger_than_the_subtle_one() -> None:
