@@ -28,14 +28,19 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
 
   if (!node) {
     return (
-      <>
-        <h2 className="panel__heading">Details</h2>
+      // No tint with nothing selected: the coloured block means "these
+      // controls act on one device", so showing it empty would be a promise
+      // with nothing behind it.
+      <section className="inspector" aria-labelledby="inspector-heading">
+        <h2 className="panel__heading" id="inspector-heading">
+          Details
+        </h2>
         <p className="inspector__empty">
           {selected.length > 1
             ? `${selected.length} devices selected. Editing applies to one device at a time; use Arrange to align them.`
             : "Select a device to edit its settings."}
         </p>
-      </>
+      </section>
     );
   }
 
@@ -53,8 +58,13 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
   };
 
   return (
-    <>
-      <h2 className="panel__heading">Details</h2>
+    // A tinted rectangle around everything belonging to the selected device —
+    // its name, image, interfaces and daemons — so it is obvious at a glance
+    // that these controls act on one device and not on the laboratory.
+    <section className="inspector inspector--device" aria-labelledby="inspector-heading">
+      <h2 className="panel__heading" id="inspector-heading">
+        Details
+      </h2>
 
       <CommittedInput
         id="inspector-name"
@@ -152,6 +162,6 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
           ))}
         </ul>
       )}
-    </>
+    </section>
   );
 }

@@ -28,6 +28,7 @@ from typing import Literal
 from kathara_gui.domain.model import CollisionDomain, Topology
 
 __all__ = [
+    "infer_subnets",
     "Severity",
     "AddressingIssue",
     "AllocationResult",
@@ -94,6 +95,33 @@ def _parse_interface(value: str) -> IPInterface | None:
 
 
 # ---------------------------------------------------------------- validation
+
+
+def infer_subnets(topology: Topology) -> dict[str, str]:
+    """The subnet each collision domain is evidently on, from its members.
+
+    Kathará's format records the wiring but not the plan, so an imported lab
+    arrives with named domains and no subnets — the addresses are on the
+    interfaces, and nothing joins them up. The panel and the diagram then show
+    a bare letter where they should show a network.
+
+    Only agreed subnets are returned. Members whose addresses sit on *different*
+    networks are the specification's headline fault, already reported by
+    :func:`validate`; inventing a subnet for that domain would paper over the
+    very thing the user needs to see.
+    """
+    inferred: dict[str, str] = {}
+
+    for domain in {i.collision_domain for node in topology.nodes for i in node.interfaces}:
+        networks = {
+            str(parsed.network)
+            for _, _, address in _members(topology, domain)
+            if address and (parsed := _parse_interface(address)) is not None
+        }
+        if len(networks) == 1:
+            inferred[domain] = networks.pop()
+
+    return inferred
 
 
 def validate(topology: Topology) -> list[AddressingIssue]:

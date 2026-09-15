@@ -1,16 +1,18 @@
-"""Saving, opening, sharing and capturing a scenario over HTTP.
+"""The scenario as a folder, over HTTP.
 
-This is the half of Capability 5 that makes the rest reachable: the package
-format and the configuration capture were built first and could not be invoked
-from anywhere. FR-11, FR-12, FR-14, FR-24, FR-25 and FR-26 all land here.
+Capability 5 end to end: save, open, export, import, capture. The document is
+a Kathará lab directory and the export is a plain zip of it, so most of what
+matters here is interoperability — a lab written by somebody else, with none of
+our conventions in it, has to open and keep its configuration.
 
 No Docker: capture against live containers is covered by
-``test_state_capture_integration.py``. What matters here is the HTTP contract
-and, above all, that a package cannot write outside the workspace.
+``test_state_capture_integration.py``.
 """
 
 from __future__ import annotations
 
+import io
+import json
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -19,7 +21,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kathara_gui.main import create_app
-from kathara_gui.project import kgui
 from kathara_gui.project.session import Session, get_session
 
 TOKEN = "test-token-value"
@@ -65,32 +66,51 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 def save(client: TestClient, topology: dict | None = None, **body: object) -> dict:
-    response = client.post(
-        "/api/project/save", json={"topology": topology or TRIANGLE, **body}
-    )
+    response = client.post("/api/project/save", json={"topology": topology or TRIANGLE, **body})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def foreign_lab_zip() -> bytes:
+    """A lab as somebody else would have written it.
+
+    No `# kgui:` comments, no kgui.json, addressing only in the startup
+    scripts, and one of them in the Netkit `ifconfig` style. This is the case
+    the whole import path exists for.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("lab.conf", 'r1[0]="A"\nr1[1]="B"\npc1[0]="A"\nr2[0]="B"\n')
+        archive.writestr(
+            "r1.startup",
+            "ip link set eth0 up\n"
+            "ip address add 192.168.1.1/24 dev eth0\n"
+            "ip address add 10.0.0.1/30 dev eth1\n",
+        )
+        archive.writestr("pc1.startup", "ifconfig eth0 192.168.1.100 netmask 255.255.255.0\n")
+        archive.writestr("r2.startup", "ip addr add 10.0.0.2/30 dev eth0\n")
+        archive.writestr("r1/etc/frr/daemons", "zebra=yes\nospfd=yes\nbgpd=no\n")
+    return buffer.getvalue()
 
 
 # -- saving -------------------------------------------------------------
 
 
-def test_saving_writes_a_package_into_the_workspace(client: TestClient, workspace: Path) -> None:
-    body = save(client)
-    written = Path(body["path"])
+def test_saving_writes_a_scenario_folder(client: TestClient, workspace: Path) -> None:
+    folder = Path(save(client)["folder"])
 
-    assert written.parent == workspace.resolve()
-    assert written.is_file()
-    assert zipfile.is_zipfile(written)
-
-
-def test_the_file_name_comes_from_the_scenario_name(client: TestClient) -> None:
-    """And a name with a space in it still produces a usable file name."""
-    assert save(client)["filename"] == "ospf-triangle.kgui"
+    assert folder.parent == workspace.resolve()
+    assert (folder / "lab.conf").is_file()
+    assert (folder / "r1.startup").is_file()
+    assert (folder / "kgui.json").is_file()
 
 
-def test_an_explicit_file_name_wins(client: TestClient) -> None:
-    assert save(client, filename="submission-group-b")["filename"] == "submission-group-b.kgui"
+def test_the_folder_name_comes_from_the_scenario_name(client: TestClient) -> None:
+    assert save(client)["name"] == "ospf-triangle"
+
+
+def test_an_explicit_name_wins(client: TestClient) -> None:
+    assert save(client, name="submission-group-b")["name"] == "submission-group-b"
 
 
 def test_saving_clears_the_unsaved_marker(client: TestClient, session: Session) -> None:
@@ -99,23 +119,23 @@ def test_saving_clears_the_unsaved_marker(client: TestClient, session: Session) 
 
     save(client)
     assert session.dirty is False
-    assert session.project_file is not None
+    assert session.path is not None
 
 
-def test_the_saved_package_carries_a_runnable_lab(client: TestClient) -> None:
-    """Someone with Kathará and not this application can unzip and lstart."""
-    with zipfile.ZipFile(save(client)["path"]) as archive:
-        names = set(archive.namelist())
+def test_the_saved_folder_is_a_runnable_kathara_lab(client: TestClient) -> None:
+    """Someone with Kathará and not this application can cd in and lstart."""
+    folder = Path(save(client)["folder"])
+    text = (folder / "lab.conf").read_text()
 
-    assert "topology.json" in names
-    assert "lab/lab.conf" in names
-    assert "lab/r1.startup" in names
+    assert 'LAB_NAME="ospf triangle"' in text
+    assert 'r1[0]="A"' in text
 
 
-def test_saving_twice_produces_the_same_bytes(client: TestClient) -> None:
-    """Fixed timestamps, so an unchanged scenario is not endlessly re-versioned."""
-    first = Path(save(client)["path"]).read_bytes()
-    assert Path(save(client)["path"]).read_bytes() == first
+def test_the_scenario_deploys_from_the_folder_it_was_saved_in(
+    client: TestClient, session: Session
+) -> None:
+    folder = save(client)["folder"]
+    assert str(session.lab_dir(session.topology)) == folder
 
 
 # -- the workspace boundary --------------------------------------------
@@ -124,44 +144,52 @@ def test_saving_twice_produces_the_same_bytes(client: TestClient) -> None:
 @pytest.mark.parametrize(
     ("attempt", "lands_as"),
     [
-        ("../escaped", "escaped.kgui"),
-        ("../../../../etc/passwd", "passwd.kgui"),
-        ("/etc/passwd", "passwd.kgui"),
-        ("nested/inside", "inside.kgui"),
-        # Degenerate names become the default rather than being honoured;
-        # "con" is a reserved device name on Windows and cannot be a file.
-        ("..", "untitled.kgui"),
-        ("con", "untitled.kgui"),
-        ("   ", "untitled.kgui"),
+        ("../escaped", "escaped"),
+        ("../../../../etc/passwd", "passwd"),
+        ("/etc/passwd", "passwd"),
+        ("nested/inside", "inside"),
+        ("..", "untitled"),
+        ("con", "untitled"),
+        ("   ", "untitled"),
     ],
 )
-def test_a_file_name_cannot_escape_the_workspace(
+def test_a_name_cannot_escape_the_workspace(
     client: TestClient, workspace: Path, attempt: str, lands_as: str
 ) -> None:
-    """The scenario name is free text a student typed, and a package may be
-    sent by anyone. Neither may name a path.
+    """A scenario name is free text, and an archive may be sent by anyone."""
+    folder = Path(save(client, name=attempt)["folder"])
 
-    The directory part is discarded and the remainder sanitised, so these are
-    accepted but declawed rather than rejected — the user gets their file, just
-    not where the string asked for it.
-    """
-    written = Path(save(client, filename=attempt)["path"])
-
-    assert written.parent == workspace.resolve()
-    assert written.name == lands_as
+    assert folder.parent == workspace.resolve()
+    assert folder.name == lands_as
 
 
-def test_the_sanitiser_never_yields_an_empty_name() -> None:
-    """`_package_path` rejects an empty stem; this is the invariant that makes
-    that branch unreachable in practice, and would fail loudly if it changed."""
-    from kathara_gui.domain.naming import safe_dir_name
+def test_an_archive_member_cannot_escape_the_folder(
+    client: TestClient, workspace: Path, tmp_path: Path
+) -> None:
+    """The case this guard exists for: an instructor opening a submission."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("lab.conf", 'r1[0]="A"\n')
+        archive.writestr("../../../../tmp/pwned.txt", "escaped")
+        archive.writestr("/absolute.txt", "escaped")
 
-    for hostile in ["..", ".", "", "   ", "/", "///", "con", "NUL", "?*<>|"]:
-        assert safe_dir_name(Path(hostile).name), f"{hostile!r} produced an empty name"
+    response = client.post(
+        "/api/project/import",
+        content=buffer.getvalue(),
+        headers={"X-KGUI-Filename": "hostile.zip"},
+    )
+    assert response.status_code == 200, response.text
+
+    assert not (tmp_path / "pwned.txt").exists()
+    assert not Path("/tmp/pwned.txt").exists() or "escaped" not in Path(
+        "/tmp/pwned.txt"
+    ).read_text()
+    landed = {p.name for p in Path(response.json()["folder"]).rglob("*")}
+    assert "pwned.txt" not in landed and "absolute.txt" not in landed
 
 
-def test_opening_refuses_a_name_that_is_not_in_the_workspace(client: TestClient) -> None:
-    response = client.post("/api/project/open", json={"filename": "../../../etc/passwd"})
+def test_opening_refuses_a_folder_outside_the_workspace(client: TestClient) -> None:
+    response = client.post("/api/project/open", json={"folder": "../../../etc"})
     assert response.status_code in (400, 404)
 
 
@@ -169,180 +197,315 @@ def test_opening_refuses_a_name_that_is_not_in_the_workspace(client: TestClient)
 
 
 def test_listing_is_empty_before_anything_is_saved(client: TestClient) -> None:
-    assert client.get("/api/project/packages").json() == []
+    assert client.get("/api/project/scenarios").json() == []
 
 
-def test_listing_reports_the_stored_scenario_name(client: TestClient) -> None:
-    save(client, filename="week-3")
-    (entry,) = client.get("/api/project/packages").json()
+def test_listing_reports_the_scenario_inside_the_folder(client: TestClient) -> None:
+    save(client, name="week-3")
+    (entry,) = client.get("/api/project/scenarios").json()
 
-    assert entry["filename"] == "week-3.kgui"
-    # The name inside the package, not the file it happens to live in.
+    assert entry["folder"] == "week-3"
     assert entry["name"] == "ospf triangle"
-    assert entry["size"] > 0
+    assert entry["devices"] == 2
+    assert entry["foreign"] is False
 
 
-def test_an_unreadable_package_is_still_listed(client: TestClient, workspace: Path) -> None:
-    """Hiding it would leave the user unable to see that the file is there."""
+def test_a_directory_that_is_not_a_lab_is_not_listed(
+    client: TestClient, workspace: Path
+) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
-    (workspace / "corrupt.kgui").write_bytes(b"not a zip at all")
+    (workspace / "not-a-lab").mkdir()
+    (workspace / "not-a-lab" / "notes.md").write_text("just notes")
 
-    names = {entry["filename"] for entry in client.get("/api/project/packages").json()}
-    assert "corrupt.kgui" in names
+    assert client.get("/api/project/scenarios").json() == []
 
 
 # -- opening ------------------------------------------------------------
 
 
 def test_a_saved_scenario_reopens_as_it_was(client: TestClient) -> None:
-    filename = save(client)["filename"]
+    name = save(client)["name"]
     client.post("/api/topology/reset")
 
-    body = client.post("/api/project/open", json={"filename": filename}).json()
+    body = client.post("/api/project/open", json={"folder": name}).json()
     assert body["topology"]["name"] == "ospf triangle"
     assert [n["name"] for n in body["topology"]["nodes"]] == ["r1", "r2"]
 
 
 def test_reopening_preserves_canvas_positions(client: TestClient) -> None:
-    """FR-30. A layout the user arranged is part of the document."""
-    filename = save(client)["filename"]
-    body = client.post("/api/project/open", json={"filename": filename}).json()
+    """FR-30. The layout rides in lab.conf comments Kathará ignores."""
+    name = save(client)["name"]
+    body = client.post("/api/project/open", json={"folder": name}).json()
 
     positions = {n["name"]: n["position"] for n in body["topology"]["nodes"]}
     assert positions["r1"] == {"x": 100, "y": 50}
     assert positions["r2"] == {"x": 300, "y": 50}
 
 
-def test_opening_writes_the_lab_out_so_it_can_be_deployed(client: TestClient) -> None:
-    filename = save(client)["filename"]
-    body = client.post("/api/project/open", json={"filename": filename}).json()
+def test_reopening_preserves_addresses_and_daemons(client: TestClient) -> None:
+    name = save(client)["name"]
+    body = client.post("/api/project/open", json={"folder": name}).json()
 
-    lab_dir = Path(body["lab_dir"])
-    assert (lab_dir / "lab.conf").is_file()
-    assert (lab_dir / "r1.startup").is_file()
-
-
-def test_opening_adopts_the_scenario_as_the_current_one(
-    client: TestClient, session: Session
-) -> None:
-    filename = save(client)["filename"]
-    client.post("/api/topology/reset")
-    assert session.topology.name == "untitled"
-
-    client.post("/api/project/open", json={"filename": filename})
-    assert session.topology.name == "ospf triangle"
-    # Freshly opened is not unsaved work.
-    assert session.dirty is False
-
-
-def test_a_deploy_after_opening_uses_the_packaged_lab(
-    client: TestClient, session: Session
-) -> None:
-    """Not the workspace default: the packaged lab carries captured state."""
-    filename = save(client)["filename"]
-    body = client.post("/api/project/open", json={"filename": filename}).json()
-
-    assert str(session.lab_dir(session.topology)) == body["lab_dir"]
+    r1 = next(n for n in body["topology"]["nodes"] if n["name"] == "r1")
+    assert r1["interfaces"][0]["ip"] == "10.0.0.1/24"
+    assert r1["daemons"] == ["zebra", "ospfd"]
 
 
 def test_opening_something_that_is_not_there_is_a_404(client: TestClient) -> None:
-    assert client.post("/api/project/open", json={"filename": "absent"}).status_code == 404
+    assert client.post("/api/project/open", json={"folder": "absent"}).status_code == 404
 
 
-def test_opening_a_corrupt_package_explains_rather_than_crashes(
+def test_opening_a_folder_without_a_lab_conf_explains_why(
     client: TestClient, workspace: Path
 ) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
-    (workspace / "corrupt.kgui").write_bytes(b"not a zip at all")
+    (workspace / "empty").mkdir()
 
-    response = client.post("/api/project/open", json={"filename": "corrupt"})
+    response = client.post("/api/project/open", json={"folder": "empty"})
     assert response.status_code == 400
-    assert "readable archive" in response.json()["detail"]
+    assert "lab.conf" in response.json()["detail"]
 
 
-# -- download and upload ------------------------------------------------
+# -- export -------------------------------------------------------------
 
 
-def test_download_returns_the_package_as_an_attachment(client: TestClient) -> None:
-    response = client.post("/api/project/download", json={"topology": TRIANGLE})
+def test_export_returns_a_zip_named_after_the_scenario(client: TestClient) -> None:
+    response = client.post("/api/project/export", json={"topology": TRIANGLE})
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
-    assert 'filename="ospf-triangle.kgui"' in response.headers["content-disposition"]
+    assert 'filename="ospf-triangle.zip"' in response.headers["content-disposition"]
 
 
-def test_a_downloaded_package_is_a_real_scenario(client: TestClient, tmp_path: Path) -> None:
-    response = client.post("/api/project/download", json={"topology": TRIANGLE})
-    landed = tmp_path / "downloaded.kgui"
-    landed.write_bytes(response.content)
-
-    assert kgui.read_package(landed).topology.name == "ospf triangle"
-
-
-def test_downloading_leaves_no_scratch_file_behind(client: TestClient, workspace: Path) -> None:
-    client.post("/api/project/download", json={"topology": TRIANGLE})
-    assert list((workspace / ".download").glob("*.kgui")) == []
-
-
-def test_downloading_does_not_count_as_saving(client: TestClient, session: Session) -> None:
-    """It leaves the machine; it does not give the scenario a home on it."""
-    client.put("/api/topology", json=TRIANGLE)
-    client.post("/api/project/download", json={"topology": TRIANGLE})
-
-    assert session.dirty is True
-    assert session.project_file is None
+def test_the_export_is_a_plain_zip_anyone_can_read(client: TestClient) -> None:
+    """The reason for dropping the bespoke package: no wrapper directory, no
+    topology.json, just the lab as it sits on disk."""
+    response = client.post("/api/project/export", json={"topology": TRIANGLE})
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert "lab.conf" in names
+        assert "r1.startup" in names
+        assert "kgui.json" in names
+        assert not any(n.startswith("lab/") for n in names)
+        assert "topology.json" not in names
+        assert "ip address add 10.0.0.1/24 dev eth0" in archive.read("r1.startup").decode()
 
 
-def test_an_uploaded_package_becomes_the_current_scenario(
-    client: TestClient, tmp_path: Path
-) -> None:
-    """The instructor's path: a submission arrives from outside the machine."""
-    payload = client.post("/api/project/download", json={"topology": TRIANGLE}).content
+def test_exporting_twice_produces_the_same_bytes(client: TestClient) -> None:
+    """Fixed timestamps, so an unchanged scenario is not endlessly reversioned."""
+    first = client.post("/api/project/export", json={"topology": TRIANGLE}).content
+    assert client.post("/api/project/export", json={"topology": TRIANGLE}).content == first
+
+
+def test_exporting_leaves_no_staging_file_behind(client: TestClient, workspace: Path) -> None:
+    client.post("/api/project/export", json={"topology": TRIANGLE})
+    assert not list((workspace / ".import").glob("*.zip"))
+
+
+def test_a_captured_config_travels_in_the_export(client: TestClient) -> None:
+    """An exported scenario carries what was pulled off the running routers."""
+    folder = Path(save(client)["folder"])
+    captured = folder / "r1" / "etc" / "frr" / "frr.conf"
+    captured.parent.mkdir(parents=True, exist_ok=True)
+    captured.write_text("router ospf\n network 10.0.0.0/24 area 42\n")
+
+    response = client.post("/api/project/export", json={"topology": TRIANGLE})
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert "area 42" in archive.read("r1/etc/frr/frr.conf").decode()
+
+
+# -- import -------------------------------------------------------------
+
+
+def test_a_scenario_round_trips_through_export_and_import(client: TestClient) -> None:
+    exported = client.post("/api/project/export", json={"topology": TRIANGLE}).content
     client.post("/api/topology/reset")
 
     body = client.post(
-        "/api/project/upload",
-        content=payload,
-        headers={"X-KGUI-Filename": "submission-jan.kgui"},
+        "/api/project/import",
+        content=exported,
+        headers={"X-KGUI-Filename": "submission-jan.zip"},
     ).json()
 
     assert body["topology"]["name"] == "ospf triangle"
-    assert Path(body["project_file"]).name == "submission-jan.kgui"
+    positions = {n["name"]: n["position"] for n in body["topology"]["nodes"]}
+    assert positions["r1"] == {"x": 100, "y": 50}
 
 
-def test_an_upload_is_kept_in_the_workspace(client: TestClient) -> None:
-    """So an opened submission is a file the marker can find again."""
-    payload = client.post("/api/project/download", json={"topology": TRIANGLE}).content
-    client.post(
-        "/api/project/upload", content=payload, headers={"X-KGUI-Filename": "submission.kgui"}
-    )
+def test_importing_a_foreign_lab_recovers_its_addressing(client: TestClient) -> None:
+    """The reported defect: importing lost the configuration and the editor
+    then complained the routers had no addresses, while the addresses were in
+    the startup scripts all along."""
+    body = client.post(
+        "/api/project/import",
+        content=foreign_lab_zip(),
+        headers={"X-KGUI-Filename": "someone-elses-lab.zip"},
+    ).json()
 
-    names = {entry["filename"] for entry in client.get("/api/project/packages").json()}
-    assert "submission.kgui" in names
-
-
-def test_an_upload_cannot_choose_where_it_lands(client: TestClient, workspace: Path) -> None:
-    payload = client.post("/api/project/download", json={"topology": TRIANGLE}).content
-    response = client.post(
-        "/api/project/upload",
-        content=payload,
-        headers={"X-KGUI-Filename": "../../../../tmp/escaped.kgui"},
-    )
-
-    if response.status_code == 200:
-        assert Path(response.json()["project_file"]).parent == workspace.resolve()
-    else:
-        assert response.status_code == 400
+    addresses = {
+        n["name"]: [i["ip"] for i in n["interfaces"]] for n in body["topology"]["nodes"]
+    }
+    assert addresses["r1"] == ["192.168.1.1/24", "10.0.0.1/30"]
+    assert addresses["r2"] == ["10.0.0.2/30"]
+    # The Netkit-era ifconfig form, which published teaching labs still use.
+    assert addresses["pc1"] == ["192.168.1.100/24"]
 
 
-def test_an_empty_upload_is_refused(client: TestClient) -> None:
-    assert client.post("/api/project/upload", content=b"").status_code == 400
+def test_importing_a_foreign_lab_recovers_its_daemons(client: TestClient) -> None:
+    body = client.post(
+        "/api/project/import",
+        content=foreign_lab_zip(),
+        headers={"X-KGUI-Filename": "someone-elses-lab.zip"},
+    ).json()
+
+    r1 = next(n for n in body["topology"]["nodes"] if n["name"] == "r1")
+    assert r1["daemons"] == ["ospfd", "zebra"] or r1["daemons"] == ["zebra", "ospfd"]
+    assert r1["kind"] == "router"
 
 
-def test_something_that_is_not_a_package_is_refused(client: TestClient) -> None:
-    response = client.post("/api/project/upload", content=b"this is not a zip")
+def test_importing_a_foreign_lab_works_out_each_network(client: TestClient) -> None:
+    """Reported: the subnets "did not come through" and were invisible on the
+    diagram. Kathará records the wiring but not the plan, so the domains
+    arrived named and subnet-less while their members' addresses said exactly
+    what each network was."""
+    body = client.post(
+        "/api/project/import",
+        content=foreign_lab_zip(),
+        headers={"X-KGUI-Filename": "someone-elses-lab.zip"},
+    ).json()
+
+    subnets = {cd["name"]: cd["subnet"] for cd in body["topology"]["collision_domains"]}
+    assert subnets["A"] == "192.168.1.0/24"
+    assert subnets["B"] == "10.0.0.0/30"
+
+
+def test_a_foreign_lab_is_marked_as_such(client: TestClient) -> None:
+    """It has no kgui.json, so its feature toggles are defaults rather than
+    an instructor's choices, and the interface should be able to say so."""
+    body = client.post(
+        "/api/project/import",
+        content=foreign_lab_zip(),
+        headers={"X-KGUI-Filename": "someone-elses-lab.zip"},
+    ).json()
+    assert body["foreign"] is True
+
+
+def test_importing_a_bare_lab_conf(client: TestClient) -> None:
+    """The oldest way to have a lab: one file, no folder."""
+    body = client.post(
+        "/api/project/import",
+        content=b'LAB_NAME="handwritten"\nr1[0]="A"\nr2[0]="A"\n',
+        headers={"X-KGUI-Filename": "lab.conf"},
+    ).json()
+
+    assert body["topology"]["name"] == "handwritten"
+    assert [n["name"] for n in body["topology"]["nodes"]] == ["r1", "r2"]
+
+
+def test_an_archive_wrapped_in_its_own_folder_still_imports(client: TestClient) -> None:
+    """Zipping a folder in Finder or Explorer nests everything inside it."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("my-lab/lab.conf", 'LAB_NAME="wrapped"\nr1[0]="A"\n')
+        archive.writestr("my-lab/r1.startup", "ip address add 10.1.1.1/24 dev eth0\n")
+
+    body = client.post(
+        "/api/project/import", content=buffer.getvalue(), headers={"X-KGUI-Filename": "my-lab.zip"}
+    ).json()
+
+    assert body["topology"]["name"] == "wrapped"
+    assert body["topology"]["nodes"][0]["interfaces"][0]["ip"] == "10.1.1.1/24"
+
+
+def test_a_legacy_kgui_package_still_opens(client: TestClient) -> None:
+    """Scenarios saved before the format was dropped are not stranded.
+
+    Nothing special handles them: a `.kgui` nested its lab under `lab/`, and
+    the generic unwrapping that copes with a folder zipped in Finder strips
+    that too. The old `topology.json` is ignored, which is the point — the
+    `lab.conf` beside it is now the only source of truth. Its feature toggles
+    are lost, since they sat outside `lab/`; the scenario opens permissive.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("kgui.json", '{"format": 1}')
+        archive.writestr("topology.json", '{"name": "stale", "nodes": []}')
+        archive.writestr("lab/lab.conf", 'LAB_NAME="legacy exam"\nr1[0]="A"\nr2[0]="A"\n')
+        archive.writestr("lab/r1.startup", "ip address add 10.0.0.1/24 dev eth0\n")
+
+    body = client.post(
+        "/api/project/import",
+        content=buffer.getvalue(),
+        headers={"X-KGUI-Filename": "submission.kgui"},
+    ).json()
+
+    assert body["topology"]["name"] == "legacy exam"
+    r1 = next(n for n in body["topology"]["nodes"] if n["name"] == "r1")
+    assert r1["interfaces"][0]["ip"] == "10.0.0.1/24"
+
+
+def test_an_empty_import_is_refused(client: TestClient) -> None:
+    assert client.post("/api/project/import", content=b"").status_code == 400
+
+
+def test_something_that_is_not_a_lab_is_refused(client: TestClient) -> None:
+    response = client.post("/api/project/import", content=b"this is not a lab at all")
     assert response.status_code == 400
-    assert "readable archive" in response.json()["detail"]
+
+
+def test_an_archive_without_a_lab_conf_is_refused(client: TestClient) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("notes.md", "just some notes")
+
+    response = client.post("/api/project/import", content=buffer.getvalue())
+    assert response.status_code == 400
+    assert "lab.conf" in response.json()["detail"]
+
+
+def test_a_failed_import_does_not_damage_an_existing_scenario(
+    client: TestClient, workspace: Path
+) -> None:
+    """Unpacked into staging first, so a bad archive cannot half-overwrite
+    work the user already had."""
+    folder = Path(save(client, name="week-3")["folder"])
+    before = (folder / "lab.conf").read_text()
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("notes.md", "no lab.conf here")
+    response = client.post(
+        "/api/project/import", content=buffer.getvalue(), headers={"X-KGUI-Filename": "week-3.zip"}
+    )
+
+    assert response.status_code == 400
+    assert (folder / "lab.conf").read_text() == before
+
+
+# -- exam settings ------------------------------------------------------
+
+
+def test_feature_toggles_are_stored_in_the_folder(client: TestClient, session: Session) -> None:
+    from kathara_gui.features import Features
+
+    session.set_features(Features(subnet_calculator=False))
+    folder = Path(save(client)["folder"])
+
+    stored = json.loads((folder / "kgui.json").read_text())
+    assert stored["features"]["subnet_calculator"] is False
+
+
+def test_feature_toggles_travel_with_the_scenario(client: TestClient, session: Session) -> None:
+    """Capability 8: an exam's restrictions belong to the file, not the machine."""
+    from kathara_gui.features import Features
+
+    session.set_features(Features(subnet_calculator=False))
+    name = save(client)["name"]
+    session.set_features(Features())
+
+    body = client.post("/api/project/open", json={"folder": name}).json()
+    assert body["features"]["subnet_calculator"] is False
+    assert session.features.subnet_calculator is False
 
 
 # -- project state ------------------------------------------------------
@@ -351,26 +514,13 @@ def test_something_that_is_not_a_package_is_refused(client: TestClient) -> None:
 def test_state_reports_where_the_scenario_stands(client: TestClient, workspace: Path) -> None:
     body = client.get("/api/project").json()
     assert body["name"] == "untitled"
-    assert body["project_file"] is None
+    assert body["folder"] is None
     assert body["workspace"] == str(workspace.resolve())
 
 
-def test_state_reports_the_file_once_saved(client: TestClient) -> None:
+def test_state_reports_the_folder_once_saved(client: TestClient) -> None:
     save(client)
     body = client.get("/api/project").json()
 
-    assert body["project_file"].endswith("ospf-triangle.kgui")
+    assert body["folder"].endswith("ospf-triangle")
     assert body["dirty"] is False
-
-
-def test_feature_toggles_travel_with_the_scenario(client: TestClient, session: Session) -> None:
-    """Capability 8: an exam's restrictions are part of the file, not the machine."""
-    from kathara_gui.features import Features
-
-    session.set_features(Features(subnet_calculator=False))
-    filename = save(client)["filename"]
-    session.set_features(Features())  # a fresh, permissive session
-
-    body = client.post("/api/project/open", json={"filename": filename}).json()
-    assert body["features"]["subnet_calculator"] is False
-    assert session.features.subnet_calculator is False

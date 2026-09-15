@@ -19,7 +19,7 @@ import type {
   FeaturesResponse,
   IssuesResponse,
   OpenResponse,
-  PackageSummary,
+  ScenarioSummary,
   ProbeResponse,
   SaveResponse,
   CaptureResponse,
@@ -46,12 +46,11 @@ const {
   verify,
   saveProject,
   openProject,
-  uploadProject,
-  downloadProject,
-  packages,
+  importProject,
+  exportProject,
+  scenarios,
   captureState,
-  importLabConf,
-  exportLabConf,
+  arrange,
 } = vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
@@ -65,6 +64,7 @@ const {
     devices: [],
     running: [],
     exited: [],
+    drift: [],
     deployed: false,
     lab_dir: null,
     message: null,
@@ -113,12 +113,12 @@ const {
       }),
     ),
     saveProject: vi.fn(
-      async (_topology: Topology, filename?: string): Promise<SaveResponse> => ({
-        path: `/workspace/${filename ?? "untitled"}.kgui`,
-        filename: `${filename ?? "untitled"}.kgui`,
+      async (_topology: Topology, name?: string): Promise<SaveResponse> => ({
+        folder: `/workspace/${name ?? "untitled"}`,
+        name: name ?? "untitled",
       }),
     ),
-    openProject: vi.fn(async (filename: string): Promise<OpenResponse> => ({
+    openProject: vi.fn(async (name: string): Promise<OpenResponse> => ({
       topology: {
         name: "opened scenario",
         nodes: [],
@@ -129,14 +129,13 @@ const {
         addressing_validation: true,
         infrastructure_verification: true,
       },
-      project_file: `/workspace/${filename}`,
-      lab_dir: "/workspace/opened-scenario",
-      application: "0.1.0",
-      created: null,
+      folder: `/workspace/${name}`,
+      warnings: [],
+      foreign: false,
     })),
-    uploadProject: vi.fn(async (file: File): Promise<OpenResponse> => ({
+    importProject: vi.fn(async (file: File): Promise<OpenResponse> => ({
       topology: {
-        name: "uploaded scenario",
+        name: "imported scenario",
         nodes: [],
         collision_domains: [],
       } as unknown as Topology,
@@ -145,28 +144,24 @@ const {
         addressing_validation: true,
         infrastructure_verification: true,
       },
-      project_file: `/workspace/${file.name}`,
-      lab_dir: "/workspace/uploaded-scenario",
-      application: "0.1.0",
-      created: null,
+      folder: `/workspace/${file.name}`,
+      warnings: [],
+      foreign: true,
     })),
-    downloadProject: vi.fn(async () => new Blob(["PK"], { type: "application/zip" })),
-    importLabConf: vi.fn(async (_text: string) => ({
-      topology: {
-        name: "imported lab",
-        nodes: [],
-        collision_domains: [],
-      } as unknown as Topology,
-      warnings: [] as string[],
+    exportProject: vi.fn(async () => new Blob(["PK"], { type: "application/zip" })),
+    scenarios: vi.fn(async (): Promise<ScenarioSummary[]> => []),
+    arrange: vi.fn(async (topology: Topology) => ({
+      positions: Object.fromEntries(
+        topology.nodes.map((n, i) => [n.name, { x: i * 260, y: 0 }]),
+      ),
     })),
-    exportLabConf: vi.fn(async () => ({ text: "LAB_DESCRIPTION=\"x\"\n" })),
-    packages: vi.fn(async (): Promise<PackageSummary[]> => []),
     captureState: vi.fn(
-      async (): Promise<CaptureResponse> => ({
+      async (topology: Topology): Promise<CaptureResponse> => ({
         captured: [],
         skipped: [],
         message: null,
-        lab_dir: "/workspace/untitled",
+        folder: "/workspace/untitled",
+        topology,
       }),
     ),
   };
@@ -196,20 +191,20 @@ vi.mock("./api/client", () => ({
       devices: [],
       running: [],
       exited: [],
+      drift: [],
       deployed: false,
       lab_dir: null,
       message: null,
       needs_confirmation: false,
       conflicts: null,
     })),
-    importLabConf,
-    exportLabConf,
     saveProject,
     openProject,
-    uploadProject,
-    downloadProject,
-    packages,
+    importProject,
+    exportProject,
+    scenarios,
     captureState,
+    arrange,
   },
   initialiseToken: vi.fn(),
 }));
@@ -228,6 +223,7 @@ beforeEach(() => {
     devices: [],
     running: [],
     exited: [],
+    drift: [],
     deployed: false,
     lab_dir: null,
     message: null,
@@ -906,6 +902,7 @@ describe("deploying and verifying", () => {
     ],
     running: ["r1", "r2"],
     exited: [],
+    drift: [],
     deployed: true,
     lab_dir: "/tmp/lab",
     message: null,
@@ -1069,6 +1066,7 @@ describe("finding the lab on disk", () => {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
     exited: [],
+    drift: [],
     deployed: true,
     lab_dir: dir,
     message: null,
@@ -1140,10 +1138,157 @@ describe("finding the lab on disk", () => {
   });
 })
 
-describe("the scenario as a file", () => {
-  // The half of Capability 5 that was missing: the package format and the
-  // configuration capture worked, and nothing in the interface could reach
-  // them. FR-11/12/14/24/25/26 are all exercised from here.
+describe("the selected device's own panel", () => {
+  // Requested: the controls belonging to one device should sit in a coloured
+  // rectangle of their own, and that rectangle should not be there when no
+  // device is selected — an empty tinted block promises controls that are not.
+
+  const deviceBlock = () => document.querySelector(".inspector--device");
+
+  it("shows no device block until something is selected", async () => {
+    await renderApp();
+    expect(await screen.findByText(/Select a device to edit/)).toBeInTheDocument();
+    expect(deviceBlock()).toBeNull();
+  });
+
+  it("wraps the selected device's settings in one block", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+
+    const block = deviceBlock();
+    expect(block).not.toBeNull();
+    // Everything about that one device, gathered together.
+    expect(block).toHaveTextContent("Name");
+    expect(block).toHaveTextContent("Container image");
+  });
+
+  it("takes the block away again when the selection is cleared", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    expect(deviceBlock()).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deviceBlock()).toBeNull());
+  });
+});
+
+describe("when the canvas has drifted from the running lab", () => {
+  // Reported: an address changed on the canvas, Verify pressed, and the
+  // results described the old one. Diagnostics ping real containers, so they
+  // can only report what is running — the missing part was saying so.
+
+  const drifted: StatusResponse = {
+    drift: ["r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab"],
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    exited: [],
+    deployed: true,
+    lab_dir: "/workspace/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  it("says the two no longer match", async () => {
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(
+      await screen.findByText(/The canvas no longer matches the running lab/),
+    ).toBeInTheDocument();
+  });
+
+  it("lists what actually differs, rather than only that something does", async () => {
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/192\.168\.1\.1\/24 on the canvas/)).toBeInTheDocument();
+  });
+
+  it("says the link checks describe the running lab", async () => {
+    deploy.mockResolvedValue(drifted);
+    verify.mockResolvedValue({
+      checks: [],
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      healthy: true,
+      message: null,
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+
+    expect(await screen.findByText(/describe the/)).toBeInTheDocument();
+  });
+
+  it("says nothing when the canvas and the lab agree", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/no longer matches the running lab/)).toBeNull(),
+    );
+  });
+});
+
+describe("tidying the whole layout", () => {
+  // Reported: an imported lab piles every device on the same spot, and
+  // distributing them by hand is not good enough. The algorithm lays them out
+  // in layers with as few link crossings as it can.
+
+  it("needs at least two devices", async () => {
+    await renderApp();
+    expect(await screen.findByRole("button", { name: "Tidy layout" })).toBeDisabled();
+  });
+
+  it("moves the devices where the server says", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Tidy layout" }));
+
+    await waitFor(() => expect(arrange).toHaveBeenCalled());
+  });
+
+  it("is one undo step, however many devices moved", async () => {
+    // Which is what makes trying a layout cheap.
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Tidy layout" }));
+    await waitFor(() => expect(arrange).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    // Back to two devices with their original positions, and nothing further
+    // to undo beyond the two additions.
+    expect(screen.getByRole("button", { name: "Redo" })).toBeEnabled();
+  });
+
+  it("says so rather than creating an empty undo step when nothing moves", async () => {
+    arrange.mockImplementation(async (topology: Topology) => ({
+      positions: Object.fromEntries(topology.nodes.map((n) => [n.name, n.position])),
+    }));
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Tidy layout" }));
+
+    expect(await screen.findByText("The layout is already tidy.")).toBeInTheDocument();
+  });
+});
+
+describe("the scenario as a folder", () => {
+  // Capability 5. A scenario is a Kathará lab folder and the export is a plain
+  // zip of it — one Save, one Open, one Export, one Import. The earlier design
+  // offered `.kgui` and `lab.conf` as separate pairs, which asked the user to
+  // understand a distinction that should not have existed.
 
   it("will not save an empty scenario", async () => {
     await renderApp();
@@ -1151,7 +1296,7 @@ describe("the scenario as a file", () => {
     expect(save).toBeDisabled();
   });
 
-  it("writes a file, rather than only pushing to the server", async () => {
+  it("writes files, rather than only pushing to the server", async () => {
     // The header button used to call PUT /api/topology, which put the document
     // in the server's memory and nothing on disk, while saying "Save".
     const user = await renderApp();
@@ -1159,15 +1304,19 @@ describe("the scenario as a file", () => {
     await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
 
     await waitFor(() => expect(saveProject).toHaveBeenCalled());
-    expect(await screen.findByText(/Saved as untitled\.kgui/)).toBeInTheDocument();
+    expect(await screen.findByText(/Saved in untitled/)).toBeInTheDocument();
   });
 
-  it("reports where the scenario now lives", async () => {
+  it("reports the folder the scenario lives in", async () => {
     const user = await renderApp();
     await addRouter(user);
     await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
 
-    expect(await screen.findByText("untitled.kgui")).toBeInTheDocument();
+    // Scoped to the panel: the header shows the scenario's name, which for a
+    // fresh document happens to read the same as its folder.
+    const panel = screen.getByRole("region", { name: "Scenario" });
+    await waitFor(() => expect(within(panel).getByText(/Saved in/)).toBeInTheDocument());
+    expect(within(panel).getByText("untitled")).toBeInTheDocument();
   });
 
   it("clears the unsaved marker without losing undo history", async () => {
@@ -1178,7 +1327,7 @@ describe("the scenario as a file", () => {
     await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
 
     await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
-    // Saving is not the same as reloading: the edit is still undoable.
+    // Saving is not reloading: the edit is still undoable.
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
   });
 
@@ -1194,26 +1343,37 @@ describe("the scenario as a file", () => {
     );
   });
 
-  it("lists saved scenarios when the chooser opens", async () => {
-    packages.mockResolvedValue([
-      { filename: "week-3.kgui", name: "OSPF triangle", modified: 1, size: 2048 },
+  it("lists the scenarios in the workspace when the chooser opens", async () => {
+    scenarios.mockResolvedValue([
+      { folder: "week-3", name: "OSPF triangle", devices: 3, modified: 1, foreign: false },
     ]);
     const user = await renderApp();
     await user.click(await screen.findByRole("button", { name: "Open…" }));
 
     expect(await screen.findByText("OSPF triangle")).toBeInTheDocument();
-    expect(screen.getByText(/week-3\.kgui/)).toBeInTheDocument();
+    expect(screen.getByText(/week-3 · 3 devices/)).toBeInTheDocument();
+  });
+
+  it("marks a scenario that came from outside", async () => {
+    scenarios.mockResolvedValue([
+      { folder: "someone-elses", name: "legacy lab", devices: 2, modified: 1, foreign: true },
+    ]);
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
+
+    const list = await screen.findByRole("list", { name: "Scenarios in the workspace" });
+    expect(within(list).getByText(/imported/)).toBeInTheDocument();
   });
 
   it("opens the scenario that was chosen", async () => {
-    packages.mockResolvedValue([
-      { filename: "week-3.kgui", name: "OSPF triangle", modified: 1, size: 2048 },
+    scenarios.mockResolvedValue([
+      { folder: "week-3", name: "OSPF triangle", devices: 3, modified: 1, foreign: false },
     ]);
     const user = await renderApp();
     await user.click(await screen.findByRole("button", { name: "Open…" }));
     await user.click(await screen.findByText("OSPF triangle"));
 
-    await waitFor(() => expect(openProject).toHaveBeenCalledWith("week-3.kgui"));
+    await waitFor(() => expect(openProject).toHaveBeenCalledWith("week-3"));
     expect(await screen.findByText(/Opened opened scenario/)).toBeInTheDocument();
   });
 
@@ -1232,7 +1392,7 @@ describe("the scenario as a file", () => {
     expect(screen.queryByText(/opening another replaces it/)).toBeNull();
   });
 
-  it("hands a downloaded scenario to the browser", async () => {
+  it("hands the exported zip to the browser", async () => {
     const createObjectURL = vi.fn(() => "blob:scenario");
     const revokeObjectURL = vi.fn();
     Object.defineProperty(URL, "createObjectURL", { value: createObjectURL, writable: true });
@@ -1240,39 +1400,82 @@ describe("the scenario as a file", () => {
 
     const user = await renderApp();
     await addRouter(user);
-    await user.click(await screen.findByRole("button", { name: "Download" }));
+    await user.click(await screen.findByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(downloadProject).toHaveBeenCalled());
+    await waitFor(() => expect(exportProject).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
-    // Not revoking would keep the whole package in memory for the tab's life.
+    // Not revoking would keep the whole archive in memory for the tab's life.
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:scenario");
   });
 
-  it("opens a package the user uploads", async () => {
+  it("imports a scenario the user picks", async () => {
     const user = await renderApp();
-    const file = new File(["PK"], "submission-jan.kgui", { type: "application/zip" });
-    await user.upload(screen.getByLabelText("Scenario file to open"), file);
+    const file = new File(["PK"], "submission-jan.zip", { type: "application/zip" });
+    await user.upload(screen.getByLabelText("Scenario file to import"), file);
 
-    await waitFor(() => expect(uploadProject).toHaveBeenCalled());
-    expect(await screen.findByText(/Opened uploaded scenario/)).toBeInTheDocument();
+    await waitFor(() => expect(importProject).toHaveBeenCalled());
+    expect(await screen.findByText(/Opened imported scenario/)).toBeInTheDocument();
+  });
+
+  it("says when an imported lab came from outside this application", async () => {
+    // Its feature toggles are defaults rather than an instructor's choices.
+    const user = await renderApp();
+    await user.upload(
+      screen.getByLabelText("Scenario file to import"),
+      new File(["PK"], "legacy.zip", { type: "application/zip" }),
+    );
+
+    expect(
+      await screen.findByText(/imported from outside this application/),
+    ).toBeInTheDocument();
+  });
+
+  it("accepts a bare lab.conf as well as a zip", async () => {
+    const user = await renderApp();
+    await user.upload(
+      screen.getByLabelText("Scenario file to import"),
+      new File(['r1[0]="A"'], "lab.conf", { type: "text/plain" }),
+    );
+
+    await waitFor(() => expect(importProject).toHaveBeenCalled());
+  });
+
+  it("reports lines of an imported lab.conf it could not understand", async () => {
+    importProject.mockResolvedValue({
+      topology: { name: "partial", nodes: [], collision_domains: [] } as never,
+      features: {
+        subnet_calculator: true,
+        addressing_validation: true,
+        infrastructure_verification: true,
+      },
+      folder: "/workspace/partial",
+      warnings: ["r1[99]=nonsense"],
+      foreign: true,
+    });
+    const user = await renderApp();
+    await user.upload(
+      screen.getByLabelText("Scenario file to import"),
+      new File(["junk"], "lab.conf", { type: "text/plain" }),
+    );
+
+    expect(await screen.findByText("r1[99]=nonsense")).toBeInTheDocument();
   });
 
   it("adopts an opened scenario's exam restrictions", async () => {
     // Feature toggles belong to the scenario, not the machine it is opened on.
     openProject.mockResolvedValue({
-      topology: { name: "exam", nodes: [], collision_domains: [] },
+      topology: { name: "exam", nodes: [], collision_domains: [] } as never,
       features: {
         subnet_calculator: false,
         addressing_validation: true,
         infrastructure_verification: true,
       },
-      project_file: "/workspace/exam.kgui",
-      lab_dir: "/workspace/exam",
-      application: "0.1.0",
-      created: null,
+      folder: "/workspace/exam",
+      warnings: [],
+      foreign: false,
     });
-    packages.mockResolvedValue([
-      { filename: "exam.kgui", name: "exam", modified: 1, size: 10 },
+    scenarios.mockResolvedValue([
+      { folder: "exam", name: "exam", devices: 1, modified: 1, foreign: false },
     ]);
 
     const user = await renderApp();
@@ -1285,202 +1488,12 @@ describe("the scenario as a file", () => {
   });
 });
 
-describe("naming the scenario", () => {
-  // Reported twice: first that the name could not be changed at all, then that
-  // it should be editable by clicking the title. The name is not decoration —
-  // it names the lab folder, names the export, and is what Kathará hashes to
-  // decide which containers belong to this scenario.
-
-  const rename = async (user: ReturnType<typeof userEvent.setup>, to: string) => {
-    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
-    const field = await screen.findByLabelText("Scenario name");
-    await user.clear(field);
-    await user.type(field, to);
-    return field;
-  };
-
-  it("renames from the title", async () => {
-    const user = await renderApp();
-    await rename(user, "bgp exam{Enter}");
-
-    expect(await screen.findByRole("button", { name: /bgp exam/ })).toBeInTheDocument();
-  });
-
-  it("commits on blur as well as Enter", async () => {
-    const user = await renderApp();
-    await rename(user, "ospf lab");
-    await user.tab();
-
-    expect(await screen.findByRole("button", { name: /ospf lab/ })).toBeInTheDocument();
-  });
-
-  it("abandons the edit on Escape", async () => {
-    const user = await renderApp();
-    await rename(user, "discarded{Escape}");
-
-    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
-  });
-
-  it("keeps the old name rather than accepting an empty one", async () => {
-    const user = await renderApp();
-    await rename(user, "{Enter}");
-
-    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
-  });
-
-  it("saves under the new name", async () => {
-    const user = await renderApp();
-    await addRouter(user);
-    await rename(user, "submission{Enter}");
-    await user.click((await screen.findAllByRole("button", { name: "Save" }))[0]!);
-
-    await waitFor(() =>
-      expect(saveProject).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "submission" }),
-        undefined,
-      ),
-    );
-  });
-
-  it("is undoable in one step", async () => {
-    const user = await renderApp();
-    await rename(user, "renamed{Enter}");
-    expect(await screen.findByRole("button", { name: /renamed/ })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(await screen.findByRole("button", { name: /untitled/ })).toBeInTheDocument();
-  });
-
-  it("refuses to rename a deployed lab, and says why", async () => {
-    // Renaming would not rename the containers; it would orphan them under the
-    // old name, leaving a lab the interface can neither see nor stop.
-    deploy.mockResolvedValue({
-      devices: [{ name: "r1", state: "running" }],
-      running: ["r1"],
-      exited: [],
-      deployed: true,
-      lab_dir: "/workspace/untitled",
-      message: null,
-      needs_confirmation: false,
-      conflicts: null,
-    });
-    const user = await renderApp();
-    await addRouter(user);
-    await user.click(await screen.findByRole("button", { name: "Deploy" }));
-
-    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
-    expect(await screen.findByText(/Stop the lab before renaming/)).toBeInTheDocument();
-    // And no field opened, so the name cannot be edited anyway.
-    expect(screen.queryByLabelText("Scenario name")).toBeNull();
-  });
-
-  it("allows renaming again once the lab is stopped", async () => {
-    const user = await renderApp();
-    await addRouter(user);
-    await user.click(await screen.findByRole("button", { name: "Deploy" }));
-    await rename(user, "after stopping{Enter}");
-
-    expect(await screen.findByRole("button", { name: /after stopping/ })).toBeInTheDocument();
-  });
-});
-
-describe("selecting every device", () => {
-  it("selects all devices with the platform shortcut", async () => {
-    // Reported: Cmd+A did nothing. It was not handled, so the browser selected
-    // the page's text instead.
-    const user = await renderApp();
-    await addRouter(user);
-    await addRouter(user);
-
-    await user.keyboard("{Meta>}a{/Meta}");
-
-    // Delete acts on the selection, and names itself for what it will do.
-    expect(await screen.findByRole("button", { name: "Delete" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(screen.queryByText("r1")).toBeNull());
-    expect(screen.queryByText("r2")).toBeNull();
-  });
-
-  it("works with Control as well as Command", async () => {
-    const user = await renderApp();
-    await addRouter(user);
-    await user.keyboard("{Control>}a{/Control}");
-
-    expect(await screen.findByRole("button", { name: "Delete" })).toBeEnabled();
-  });
-
-  it("does not hijack the shortcut while typing a name", async () => {
-    // Ctrl+A in a text field selects the field's text, which is what someone
-    // renaming a device expects.
-    const user = await renderApp();
-    await addRouter(user);
-    await user.click(await screen.findByRole("button", { name: /Scenario name/ }));
-    const field = await screen.findByLabelText("Scenario name");
-    await user.click(field);
-    await user.keyboard("{Meta>}a{/Meta}");
-
-    // Still editing, and the canvas selection was not replaced behind us.
-    expect(screen.getByLabelText("Scenario name")).toBeInTheDocument();
-  });
-});
-
-describe("working with an existing lab.conf", () => {
-  // FR-11/FR-12. The prior art can generate new labs and cannot open one that
-  // already exists, which is the gap this is meant to close — so it has to be
-  // reachable from the interface, not only from the API.
-
-  it("imports a lab.conf the user picks", async () => {
-    const user = await renderApp();
-    const file = new File(['LAB_DESCRIPTION="x"\nr1[0]="A"\n'], "lab.conf", {
-      type: "text/plain",
-    });
-    await user.upload(screen.getByLabelText("lab.conf file to import"), file);
-
-    await waitFor(() => expect(importLabConf).toHaveBeenCalled());
-    expect(await screen.findByText(/Imported lab\.conf/)).toBeInTheDocument();
-  });
-
-  it("says which lines it could not understand", async () => {
-    // Import is deliberately forgiving; silence would hide what was dropped.
-    importLabConf.mockResolvedValue({
-      topology: { name: "imported", nodes: [], collision_domains: [] } as never,
-      warnings: ["r1[99]=nonsense"],
-    });
-    const user = await renderApp();
-    await user.upload(
-      screen.getByLabelText("lab.conf file to import"),
-      new File(["junk"], "lab.conf", { type: "text/plain" }),
-    );
-
-    expect(await screen.findByText("r1[99]=nonsense")).toBeInTheDocument();
-  });
-
-  it("will not export an empty topology", async () => {
-    await renderApp();
-    expect(await screen.findByRole("button", { name: "Export lab.conf" })).toBeDisabled();
-  });
-
-  it("pushes the canvas before exporting, so the file is not stale", async () => {
-    const createObjectURL = vi.fn(() => "blob:labconf");
-    Object.defineProperty(URL, "createObjectURL", { value: createObjectURL, writable: true });
-    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), writable: true });
-
-    const user = await renderApp();
-    await addRouter(user);
-    await user.click(await screen.findByRole("button", { name: "Export lab.conf" }));
-
-    // The endpoint serialises the stored topology, so the newer canvas must
-    // reach the server first or the download is of the previous version.
-    await waitFor(() => expect(exportLabConf).toHaveBeenCalled());
-    expect(createObjectURL).toHaveBeenCalled();
-  });
-});
-
 describe("capturing running configuration", () => {
   const running: StatusResponse = {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
     exited: [],
+    drift: [],
     deployed: true,
     lab_dir: "/workspace/untitled",
     message: null,
@@ -1502,7 +1515,8 @@ describe("capturing running configuration", () => {
       captured: [{ device: "r1", path: "r1/etc/frr/frr.conf", lines: 42 }],
       skipped: [],
       message: null,
-      lab_dir: "/workspace/untitled",
+      folder: "/workspace/untitled",
+      topology: { name: "untitled", nodes: [], collision_domains: [] } as never,
     });
 
     const user = await renderApp();
@@ -1521,7 +1535,8 @@ describe("capturing running configuration", () => {
       captured: [],
       skipped: [["pc1", "not a router"]],
       message: "Nothing was captured.",
-      lab_dir: "/workspace/untitled",
+      folder: "/workspace/untitled",
+      topology: { name: "untitled", nodes: [], collision_domains: [] } as never,
     });
 
     const user = await renderApp();
@@ -1546,6 +1561,7 @@ describe("a lab whose containers have died", () => {
     ],
     running: ["r2"],
     exited: ["r1"],
+    drift: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1557,6 +1573,7 @@ describe("a lab whose containers have died", () => {
     devices: [{ name: "r1", state: "exited" }],
     running: [],
     exited: ["r1"],
+    drift: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1630,6 +1647,7 @@ describe("redeploying a running lab", () => {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
     exited: [],
+    drift: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1675,6 +1693,7 @@ describe("redeploying a running lab", () => {
       devices: [],
       running: [],
       exited: [],
+      drift: [],
       deployed: false,
       lab_dir: null,
       message: "Could not deploy: image not found",
@@ -1695,6 +1714,7 @@ describe("confirming before stopping a running lab", () => {
     devices: [],
     running: [],
     exited: [],
+    drift: [],
     deployed: false,
     lab_dir: "/labs/untitled",
     message: null,
@@ -1706,6 +1726,7 @@ describe("confirming before stopping a running lab", () => {
     devices: [{ name: "r1", state: "running" }],
     running: ["r1"],
     exited: [],
+    drift: [],
     deployed: true,
     lab_dir: "/labs/untitled",
     message: "Stopped 1 device already running.",

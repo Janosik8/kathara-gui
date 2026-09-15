@@ -105,11 +105,47 @@ describe("placementSignature", () => {
     expect(after).not.toBe(before);
   });
 
-  it("does not change when a node merely moves", () => {
-    // Re-measuring on every drag frame would be pure waste.
+  it("changes when a node is moved without being dragged", () => {
+    // The reported defect. Tidy layout, align and distribute all move a device
+    // programmatically; the handles then had to be re-measured or the links
+    // stayed attached where the device used to be. An earlier version excluded
+    // position entirely and so never re-measured until the user nudged it.
     const still = withHandles("r1", [[0, "left", "50%"]]);
     const moved = { ...withHandles("r1", [[0, "left", "50%"]]), position: { x: 900, y: 900 } };
-    expect(placementSignature([moved])).toBe(placementSignature([still]));
+    expect(placementSignature([moved])).not.toBe(placementSignature([still]));
+  });
+
+  it("does not change from frame to frame while a node is dragged", () => {
+    // Re-measuring sixty times a second would be pure waste, and it is the
+    // reason position was left out in the first place.
+    const frame = (x: number): FlowNode => ({
+      ...withHandles("r1", [[0, "left", "50%"]]),
+      position: { x, y: 0 },
+      dragging: true,
+    });
+    expect(placementSignature([frame(120)])).toBe(placementSignature([frame(480)]));
+  });
+
+  it("re-measures once when the drag ends", () => {
+    const dragging: FlowNode = {
+      ...withHandles("r1", [[0, "left", "50%"]]),
+      position: { x: 480, y: 0 },
+      dragging: true,
+    };
+    const dropped: FlowNode = { ...dragging, dragging: false };
+    expect(placementSignature([dropped])).not.toBe(placementSignature([dragging]));
+  });
+
+  it("ignores sub-pixel jitter", () => {
+    const a = { ...withHandles("r1", [[0, "left", "50%"]]), position: { x: 100.2, y: 50.1 } };
+    const b = { ...withHandles("r1", [[0, "left", "50%"]]), position: { x: 100.4, y: 49.9 } };
+    expect(placementSignature([a])).toBe(placementSignature([b]));
+  });
+
+  it("re-measures a collision-domain node when it moves too", () => {
+    // A hub has no placements of its own, but its spokes still attach to it.
+    const hub = (x: number): FlowNode => ({ id: "cd:A", position: { x, y: 0 }, data: {} });
+    expect(placementSignature([hub(0)])).not.toBe(placementSignature([hub(300)]));
   });
 
   it("tolerates nodes without placements, such as collision domains", () => {

@@ -92,6 +92,7 @@ export function LabPanel({
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
   const exited = status?.exited ?? [];
+  const drift = status?.drift ?? [];
   // Verification runs commands inside the containers, so it needs live ones —
   // `deployed` is true for a lab whose devices have all exited.
   const anyRunning = (status?.running.length ?? 0) > 0;
@@ -174,7 +175,16 @@ export function LabPanel({
           {busy === "undeploy" ? "Stopping…" : "Stop"}
         </button>
         {canVerify && (
-          <button type="button" onClick={onVerify} disabled={busy !== null || !anyRunning}>
+          <button
+            type="button"
+            onClick={onVerify}
+            disabled={busy !== null || !anyRunning}
+            title={
+              drift.length > 0
+                ? "Tests the running lab, which no longer matches the canvas"
+                : undefined
+            }
+          >
             {busy === "verify" ? "Verifying…" : "Verify links"}
           </button>
         )}
@@ -189,6 +199,25 @@ export function LabPanel({
           Redeploying replaces the running lab, so anything changed inside a container is
           lost. Deploy again after editing to apply your changes.
         </p>
+      )}
+
+      {drift.length > 0 && (
+        // The reported confusion: an address changed on the canvas, Verify
+        // pressed, and the results described the old one. Diagnostics ping
+        // real containers, so they can only report what is running — saying
+        // nothing about the two having parted company made a correct answer
+        // look like a fault.
+        <div className="lab__warning" role="status">
+          <p>
+            <strong>The canvas no longer matches the running lab.</strong> Deploy again to
+            apply these changes; until then, diagnostics describe what is running.
+          </p>
+          <ul>
+            {drift.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {status?.message && <p className="lab__message">{status.message}</p>}
@@ -264,6 +293,14 @@ export function LabPanel({
       {canVerify && diagnostics && (
         <>
           <h3 className="panel__heading">Link checks</h3>
+          {drift.length > 0 && (
+            // Said beside the results, not only at the top of the panel: this
+            // is where the user is looking when the numbers surprise them.
+            <p className="field__hint">
+              These describe the <strong>running</strong> lab, which no longer matches the
+              canvas.
+            </p>
+          )}
           {diagnostics.message ? (
             <p className="field__hint">{diagnostics.message}</p>
           ) : (

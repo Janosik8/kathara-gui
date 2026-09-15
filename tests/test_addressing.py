@@ -7,6 +7,7 @@ import pytest
 from kathara_gui.domain.addressing import (
     Severity,
     allocate,
+    infer_subnets,
     validate,
 )
 from kathara_gui.domain.model import CollisionDomain, Interface, Node, Topology
@@ -275,3 +276,103 @@ def test_domains_with_no_members_are_not_allocated() -> None:
     topo.collision_domains.append(CollisionDomain(name="Z"))
     result = allocate(topo)
     assert "Z" not in result.assigned_subnets
+
+
+# -- inferring a subnet from the addresses already on the wire ----------
+
+
+class TestInferSubnets:
+    """Kathará records the wiring but not the plan.
+
+    An imported lab therefore arrives with named collision domains and no
+    subnets, even though every member's address says exactly what the network
+    is — so the panel and the diagram showed a bare letter where they should
+    have shown `10.10.0.0/24`.
+    """
+
+    def test_a_domain_takes_the_network_its_members_share(self) -> None:
+        topology = Topology(
+            name="imported",
+            nodes=[
+                Node(
+                    name="r1",
+                    interfaces=[Interface(number=0, collision_domain="K", ip="10.10.0.1/24")],
+                ),
+                Node(
+                    name="pc1",
+                    interfaces=[Interface(number=0, collision_domain="K", ip="10.10.0.50/24")],
+                ),
+            ],
+        )
+        assert infer_subnets(topology) == {"K": "10.10.0.0/24"}
+
+    def test_a_point_to_point_link_keeps_its_narrow_mask(self) -> None:
+        topology = Topology(
+            name="imported",
+            nodes=[
+                Node(
+                    name="r1",
+                    interfaces=[Interface(number=0, collision_domain="L", ip="172.16.5.1/30")],
+                ),
+                Node(
+                    name="r2",
+                    interfaces=[Interface(number=0, collision_domain="L", ip="172.16.5.2/30")],
+                ),
+            ],
+        )
+        assert infer_subnets(topology) == {"L": "172.16.5.0/30"}
+
+    def test_a_domain_whose_members_disagree_is_left_alone(self) -> None:
+        """The specification's headline fault. Inventing a subnet here would
+        paper over exactly what the user needs to see."""
+        topology = Topology(
+            name="broken",
+            nodes=[
+                Node(
+                    name="r1",
+                    interfaces=[Interface(number=0, collision_domain="X", ip="192.168.1.1/24")],
+                ),
+                Node(
+                    name="r2",
+                    interfaces=[Interface(number=0, collision_domain="X", ip="10.99.0.1/24")],
+                ),
+            ],
+        )
+        assert infer_subnets(topology) == {}
+        assert any(i.code == "mixed_subnets" for i in validate(topology))
+
+    def test_a_domain_with_no_addresses_yields_nothing(self) -> None:
+        topology = Topology(
+            name="bare",
+            nodes=[Node(name="pc1", interfaces=[Interface(number=0, collision_domain="Z")])],
+        )
+        assert infer_subnets(topology) == {}
+
+    def test_one_addressed_member_is_enough(self) -> None:
+        """A router addressed and a host not yet: the network is still known."""
+        topology = Topology(
+            name="partial",
+            nodes=[
+                Node(
+                    name="r1",
+                    interfaces=[Interface(number=0, collision_domain="K", ip="10.0.0.1/24")],
+                ),
+                Node(name="pc1", interfaces=[Interface(number=0, collision_domain="K")]),
+            ],
+        )
+        assert infer_subnets(topology) == {"K": "10.0.0.0/24"}
+
+    def test_every_domain_is_considered(self) -> None:
+        topology = Topology(
+            name="several",
+            nodes=[
+                Node(
+                    name="r1",
+                    interfaces=[
+                        Interface(number=0, collision_domain="K", ip="10.10.0.1/24"),
+                        Interface(number=1, collision_domain="L", ip="172.16.5.1/30"),
+                    ],
+                )
+            ],
+        )
+        assert infer_subnets(topology) == {"K": "10.10.0.0/24", "L": "172.16.5.0/30"}

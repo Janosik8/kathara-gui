@@ -90,47 +90,28 @@ class TestLabDir:
         session.replace(Topology(name="second"))
         assert session.lab_dir().name == "second"
 
-    def test_a_lab_opened_from_a_package_deploys_from_its_own_folder(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_saved_scenario_deploys_from_its_own_folder(self, tmp_path: Path) -> None:
         # So the files the user edits and the files that run are the same ones,
-        # including any configuration captured before the package was written.
+        # including any configuration captured before the scenario was shared.
         session = Session(workspace_root=tmp_path / "workspace")
         session.replace(Topology(name="bgp lab"))
-        session.mark_saved(
-            tmp_path / "teaching" / "bgp-exam.kgui",
-            lab_dir=tmp_path / "teaching" / "bgp-exam",
-        )
+        session.mark_saved(tmp_path / "teaching" / "bgp-exam")
 
         assert session.lab_dir() == tmp_path / "teaching" / "bgp-exam"
-
-    def test_saving_a_package_does_not_move_the_lab(self, tmp_path: Path) -> None:
-        """A package is a file; a lab is a directory.
-
-        Saving names the .kgui and nothing else, so the lab keeps deploying
-        from where it already was. Treating the two as one path would have had
-        `lab_dir` return `bgp-lab.kgui` and generate a lab inside it.
-        """
-        session = Session(workspace_root=tmp_path / "workspace")
-        session.replace(Topology(name="bgp lab"))
-        session.mark_saved(tmp_path / "workspace" / "bgp-lab.kgui")
-
-        assert session.lab_dir() == tmp_path / "workspace" / "bgp-lab"
-        assert session.project_file == tmp_path / "workspace" / "bgp-lab.kgui"
 
     def test_saving_clears_the_dirty_flag(self, tmp_path: Path) -> None:
         session = Session(workspace_root=tmp_path)
         session.replace(Topology(name="lab"))
         assert session.dirty is True
-        session.mark_saved(tmp_path / "somewhere.kgui")
+        session.mark_saved(tmp_path / "somewhere")
         assert session.dirty is False
 
     def test_resetting_returns_to_the_workspace(self, tmp_path: Path) -> None:
         session = Session(workspace_root=tmp_path)
-        session.mark_saved(tmp_path / "elsewhere.kgui", lab_dir=tmp_path / "elsewhere")
+        session.mark_saved(tmp_path / "elsewhere")
         session.reset()
         assert session.lab_dir() == tmp_path / "untitled"
-        assert session.project_file is None
+        assert session.path is None
 
 
 class TestLabDirFollowsTheRequest:
@@ -154,10 +135,8 @@ class TestLabDirFollowsTheRequest:
         assert session.lab_dir() == tmp_path / "ospf-lab"
 
     def test_an_opened_lab_ignores_the_name_entirely(self, tmp_path: Path) -> None:
-        # Once a lab has a folder of its own, that folder wins whatever the
-        # scenario is called.
+        # Once a scenario has a folder of its own, that folder wins whatever
+        # the scenario is called.
         session = Session(workspace_root=tmp_path / "workspace")
-        session.mark_saved(
-            tmp_path / "teaching" / "exam.kgui", lab_dir=tmp_path / "teaching" / "exam"
-        )
+        session.mark_saved(tmp_path / "teaching" / "exam")
         assert session.lab_dir(Topology(name="something else")) == tmp_path / "teaching" / "exam"

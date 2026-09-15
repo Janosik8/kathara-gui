@@ -22,10 +22,20 @@ const GROUPS: { legend: string; actions: AlignmentAction[] }[] = [
 
 interface Props {
   selectionCount: number;
+  /** Devices in the topology, whether selected or not. */
+  deviceCount: number;
+  busy?: boolean;
   onAlign: (action: AlignmentAction) => void;
+  onAutoArrange: () => void;
 }
 
-export function AlignmentToolbar({ selectionCount, onAlign }: Props) {
+export function AlignmentToolbar({
+  selectionCount,
+  deviceCount,
+  busy,
+  onAlign,
+  onAutoArrange,
+}: Props) {
   return (
     <>
       <h2 className="panel__heading" id="align-heading">
@@ -37,6 +47,24 @@ export function AlignmentToolbar({ selectionCount, onAlign }: Props) {
           ? "Select two or more devices to align them. Hold Ctrl or Cmd to add to the selection."
           : `${selectionCount} devices selected.`}
       </p>
+
+      <fieldset className="field field--group">
+        <legend>Whole topology</legend>
+        <div className="alignment__buttons">
+          <button
+            type="button"
+            onClick={onAutoArrange}
+            disabled={busy || deviceCount < 2}
+            title={deviceCount < 2 ? "Needs at least two devices" : undefined}
+          >
+            {busy ? "Arranging…" : "Tidy layout"}
+          </button>
+        </div>
+        <p className="alignment__hint">
+          Lays every device out in layers with as few link crossings as it can. Applied
+          automatically to a lab imported without a saved layout.
+        </p>
+      </fieldset>
 
       {GROUPS.map((group) => (
         <fieldset key={group.legend} className="field field--group">

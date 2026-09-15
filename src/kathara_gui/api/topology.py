@@ -18,7 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
 from kathara_gui.domain.codec.labconf import parse, serialize
-from kathara_gui.domain.model import Topology
+from kathara_gui.domain.layout import arrange
+from kathara_gui.domain.model import Position, Topology
 from kathara_gui.project.session import Session, get_session
 
 router = APIRouter(prefix="/api/topology", tags=["topology"])
@@ -46,6 +47,12 @@ class ImportResponse(BaseModel):
 
 class ExportResponse(BaseModel):
     text: str
+
+
+class ArrangeResponse(BaseModel):
+    positions: dict[str, Position] = Field(
+        description="Where each device should go, by name."
+    )
 
 
 def _state(session: Session) -> TopologyState:
@@ -115,3 +122,18 @@ def _first_error(exc: ValidationError) -> str:
     message = errors[0].get("msg", "")
     # Pydantic prefixes custom ValueError messages with "Value error, ".
     return message.removeprefix("Value error, ")
+
+
+@router.post("/arrange", response_model=ArrangeResponse)
+async def arrange_topology(topology: Topology) -> ArrangeResponse:
+    """Positions that lay the topology out with as few crossings as possible.
+
+    Returns positions rather than a topology, so the editor can apply them as
+    a single `moveNodes` operation: one undo step retracts the whole
+    rearrangement, and a layout the user dislikes costs one keystroke.
+
+    Takes the topology in the body rather than acting on the stored one,
+    because the browser holds the newer version — the same rule as every other
+    endpoint that computes from a topology.
+    """
+    return ArrangeResponse(positions=arrange(topology))

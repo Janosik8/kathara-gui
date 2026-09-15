@@ -7,7 +7,7 @@
  * address bar invites being copied into a chat or a bug report.
  */
 
-import type { Topology, TopologyState } from "../types";
+import type { Position, Topology, TopologyState } from "../types";
 
 const TOKEN_KEY = "kgui.token";
 
@@ -161,6 +161,8 @@ export interface Conflicts {
 }
 
 export interface StatusResponse {
+  /** How the canvas differs from what is running, one sentence each. */
+  drift: string[];
   devices: DeviceStatus[];
   running: string[];
   /** Devices whose containers exist but have stopped. */
@@ -182,33 +184,36 @@ export interface Features {
 
 export interface ProjectState {
   name: string;
-  /** Absolute path of the `.kgui` this was saved to, or null if never saved. */
-  project_file: string | null;
+  /** Absolute path of the scenario folder, or null if never saved. */
+  folder: string | null;
   dirty: boolean;
   features: Features;
   workspace: string;
 }
 
-export interface PackageSummary {
-  filename: string;
-  /** The scenario's own name, which need not match the file it lives in. */
+export interface ScenarioSummary {
+  /** Directory name inside the workspace. */
+  folder: string;
+  /** The scenario's own name, which need not match its folder. */
   name: string;
+  devices: number;
   modified: number;
-  size: number;
+  /** True when the folder has no kgui.json — a lab from somewhere else. */
+  foreign: boolean;
 }
 
 export interface SaveResponse {
-  path: string;
-  filename: string;
+  folder: string;
+  name: string;
 }
 
 export interface OpenResponse {
   topology: Topology;
   features: Features;
-  project_file: string;
-  lab_dir: string;
-  application: string;
-  created: string | null;
+  folder: string;
+  /** Lines of lab.conf that could not be understood. Import is forgiving. */
+  warnings: string[];
+  foreign: boolean;
 }
 
 export interface CapturedFile {
@@ -222,7 +227,9 @@ export interface CaptureResponse {
   /** Devices nothing was taken from, paired with the reason. */
   skipped: [string, string][];
   message: string | null;
-  lab_dir: string;
+  folder: string;
+  /** The topology with what the capture learned folded in. */
+  topology: Topology;
 }
 
 export type LinkOutcome = "pass" | "fail" | "skipped";
@@ -271,13 +278,20 @@ export const api = {
 
   reset: () => request<TopologyState>("/api/topology/reset", { method: "POST" }),
 
-  importLabConf: (text: string) =>
-    request<ImportResponse>("/api/topology/import", {
+  /**
+   * Positions that lay the whole topology out with as few link crossings as
+   * possible. Returns positions, not a topology, so the editor applies them
+   * as one `moveNodes` operation and one undo retracts the lot.
+   */
+  arrange: (topology: Topology) =>
+    request<{ positions: Record<string, Position> }>("/api/topology/arrange", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(topology),
     }),
 
-  exportLabConf: () => request<{ text: string }>("/api/topology/export"),
+  // lab.conf import and export live on /api/topology and remain part of the
+  // HTTP surface, but the interface no longer offers them separately: a
+  // scenario travels as a folder, and its zip already contains lab.conf.
 
   /**
    * Validate a topology without storing it.
@@ -333,39 +347,39 @@ export const api = {
       body: JSON.stringify({ topology }),
     }),
 
-  // -- the scenario as a file -------------------------------------------
+  // -- the scenario as a folder -----------------------------------------
 
   projectState: () => request<ProjectState>("/api/project"),
 
-  packages: () => request<PackageSummary[]>("/api/project/packages"),
+  scenarios: () => request<ScenarioSummary[]>("/api/project/scenarios"),
 
-  /** Write the scenario into the workspace, keeping it on this machine. */
-  saveProject: (topology: Topology, filename?: string) =>
+  /** Write the scenario into its folder in the workspace. */
+  saveProject: (topology: Topology, name?: string) =>
     request<SaveResponse>("/api/project/save", {
       method: "POST",
-      body: JSON.stringify({ topology, filename: filename ?? null }),
+      body: JSON.stringify({ topology, name: name ?? null }),
     }),
 
-  openProject: (filename: string) =>
+  openProject: (folder: string) =>
     request<OpenResponse>("/api/project/open", {
       method: "POST",
-      body: JSON.stringify({ filename }),
+      body: JSON.stringify({ folder }),
     }),
 
-  /** The scenario as bytes, for handing to the browser's download. */
-  downloadProject: (topology: Topology, filename?: string) =>
-    requestBlob("/api/project/download", {
+  /** The scenario as a zip, for the browser to hand to the user. */
+  exportProject: (topology: Topology, name?: string) =>
+    requestBlob("/api/project/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topology, filename: filename ?? null }),
+      body: JSON.stringify({ topology, name: name ?? null }),
     }),
 
   /**
-   * Open a package from outside the workspace — the instructor receiving a
-   * submission. Sent as raw bytes, so the file name travels in a header.
+   * Open a scenario from outside the workspace: a zip, or a bare lab.conf.
+   * Sent as raw bytes, so the file name travels in a header.
    */
-  uploadProject: (file: File) =>
-    request<OpenResponse>("/api/project/upload", {
+  importProject: (file: File) =>
+    request<OpenResponse>("/api/project/import", {
       method: "POST",
       headers: {
         "Content-Type": "application/octet-stream",
@@ -374,7 +388,7 @@ export const api = {
       body: file,
     }),
 
-  /** Pull each running device's configuration into the lab directory. */
+  /** Pull each running device's live configuration into the scenario. */
   captureState: (topology: Topology) =>
     request<CaptureResponse>("/api/project/capture", {
       method: "POST",

@@ -1,84 +1,72 @@
 /**
- * The scenario as a file: saving it, opening one, sharing it, capturing state.
+ * The scenario as a folder: saving it, opening one, sharing it, capturing state.
  *
- * This panel is what makes Capability 5 reachable. The package format and the
- * configuration capture existed and worked well before any of this, and were
- * usable only from the API — which satisfies none of the requirements that
- * asked for them.
+ * One Save, one Open, one Export, one Import. An earlier version offered
+ * `.kgui` and `lab.conf` as separate pairs, which asked the user to understand
+ * a distinction that should never have existed: a scenario *is* a Kathará lab
+ * folder, and the export is a plain zip of it.
  *
- * Two destinations, deliberately distinct and labelled as such. **Save** keeps
- * the scenario on this machine, in the workspace, and is the working loop.
- * **Download** hands it to the browser so it can leave — the exam submission.
- * Users routinely conflate the two, so the wording says where the file goes
- * rather than naming the mechanism.
+ * **Save keeps it here; Export sends it out.** Users conflate the two, so the
+ * wording says where the file goes rather than naming the mechanism.
  */
 
 import { useEffect, useRef, useState } from "react";
-import type { CaptureResponse, PackageSummary } from "../api/client";
+import type { CaptureResponse, ScenarioSummary } from "../api/client";
 
 interface Props {
-  /** Null until the scenario has been written to disk at least once. */
-  projectFile: string | null;
+  /** Null until the scenario has a folder on disk. */
+  folder: string | null;
   dirty: boolean;
   busy: string | null;
   deviceCount: number;
   /** Whether anything is running to capture configuration from. */
   anyRunning: boolean;
-  packages: PackageSummary[];
+  scenarios: ScenarioSummary[];
   capture: CaptureResponse | null;
+  /** Lines of an imported lab.conf that could not be understood. */
+  importWarnings: string[];
   onSave: () => void;
   onSaveAs: (name: string) => void;
-  onDownload: () => void;
-  onOpen: (filename: string) => void;
-  onUpload: (file: File) => void;
+  onExport: () => void;
+  onOpen: (folder: string) => void;
+  onImport: (file: File) => void;
   onCapture: () => void;
-  onRefreshPackages: () => void;
-  onImportLabConf: (text: string, name: string) => void;
-  onExportLabConf: () => void;
-  /** Lines the importer could not understand, from the last import. */
-  importWarnings: string[];
+  onRefreshScenarios: () => void;
 }
 
-function fileName(path: string): string {
+function lastSegment(path: string): string {
   // Both separators: the path comes from the server, which may be on Windows.
-  return path.split(/[/\\]/).pop() ?? path;
-}
-
-function describeSize(bytes: number): string {
-  return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} kB`;
+  return path.split(/[/\\]/).filter(Boolean).pop() ?? path;
 }
 
 export function ScenarioPanel({
-  projectFile,
+  folder,
   dirty,
   busy,
   deviceCount,
   anyRunning,
-  packages,
+  scenarios,
   capture,
+  importWarnings,
   onSave,
   onSaveAs,
-  onDownload,
+  onExport,
   onOpen,
-  onUpload,
+  onImport,
   onCapture,
-  onRefreshPackages,
-  onImportLabConf,
-  onExportLabConf,
-  importWarnings,
+  onRefreshScenarios,
 }: Props) {
   const [opening, setOpening] = useState(false);
   const [namingAs, setNamingAs] = useState(false);
   const [newName, setNewName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const labConfInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
 
   // The list is only correct at the moment it is fetched, so it is refreshed
   // when the chooser opens rather than left to go stale in the background.
   useEffect(() => {
-    if (opening) onRefreshPackages();
-  }, [opening, onRefreshPackages]);
+    if (opening) onRefreshScenarios();
+  }, [opening, onRefreshScenarios]);
 
   useEffect(() => {
     if (namingAs) nameInput.current?.focus();
@@ -92,17 +80,14 @@ export function ScenarioPanel({
         Scenario
       </h2>
 
-      {/* The name is edited in the header, beside the application title,
-          where it reads as the document's title rather than as one setting
-          among many. */}
       <p className="field__hint">
-        {projectFile ? (
+        {folder ? (
           <>
-            Saved as <code>{fileName(projectFile)}</code>
+            Saved in <code>{lastSegment(folder)}</code>
             {dirty && " — with changes since."}
           </>
         ) : (
-          "Not saved to a file yet."
+          "Not saved yet."
         )}
       </p>
 
@@ -144,7 +129,7 @@ export function ScenarioPanel({
             />
           </label>
           <p className="field__hint">
-            Saved into the workspace folder as <code>{(newName.trim() || "name") + ".kgui"}</code>.
+            A folder of that name in the workspace.
           </p>
           <div className="lab__actions">
             <button
@@ -155,9 +140,8 @@ export function ScenarioPanel({
               }}
               disabled={!newName.trim()}
             >
-              {/* Not "Save": the header and the panel already offer a button
-                  by that name, and three identically named controls on one
-                  screen are indistinguishable when read out in a list. */}
+              {/* Not "Save": the header and the panel already offer one, and
+                  three identically named controls read alike in a list. */}
               Save scenario
             </button>
             <button type="button" onClick={() => setNamingAs(false)}>
@@ -170,27 +154,29 @@ export function ScenarioPanel({
       {opening && (
         <div className="confirm">
           <h3 className="confirm__heading">Open a scenario</h3>
-          {packages.length === 0 ? (
+          {scenarios.length === 0 ? (
             <p className="field__hint">
-              No saved scenarios in the workspace yet. Use <strong>Upload</strong> below to
-              open one from elsewhere.
+              No scenarios in the workspace yet. Use <strong>Import</strong> below to open
+              one from elsewhere.
             </p>
           ) : (
-            <ul className="state-list" aria-label="Saved scenarios">
-              {packages.map((entry) => (
-                <li key={entry.filename} className="state">
+            <ul className="state-list" aria-label="Scenarios in the workspace">
+              {scenarios.map((entry) => (
+                <li key={entry.folder} className="state">
                   <button
                     type="button"
                     className="scenario__open"
                     onClick={() => {
-                      onOpen(entry.filename);
+                      onOpen(entry.folder);
                       setOpening(false);
                     }}
                     disabled={busy !== null}
                   >
                     <span className="state__name">{entry.name}</span>
                     <span className="state__detail">
-                      {entry.filename} · {describeSize(entry.size)}
+                      {entry.folder} · {entry.devices} device
+                      {entry.devices === 1 ? "" : "s"}
+                      {entry.foreign && " · imported"}
                     </span>
                   </button>
                 </li>
@@ -208,75 +194,39 @@ export function ScenarioPanel({
 
       <h3 className="panel__heading">Share</h3>
       <p className="field__hint">
-        A <code>.kgui</code> file holds the topology, the generated lab and any captured
-        configuration — everything needed to reopen or hand in the scenario.
+        Export downloads the scenario folder as a <code>.zip</code>: the topology, the
+        startup scripts and any captured configuration. Anyone can unzip and read it, and
+        anyone with Kathará can run it. Import opens such a zip, a folder zipped by hand, or
+        a plain <code>lab.conf</code> — including labs made without this application.
       </p>
 
       <div className="lab__actions">
-        <button type="button" onClick={onDownload} disabled={busy !== null || empty}>
-          {busy === "download" ? "Preparing…" : "Download"}
+        <button type="button" onClick={onExport} disabled={busy !== null || empty}>
+          {busy === "export" ? "Preparing…" : "Export"}
         </button>
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
           disabled={busy !== null}
         >
-          Upload…
+          {busy === "import" ? "Importing…" : "Import…"}
         </button>
         {/* display:none rather than visually hidden. A hidden-but-focusable
             input would put an invisible stop in the tab order; the button
             above is the real control, and it opens the native file dialog,
-            which is accessible in its own right.
-
-            Named anyway. In a browser `display: none` keeps it out of the
-            accessibility tree entirely, but an unnamed form control is a
-            defect wherever it does surface — and it is one that only shows up
-            when the stylesheet is absent, which is precisely the case a test
-            environment reproduces. */}
+            which is accessible in its own right. Named anyway, because an
+            unnamed form control is a defect wherever it does surface. */}
         <input
           ref={fileInput}
           type="file"
-          accept=".kgui,application/zip"
+          accept=".zip,.conf,application/zip,text/plain"
           className="file-input"
-          aria-label="Scenario file to open"
+          aria-label="Scenario file to import"
           tabIndex={-1}
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) onUpload(file);
+            if (file) onImport(file);
             // Cleared so choosing the same file twice fires again.
-            e.target.value = "";
-          }}
-        />
-      </div>
-
-      <h3 className="panel__heading">Kathará lab files</h3>
-      <p className="field__hint">
-        For working with labs that already exist. Importing reads a{" "}
-        <code>lab.conf</code> written by hand or by another tool; anything this model does
-        not represent is preserved rather than dropped.
-      </p>
-
-      <div className="lab__actions">
-        <button
-          type="button"
-          onClick={() => labConfInput.current?.click()}
-          disabled={busy !== null}
-        >
-          Import lab.conf…
-        </button>
-        <button type="button" onClick={onExportLabConf} disabled={busy !== null || empty}>
-          Export lab.conf
-        </button>
-        <input
-          ref={labConfInput}
-          type="file"
-          accept=".conf,text/plain"
-          className="file-input"
-          aria-label="lab.conf file to import"
-          tabIndex={-1}
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (file) onImportLabConf(await file.text(), file.name);
             e.target.value = "";
           }}
         />
@@ -299,8 +249,9 @@ export function ScenarioPanel({
 
       <h3 className="panel__heading">Running configuration</h3>
       <p className="field__hint">
-        Copies what each router is <em>actually</em> running into the lab folder, so saving
-        afterwards keeps configuration made inside the containers.
+        Copies what the devices are <em>actually</em> running into the scenario folder —
+        routing configuration into each router's <code>frr.conf</code>, and interface
+        addresses back onto the canvas.
       </p>
 
       <div className="lab__actions">

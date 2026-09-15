@@ -176,3 +176,38 @@ def test_topology_endpoints_require_the_session_token() -> None:
     app = create_app(token=TOKEN)
     with TestClient(app) as anonymous:
         assert anonymous.get("/api/topology").status_code == 401
+
+
+# -- laying out a topology that has no layout ---------------------------
+
+
+def test_arrange_returns_a_position_for_every_device(client: TestClient) -> None:
+    body = client.post("/api/topology/arrange", json=TRIANGLE).json()
+    assert set(body["positions"]) == {"r1", "r2"}
+
+
+def test_arrange_separates_devices_that_arrived_on_top_of_each_other(
+    client: TestClient,
+) -> None:
+    """What an imported lab looks like before this runs."""
+    piled = {
+        "name": "imported",
+        "nodes": [
+            {
+                "name": f"r{i}",
+                "position": {"x": 0, "y": 0},
+                "interfaces": [{"number": 0, "collision_domain": "A"}],
+            }
+            for i in range(4)
+        ],
+    }
+    positions = client.post("/api/topology/arrange", json=piled).json()["positions"]
+    points = {(p["x"], p["y"]) for p in positions.values()}
+    assert len(points) == 4
+
+
+def test_arrange_does_not_store_anything(client: TestClient) -> None:
+    """It answers a question; applying the answer is the editor's decision, so
+    it stays one undoable operation rather than a silent server-side edit."""
+    client.post("/api/topology/arrange", json=TRIANGLE)
+    assert client.get("/api/topology").json()["topology"]["nodes"] == []

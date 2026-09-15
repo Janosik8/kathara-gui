@@ -20,6 +20,8 @@ package.
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,7 +32,7 @@ from Kathara.parser.netkit.LabParser import LabParser
 from kathara_gui.domain.model import Topology
 from kathara_gui.fsutil import write_text_lf
 
-__all__ = ["Captured", "CaptureReport", "capture"]
+__all__ = ["Captured", "CaptureReport", "capture", "recover_addresses", "parse_ip_addr"]
 
 #: Where FRR reads its configuration from inside the container, and therefore
 #: where a captured configuration has to be placed to be restored.
@@ -92,6 +94,76 @@ def _run(manager: Any, lab: Any, device: str, command: list[str]) -> tuple[str, 
 
     text = stdout.decode(errors="replace") if isinstance(stdout, bytes) else str(stdout or "")
     return text, exit_code
+
+
+#: A line of `ip -o -4 addr show`, e.g.
+#: ``2: eth0    inet 10.0.0.1/24 brd ... scope global eth0``
+_IP_ADDR_LINE = re.compile(r"^\d+:\s+(\w+)\s+inet\s+(\S+)", re.MULTILINE)
+
+_ETH = re.compile(r"^eth(\d+)$")
+
+
+def parse_ip_addr(output: str) -> dict[int, str]:
+    """Addresses reported by ``ip -o -4 addr show``, by interface number.
+
+    Loopback and anything not called ``ethN`` is ignored: the model has no
+    place for them, and Kathará numbers a device's links as ``eth0`` upwards.
+    """
+    found: dict[int, str] = {}
+    for device, address in _IP_ADDR_LINE.findall(output):
+        number = _ETH.match(device)
+        if not number:
+            continue
+        try:
+            cidr = str(ipaddress.ip_interface(address))
+        except ValueError:
+            continue
+        found.setdefault(int(number.group(1)), cidr)
+    return found
+
+
+def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
+    """Read each running device's live interface addresses into the topology.
+
+    This is how a capture works for a PC. A host keeps no routing daemon, so
+    there is nothing for ``vtysh`` to report; its addressing lives in
+    ``<device>.startup``, which is *generated from the model*. Writing that file
+    directly would be overwritten by the next save and would leave the canvas
+    showing an address the device no longer has — so the model is what gets
+    updated, and the file follows from it.
+
+    Overwrites addresses that differ, because the running device is the
+    authority here: the user changed it there deliberately and asked for it to
+    be captured.
+    """
+    lab_dir = Path(lab_dir)
+    if not topology.nodes:
+        return topology
+
+    manager = Kathara.get_instance()
+    try:
+        lab = LabParser.parse(str(lab_dir))
+    except Exception:  # noqa: BLE001 - no lab on disk means nothing is running
+        return topology
+
+    nodes = []
+    for node in topology.nodes:
+        output, exit_code = _run(manager, lab, node.name, ["ip", "-o", "-4", "addr", "show"])
+        live = parse_ip_addr(output) if exit_code == 0 else {}
+
+        if not live:
+            nodes.append(node)
+            continue
+
+        interfaces = [
+            iface.model_copy(update={"ip": live[iface.number]})
+            if iface.number in live and live[iface.number] != iface.ip
+            else iface
+            for iface in node.interfaces
+        ]
+        nodes.append(node.model_copy(update={"interfaces": interfaces}))
+
+    return topology.model_copy(update={"nodes": nodes})
 
 
 def capture(topology: Topology, lab_dir: Path) -> CaptureReport:

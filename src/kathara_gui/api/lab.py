@@ -16,6 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from kathara_gui.domain.drift import describe_drift
 from kathara_gui.domain.model import Topology
 from kathara_gui.kathara import diagnostics, probe, runner
 from kathara_gui.project.session import Session, get_session
@@ -47,6 +48,9 @@ class ConflictsModel(BaseModel):
 
 
 class StatusResponse(BaseModel):
+    #: How the canvas differs from what is running, one sentence per
+    #: difference. Empty when they agree, or when nothing is deployed.
+    drift: list[str] = []
     devices: list[DeviceStatusModel]
     running: list[str]
     #: Containers that exist but have stopped. They still hold their names, so
@@ -94,8 +98,11 @@ class DiagnosticsResponse(BaseModel):
     message: str | None = None
 
 
-def _status_response(status: runner.LabStatus) -> StatusResponse:
+def _status_response(
+    status: runner.LabStatus, drift: list[str] | None = None
+) -> StatusResponse:
     return StatusResponse(
+        drift=drift or [],
         devices=[DeviceStatusModel(name=d.name, state=d.state.value) for d in status.devices],
         running=status.running,
         exited=status.exited,
@@ -138,7 +145,10 @@ def lab_status(
     stop containers from a terminal at any moment, so the interface polls this
     rather than trusting that its last action still holds.
     """
-    return _status_response(runner.status(request.topology, session.lab_dir(request.topology)))
+    return _status_response(
+        runner.status(request.topology, session.lab_dir(request.topology)),
+        describe_drift(session.deployed_topology, request.topology),
+    )
 
 
 @router.post("/deploy", response_model=StatusResponse)
@@ -158,6 +168,8 @@ def deploy(
     # Deploying makes this topology the one on disk, so adopt it as the
     # session's — otherwise a later save could overwrite what is running.
     session.replace(request.topology, dirty=False)
+    # What is running is now exactly this, so the canvas and the lab agree.
+    session.mark_deployed(request.topology.model_copy(deep=True))
     return _status_response(result)
 
 
@@ -165,9 +177,10 @@ def deploy(
 def undeploy(
     request: TopologyRequest, session: Session = Depends(get_session)
 ) -> StatusResponse:
-    return _status_response(
-        runner.undeploy(request.topology, session.lab_dir(request.topology))
-    )
+    result = runner.undeploy(request.topology, session.lab_dir(request.topology))
+    # Nothing is running, so there is nothing to have drifted from.
+    session.mark_deployed(None)
+    return _status_response(result)
 
 
 @router.post("/verify", response_model=DiagnosticsResponse)

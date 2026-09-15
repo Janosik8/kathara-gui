@@ -138,8 +138,16 @@ router with a blank image cannot run a routing lab.
 
 ### Finding your way around
 
-The two working areas carry their own surfaces: the device side is tinted blue with a solid
-top edge, the laboratory side amber with a dashed one. Blue against amber is the pair that
+Two blocks carry their own surfaces, because they do different jobs and were being confused.
+**Details**, which configures the device you have selected, is tinted violet with a solid top
+edge; **Laboratory**, which acts on the running lab, is amber with a dashed one.
+
+The violet block appears only while a device is selected, and holds everything belonging to
+that one device — its name, image, interfaces and routing daemons. With nothing selected
+there is no tinted block, because there would be nothing in it.
+
+Violet rather than blue: the panel behind these blocks is a cool blue-grey, so a blue tint
+read as the same surface and the block disappeared into it. Violet against amber still
 survives the common red-green colour deficiencies — and the edges differ in *style* as well,
 because the two tints sit at almost the same lightness and would otherwise be identical to
 someone with no colour vision at all.
@@ -209,28 +217,39 @@ every later request.
 
 ### Saving, sharing and reopening a scenario
 
-The **Scenario** panel holds everything to do with the scenario as a file.
+**A scenario is a folder**, and it is an ordinary Kathará lab directory:
 
-A `.kgui` file is a zip containing the topology (including canvas positions), the generated
-Kathará lab, and any configuration captured from running containers. Someone with Kathará
-and not this application can unzip it and run `kathara lstart`.
+```
+kathara-labs/untitled/
+  lab.conf                 the topology, its layout and its metadata
+  kgui.json                feature toggles and a format version
+  r1.startup               addressing
+  r1/etc/frr/frr.conf      configuration captured from the running router
+```
+
+There is no special file format. `lab.conf` carries the whole model — canvas positions and
+device kinds ride in `# kgui:` comments that Kathará ignores — so the folder is the
+document, and **Export is a plain zip of it**. Anyone can unzip and read the startup
+scripts; anyone with Kathará can `cd` in and `kathara lstart`.
+
+The **Scenario** panel holds all of it:
 
 | Control | What it does |
 |---|---|
-| **Scenario name** | Renames the lab. Press Enter or move away to commit. |
-| **Save** | Writes `<name>.kgui` into the workspace folder. Also on the header bar. |
-| **Save as…** | The same, under a name you choose. |
+| **Save** | Writes the folder into your workspace. Also on the header bar. |
+| **Save as…** | The same, under a folder name you choose. |
 | **Open…** | Lists the scenarios in your workspace; pick one to open it. |
-| **Download** | Hands the file to your browser — for submitting or sending it. |
-| **Upload…** | Opens a `.kgui` from anywhere, e.g. a submission you received. |
-| **Import lab.conf…** | Reads an existing Kathará lab written by hand or another tool. |
-| **Export lab.conf** | Downloads just the `lab.conf`. |
-| **Capture running state** | Copies what each router is *actually* running into the lab folder. |
+| **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
+| **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. |
+| **Capture running state** | Copies what the devices are actually running back into the scenario. |
+
+**Save keeps it here; Export sends it out.** Scenario folders live in the workspace
+(`./kathara-labs` unless `--workspace` says otherwise), which is also where labs deploy from.
 
 **Renaming.** Click the scenario name beside the application title in the top-left corner,
 type, and press Enter. Escape abandons the edit.
 
-**The name is not cosmetic.** It decides the lab folder, the saved file name, and — because
+**The name is not cosmetic.** It decides the folder, the exported file name, and — because
 Kathará identifies a lab by a hash of its name — which containers belong to this scenario.
 That is why renaming is the reliable fix when two labs collide.
 
@@ -238,14 +257,68 @@ That is why renaming is the reliable fix when two labs collide.
 leave them behind under the old name, where the interface can neither see nor stop them.
 Stop the lab, rename, deploy again.
 
-**Save keeps the file on this machine; Download sends it out.** Scenario files live in the
-workspace folder (`./kathara-labs` unless `--workspace` says otherwise), which is also where
-labs are deployed from.
+### Opening a lab somebody else made
 
-**Hibernating and resuming a lab.** Deploy, configure the routers however you like, press
-**Capture running state**, then **Save**. Reopening that file and deploying brings the lab
-back configured as you left it — the capture is written where Kathará copies from on the
-next deploy, so there is no separate restore step.
+Import accepts a lab that has never been near this application: a zip of a folder, a folder
+zipped by Finder or Explorer (the extra wrapping directory is unwrapped for you, and macOS's
+`__MACOSX` sidecar and `.DS_Store` files are discarded), or a single `lab.conf`.
+
+**Its configuration is recovered, not discarded.** A Kathará lab keeps its addressing in
+`<device>.startup` and its routing daemons in `<device>/etc/frr/daemons`, so those files are
+read and folded into the model. Both the modern `ip address add 10.0.0.1/24 dev eth0` and
+the older Netkit `ifconfig eth0 10.0.0.1 netmask 255.255.255.0` are understood. Without
+this, an imported lab looked unaddressed and the validator complained about addresses that
+were on disk all along.
+
+**Device kinds are guessed, because Kathará does not record them.** A device running FRR is
+a router; otherwise names like `pc1`, `server2` or `sw1` pick the icon. Anything unclear
+stays a router, and the inspector changes it.
+
+**It is laid out for you.** A foreign lab has no coordinates, so every device would arrive
+on the same spot. See below.
+
+### When the canvas and the running lab disagree
+
+Deploying takes a snapshot. Edit anything afterwards — an address, a link, a device — and
+the Laboratory panel lists exactly what now differs:
+
+> **The canvas no longer matches the running lab.** Deploy again to apply these changes;
+> until then, diagnostics describe what is running.
+> - r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab
+
+This matters most for **Verify links**, which pings real containers and can therefore only
+report the lab as deployed. Changing an address on the canvas and verifying gives results
+about the *old* address — correctly, but confusingly, which is why the panel now says so
+both at the top and beside the results.
+
+Moving a device on the canvas is not counted: it changes the picture, not the network.
+
+### Tidying the layout
+
+**Tidy layout**, in the Arrange panel, lays the whole topology out in layers with as few
+link crossings as it can, spaced so the interface labels and addresses stay readable. It
+runs automatically on a lab imported without a saved layout, and never touches a layout you
+already have.
+
+It is a single undo step, so trying it costs nothing.
+
+The algorithm layers devices by distance from the graph's centre and then orders each layer
+by where its neighbours sit — the middle of the classical Sugiyama method. On the ordinary
+teaching shapes (a ring, a star, a chain, a two-tier campus) it produces no crossings at
+all; on a tangled thirty-device graph it cut them from around 185 to 34.
+
+### Hibernating and resuming a lab
+
+Deploy, configure the devices however you like, press **Capture running state**, then
+**Save**. Reopening and deploying brings the lab back as you left it.
+
+Capture writes to two places, because a device keeps its configuration in two:
+
+- **A router's routing state** goes to `<device>/etc/frr/frr.conf`, read from `vtysh` rather
+  than from disk, and placed where Kathará copies from on the next deploy.
+- **Interface addresses** go back into the topology, and therefore onto the canvas and into
+  the regenerated `.startup`. This is how capture works for a PC, which has no routing
+  daemon to ask.
 
 **A router's hostname comes from its device name.** Rename the device in the editor and
 redeploy; FRR picks the name up from the container.
@@ -268,14 +341,13 @@ records the old name — correctly. Ordinary routing configuration typed in `vty
 `router ospf`, does reach the daemons and is captured normally.
 
 **Feature toggles travel with the scenario.** If an instructor withdraws the subnet
-calculator, opening that scenario withdraws it on your machine too.
+calculator, opening that scenario withdraws it on your machine too. A lab imported from
+outside has no such settings, so everything is on.
 
 ### Not built yet
 
 - **In-app terminal.** Use `kathara connect` in a real terminal for now — see §4.
 - **Variants** of a scenario (exam groups), **PDF manuals**, and a **built-in lab library**.
-- **Auto-layout for imported labs that carry no positions.** They import, but every device
-  arrives at the same place and has to be dragged apart.
 - **Setting exam-mode toggles.** The server enforces them and they are stored in the package,
   but there is no interface for an instructor to change them, so a new scenario has
   everything on.
@@ -389,13 +461,14 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/lab/deploy` | deploy; reports conflicts unless `confirm` is set |
 | POST | `/api/lab/undeploy` | stop the lab |
 | POST | `/api/lab/verify` | ping across every direct link |
-| GET | `/api/project` | scenario name, file it was saved to, feature toggles |
-| GET | `/api/project/packages` | `.kgui` files in the workspace |
-| POST | `/api/project/save` | write the scenario into the workspace |
-| POST | `/api/project/download` | the scenario as a `.kgui` for the browser to download |
-| POST | `/api/project/open` | open a package from the workspace |
-| POST | `/api/project/upload` | open a package sent as a raw body |
-| POST | `/api/project/capture` | pull running configuration into the lab directory |
+| POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
+| GET | `/api/project` | scenario name, folder, feature toggles |
+| GET | `/api/project/scenarios` | scenario folders in the workspace |
+| POST | `/api/project/save` | write the scenario folder into the workspace |
+| POST | `/api/project/export` | the scenario folder as a zip, for download |
+| POST | `/api/project/open` | open a scenario folder from the workspace |
+| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body |
+| POST | `/api/project/capture` | pull running configuration into the scenario |
 
 The `POST` endpoints for addressing and lab operations take the topology in the request body
 rather than acting on the stored one, because the browser normally holds newer work than the

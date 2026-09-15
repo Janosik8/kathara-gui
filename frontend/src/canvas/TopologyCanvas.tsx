@@ -87,8 +87,14 @@ export function mergeMeasurements(
  * at its peer. A stale bound leaves the edge drawn to the old spot, which is
  * why a freshly made link looked misaligned until the node was dragged.
  *
- * Deliberately covers side and offset but not node position: dragging must
- * not force a re-measure on every frame.
+ * Position counts, but only when the node is not being dragged. An earlier
+ * version excluded position outright, reasoning that re-measuring on every
+ * drag frame would be waste — true, but it conflated *moving* with
+ * *dragging*. Tidy layout, align and distribute all move a node without a
+ * drag, and left the interfaces and links attached where the device used to
+ * be until the user nudged it by hand. Collapsing a dragged node's position to
+ * a constant keeps the frame-by-frame saving and re-measures once when the
+ * drag ends.
  *
  * Computed from the *rendered* nodes rather than the topology, so it changes
  * only once the DOM actually carries the new placements. Measuring earlier
@@ -97,13 +103,17 @@ export function mergeMeasurements(
 export function placementSignature(nodes: readonly FlowNode[]): string {
   return nodes
     .map((node) => {
+      // Rounded: sub-pixel jitter is not a move worth re-measuring for.
+      const where = node.dragging
+        ? "dragging"
+        : `${Math.round(node.position.x)},${Math.round(node.position.y)}`;
       const placements = (node.data as { placements?: Map<number, Placement> })?.placements;
-      if (!placements) return node.id;
+      if (!placements) return `${node.id}@${where}`;
       const handles = [...placements.entries()]
         .sort(([a], [b]) => a - b)
         .map(([number, p]) => `${number}${p.position}${p.offset}`)
         .join(",");
-      return `${node.id}[${handles}]`;
+      return `${node.id}@${where}[${handles}]`;
     })
     .join("|");
 }

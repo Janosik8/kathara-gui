@@ -5,11 +5,11 @@ import {
   type AddressingIssue,
   ApiError,
   type CaptureResponse,
+  type OpenResponse,
   type DiagnosticsResponse,
   type Conflicts,
   type EnvironmentCheck,
-  type Features,
-  type PackageSummary,
+  type ScenarioSummary,
   type StatusResponse,
   api,
 } from "./api/client";
@@ -25,13 +25,7 @@ import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
 import { useTopologyStore } from "./store/topology";
-import {
-  type DeviceKind,
-  type PendingEnd,
-  type Topology,
-  newNode,
-  suggestCollisionDomain,
-} from "./types";
+import { type DeviceKind, type PendingEnd, newNode, suggestCollisionDomain } from "./types";
 
 /** Lay new devices out on a loose grid rather than stacking them at the origin. */
 function placeNew(count: number) {
@@ -104,8 +98,8 @@ export default function App() {
 
   // The scenario as a file. `projectFile` is null until it has been written
   // somewhere; `scenarioBusy` names the action in flight, like labBusy.
-  const [projectFile, setProjectFile] = useState<string | null>(null);
-  const [packages, setPackages] = useState<PackageSummary[]>([]);
+  const [folder, setFolder] = useState<string | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [capture, setCapture] = useState<CaptureResponse | null>(null);
   const [scenarioBusy, setScenarioBusy] = useState<string | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
@@ -419,23 +413,51 @@ export default function App() {
     [dispatch, selected, topology],
   );
 
-  // -- the scenario as a file -------------------------------------------
+  /**
+   * Lay the whole topology out afresh.
+   *
+   * Dispatched as one `moveNodes`, so a layout the user dislikes costs a
+   * single undo — which is what makes trying it cheap.
+   */
+  const autoArrange = useCallback(async () => {
+    setScenarioBusy("arrange");
+    try {
+      const { positions } = await api.arrange(topology);
+      const moved = Object.fromEntries(
+        Object.entries(positions).filter(([name, p]) => {
+          const node = topology.nodes.find((n) => n.name === name);
+          return node && (node.position.x !== p.x || node.position.y !== p.y);
+        }),
+      );
+      if (Object.keys(moved).length === 0) {
+        setStatus("The layout is already tidy.");
+        return;
+      }
+      dispatch({ type: "moveNodes", positions: moved, label: "Tidied the layout" });
+    } catch (err) {
+      setStatus(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setScenarioBusy(null);
+    }
+  }, [topology, dispatch]);
+
+  // -- the scenario as a folder -----------------------------------------
 
   /**
-   * Save the scenario into the workspace as a `.kgui` package.
+   * Save the scenario into its folder in the workspace.
    *
    * This button used to call `PUT /api/topology`, which only pushed the
    * document into the server's memory — nothing reached disk, and the work was
-   * lost when the process stopped. A button saying "Save" has to write a file.
+   * lost when the process stopped. A button saying "Save" has to write files.
    */
   const save = useCallback(
-    async (filename?: string) => {
+    async (name?: string) => {
       setScenarioBusy("save");
       try {
-        const result = await api.saveProject(topology, filename);
-        setProjectFile(result.path);
+        const result = await api.saveProject(topology, name);
+        setFolder(result.folder);
         markSaved();
-        setStatus(`Saved as ${result.filename}`);
+        setStatus(`Saved in ${result.name}`);
       } catch (err) {
         setStatus(err instanceof ApiError ? err.message : String(err));
       } finally {
@@ -445,43 +467,48 @@ export default function App() {
     [topology, markSaved],
   );
 
-  const download = useCallback(async () => {
-    setScenarioBusy("download");
+  const download = useCallback((blob: Blob, filename: string) => {
+    // An object URL and a synthetic click: the only way to hand a blob to the
+    // browser's own download, and it must be revoked or the whole file stays
+    // in memory for the life of the tab.
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const exportScenario = useCallback(async () => {
+    setScenarioBusy("export");
     try {
-      const blob = await api.downloadProject(topology);
-      // An object URL and a synthetic click: the only way to hand a blob to
-      // the browser's own download, and it must be revoked or the whole
-      // package stays in memory for the life of the tab.
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${topology.name || "scenario"}.kgui`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setStatus("Scenario downloaded.");
+      const blob = await api.exportProject(topology);
+      download(blob, `${topology.name || "scenario"}.zip`);
+      markSaved(); // exporting saves the folder first, so it is on disk
+      setStatus("Scenario exported.");
     } catch (err) {
       setStatus(err instanceof ApiError ? err.message : String(err));
     } finally {
       setScenarioBusy(null);
     }
-  }, [topology]);
+  }, [topology, download, markSaved]);
 
-  const refreshPackages = useCallback(() => {
+  const refreshScenarios = useCallback(() => {
     api
-      .packages()
-      .then(setPackages)
+      .scenarios()
+      .then(setScenarios)
       .catch((err) => setStatus(err instanceof ApiError ? err.message : String(err)));
   }, []);
 
-  /** Adopt an opened package: its topology, its file, and its exam toggles. */
+  /** Adopt an opened scenario: its topology, its folder, and its exam toggles. */
   const adopt = useCallback(
-    (result: { topology: Topology; project_file: string; features: Features }) => {
+    (result: OpenResponse) => {
       load(result.topology);
-      setProjectFile(result.project_file);
+      setFolder(result.folder);
+      setImportWarnings(result.warnings);
       setCapture(null);
-      setImportWarnings([]);
       setLabStatus(null);
       setDiagnostics(null);
       setSelected([]);
@@ -491,16 +518,20 @@ export default function App() {
       setCanAllocate(result.features.subnet_calculator);
       setCanValidate(result.features.addressing_validation);
       setCanVerify(result.features.infrastructure_verification);
-      setStatus(`Opened ${result.topology.name}.`);
+      setStatus(
+        result.foreign
+          ? `Opened ${result.topology.name}, imported from outside this application.`
+          : `Opened ${result.topology.name}.`,
+      );
     },
     [load],
   );
 
-  const openPackage = useCallback(
-    async (filename: string) => {
+  const openScenario = useCallback(
+    async (name: string) => {
       setScenarioBusy("open");
       try {
-        adopt(await api.openProject(filename));
+        adopt(await api.openProject(name));
       } catch (err) {
         setStatus(err instanceof ApiError ? err.message : String(err));
       } finally {
@@ -510,68 +541,29 @@ export default function App() {
     [adopt],
   );
 
-  const uploadPackage = useCallback(
+  const importScenario = useCallback(
     async (file: File) => {
-      setScenarioBusy("open");
-      try {
-        adopt(await api.uploadProject(file));
-      } catch (err) {
-        setStatus(err instanceof ApiError ? err.message : String(err));
-      } finally {
-        setScenarioBusy(null);
-      }
-    },
-    [adopt],
-  );
-
-  const importLabConf = useCallback(
-    async (text: string, filename: string) => {
       setScenarioBusy("import");
       try {
-        const result = await api.importLabConf(text);
-        load(result.topology);
-        setImportWarnings(result.warnings);
-        setProjectFile(null); // an imported lab.conf is not a saved scenario
-        setSelected([]);
-        setSelectedLink(null);
-        setStatus(`Imported ${filename}.`);
+        adopt(await api.importProject(file));
       } catch (err) {
         setStatus(err instanceof ApiError ? err.message : String(err));
       } finally {
         setScenarioBusy(null);
       }
     },
-    [load],
+    [adopt],
   );
-
-  const exportLabConf = useCallback(async () => {
-    setScenarioBusy("export");
-    try {
-      // The export endpoint serialises the *stored* topology, and the browser
-      // holds the newer one, so the canvas is pushed first.
-      await api.save(topology);
-      const { text } = await api.exportLabConf();
-      const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "lab.conf";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setStatus("lab.conf downloaded.");
-    } catch (err) {
-      setStatus(err instanceof ApiError ? err.message : String(err));
-    } finally {
-      setScenarioBusy(null);
-    }
-  }, [topology]);
 
   const captureState = useCallback(async () => {
     setScenarioBusy("capture");
     try {
       const report = await api.captureState(topology);
       setCapture(report);
+      // The capture reads live interface addresses back into the model, so a
+      // PC configured by hand shows its real address on the canvas.
+      load(report.topology);
+      setFolder(report.folder);
       setStatus(
         report.captured.length > 0
           ? `Captured configuration from ${report.captured.length} device(s).`
@@ -582,7 +574,7 @@ export default function App() {
     } finally {
       setScenarioBusy(null);
     }
-  }, [topology]);
+  }, [topology, load]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -692,7 +684,7 @@ export default function App() {
       </header>
 
       <div className="app__body">
-        <aside className="panel panel--devices" aria-label="Devices">
+        <aside className="panel" aria-label="Devices">
           <Palette topology={topology} onAdd={addDevice} />
 
           <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
@@ -738,7 +730,7 @@ export default function App() {
           />
         </main>
 
-        <aside className="panel panel--right panel--lab" aria-label="Device details">
+        <aside className="panel panel--right" aria-label="Device details">
           <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
           <AddressingPanel
             issues={issues}
@@ -750,25 +742,29 @@ export default function App() {
             canValidate={canValidate}
             onAllocate={allocateAddressing}
           />
-          <AlignmentToolbar selectionCount={selected.length} onAlign={align} />
+          <AlignmentToolbar
+            selectionCount={selected.length}
+            deviceCount={topology.nodes.length}
+            busy={scenarioBusy === "arrange"}
+            onAlign={align}
+            onAutoArrange={autoArrange}
+          />
           <ScenarioPanel
-            projectFile={projectFile}
+            folder={folder}
             dirty={dirty}
             busy={scenarioBusy}
             deviceCount={topology.nodes.length}
             anyRunning={(labStatus?.running.length ?? 0) > 0}
-            packages={packages}
+            scenarios={scenarios}
             capture={capture}
+            importWarnings={importWarnings}
             onSave={() => save()}
             onSaveAs={(name) => save(name)}
-            onDownload={download}
-            onOpen={openPackage}
-            onUpload={uploadPackage}
+            onExport={exportScenario}
+            onOpen={openScenario}
+            onImport={importScenario}
             onCapture={captureState}
-            onRefreshPackages={refreshPackages}
-            onImportLabConf={importLabConf}
-            onExportLabConf={exportLabConf}
-            importWarnings={importWarnings}
+            onRefreshScenarios={refreshScenarios}
           />
 
           <LabPanel

@@ -1,19 +1,23 @@
-"""HTTP surface for the scenario as a file: save, open, share, capture.
+"""HTTP surface for the scenario as a folder: save, open, share, capture.
 
-Everything here is the missing half of Capability 5. The package format and
-the configuration capture were built and tested first; without this router
-they were unreachable, and a format nobody can invoke satisfies none of the
-requirements that asked for it.
+The document is a Kathará lab directory, and the export is a plain zip of it.
+That is the whole design, and it replaced a bespoke `.kgui` package holding a
+`topology.json` beside a copy of the lab. The package was worse in a way that
+matters: `lab.conf` already round-trips the entire model, so the stored
+topology was a *second* source of truth, and it silently won over an edited
+`lab.conf` inside the same archive.
 
-**Why the browser downloads rather than the server writing where it is told.**
-The driving use case is an exam: a student produces a file and submits it to an
-e-learning platform, and an instructor opens that submission. That wants the
-file in the browser's own download folder, and it wants opening an arbitrary
-file the instructor received. Letting the page name a path for the server to
-write to would serve the same flows less well while handing a token-gated local
-server an arbitrary-write surface. So saving in place is confined to the
-workspace, and anything leaving or entering the machine goes through the
-browser's own download and upload.
+A zip of the folder also serves the people the format is for. A student who
+cannot open the application on the morning of a deadline can unzip it and read
+their own `.startup` scripts; anyone with Kathará can `kathara lstart` it; and
+a lab written by somebody else years ago imports without having ever heard of
+this tool.
+
+**Where files go.** Saving is confined to the workspace. Anything crossing the
+machine boundary — a submission leaving, a submission arriving — goes through
+the browser's own download and upload. The driving case is an exam, and letting
+the page name a path for the server to write to would serve it no better while
+handing a local server an arbitrary-write surface.
 
 Blocking work — zipping, and `exec` into containers for capture — is exposed
 through `def` rather than `async def`, so FastAPI runs it in a threadpool
@@ -22,6 +26,7 @@ instead of stalling the event loop.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -29,28 +34,28 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.model import Topology
 from kathara_gui.domain.naming import safe_dir_name
 from kathara_gui.features import Features
 from kathara_gui.kathara import state
-from kathara_gui.project import kgui
+from kathara_gui.project import scenario
 from kathara_gui.project.session import Session, get_session
 
 router = APIRouter(prefix="/api/project", tags=["project"])
 
-#: An uploaded package is held in memory before being written, so it needs a
-#: ceiling. A scenario is text — a large one is a few hundred kilobytes — and
-#: this leaves room for captured configuration and a manual without letting a
-#: single request exhaust the process.
-MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+#: An upload is held in memory before being written, so it needs a ceiling.
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+#: Where an import is unpacked before being adopted, so a bad archive cannot
+#: half-overwrite a scenario the user already had.
+_STAGING = ".import"
 
 
 class ProjectState(BaseModel):
-    """Where the scenario stands: named, saved, and with what allowed."""
-
     name: str
-    project_file: str | None = Field(
-        default=None, description="Absolute path of the .kgui this was saved to or opened from."
+    folder: str | None = Field(
+        default=None, description="Absolute path of the scenario folder, once it has one."
     )
     dirty: bool
     features: Features
@@ -59,35 +64,35 @@ class ProjectState(BaseModel):
 
 class SaveRequest(BaseModel):
     topology: Topology
-    filename: str | None = Field(
-        default=None,
-        description="Base name for the package. Defaults to the topology's name.",
+    name: str | None = Field(
+        default=None, description="Folder name to save under. Defaults to the scenario's name."
     )
 
 
 class SaveResponse(BaseModel):
-    path: str
-    filename: str
-
-
-class PackageSummary(BaseModel):
-    filename: str
+    folder: str
     name: str
+
+
+class ScenarioSummary(BaseModel):
+    folder: str
+    name: str
+    devices: int
     modified: float
-    size: int
+    #: True when the folder has no kgui.json — a lab from somewhere else.
+    foreign: bool
 
 
 class OpenRequest(BaseModel):
-    filename: str = Field(description="A package in the workspace, as listed by /packages.")
+    folder: str = Field(description="A scenario folder in the workspace, as listed.")
 
 
 class OpenResponse(BaseModel):
     topology: Topology
     features: Features
-    project_file: str
-    lab_dir: str
-    application: str
-    created: str | None = None
+    folder: str
+    warnings: list[str] = []
+    foreign: bool = False
 
 
 class CaptureRequest(BaseModel):
@@ -104,41 +109,42 @@ class CaptureResponse(BaseModel):
     captured: list[CapturedModel]
     skipped: list[tuple[str, str]]
     message: str | None = None
-    lab_dir: str
+    folder: str
+    #: The topology with anything the capture learned folded in, so the canvas
+    #: shows what the devices are really configured with.
+    topology: Topology
 
 
 def _state(session: Session) -> ProjectState:
     return ProjectState(
         name=session.topology.name,
-        project_file=str(session.project_file) if session.project_file else None,
+        folder=str(session.path) if session.path else None,
         dirty=session.dirty,
         features=session.features,
         workspace=str(session.workspace_root),
     )
 
 
-def _package_path(session: Session, filename: str) -> Path:
-    """Resolve ``filename`` to a package inside the workspace, or refuse.
+def _folder_in_workspace(session: Session, name: str) -> Path:
+    """Resolve ``name`` to a folder inside the workspace, or refuse.
 
     The name is reduced to a single safe segment and rejoined to the workspace,
     so `../`, an absolute path and a nested directory all collapse to something
-    harmless rather than being honoured. Resolving and re-checking the parent
-    catches whatever the transformation missed, including a symlink pointing
-    out of the workspace.
+    harmless. Resolving and re-checking the parent catches what the
+    transformation missed, including a symlink pointing out of the workspace.
     """
-    stem = safe_dir_name(Path(filename).name.removesuffix(kgui.SUFFIX))
+    stem = safe_dir_name(Path(name.replace("\\", "/")).name)
     if not stem:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That is not a usable file name.",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="That is not a usable name."
         )
 
     root = session.workspace_root
-    candidate = (root / f"{stem}{kgui.SUFFIX}").resolve()
+    candidate = (root / stem).resolve()
     if candidate.parent != root.resolve():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Scenario files are kept in the workspace folder.",
+            detail="Scenarios are kept in the workspace folder.",
         )
     return candidate
 
@@ -149,102 +155,93 @@ async def read(session: Session = Depends(get_session)) -> ProjectState:
     return _state(session)
 
 
-@router.get("/packages", response_model=list[PackageSummary])
-def packages(session: Session = Depends(get_session)) -> list[PackageSummary]:
-    """Scenario files in the workspace, most recently changed first."""
+@router.get("/scenarios", response_model=list[ScenarioSummary])
+def scenarios(session: Session = Depends(get_session)) -> list[ScenarioSummary]:
+    """Scenario folders in the workspace, most recently changed first."""
     root = session.workspace_root
     if not root.is_dir():
         return []
 
-    found: list[PackageSummary] = []
-    for path in root.glob(f"*{kgui.SUFFIX}"):
-        if not path.is_file():
+    found: list[ScenarioSummary] = []
+    for folder in root.iterdir():
+        if not folder.is_dir() or folder.name.startswith(".") or not scenario.is_scenario(folder):
             continue
         try:
-            # The stored name, not the file name: a scenario renamed in the
-            # editor and saved keeps the file it had.
-            name = kgui.read_package(path).topology.name
-        except kgui.PackageError:
-            # Listed anyway, named by its file. Hiding an unreadable scenario
-            # would leave the user unable to see that it is there at all.
-            name = path.stem
-        stat = path.stat()
+            loaded = scenario.load(folder)
+            name, devices = loaded.topology.name, len(loaded.topology.nodes)
+            foreign = loaded.foreign
+        except scenario.ScenarioError:
+            # Listed anyway, named by its folder: hiding a lab the user can see
+            # on disk would be more confusing than showing it as unreadable.
+            name, devices, foreign = folder.name, 0, True
         found.append(
-            PackageSummary(
-                filename=path.name, name=name, modified=stat.st_mtime, size=stat.st_size
+            ScenarioSummary(
+                folder=folder.name,
+                name=name,
+                devices=devices,
+                modified=folder.stat().st_mtime,
+                foreign=foreign,
             )
         )
 
-    return sorted(found, key=lambda p: p.modified, reverse=True)
+    return sorted(found, key=lambda s: s.modified, reverse=True)
 
 
 @router.post("/save", response_model=SaveResponse)
 def save(request: SaveRequest, session: Session = Depends(get_session)) -> SaveResponse:
-    """Write the scenario into the workspace as a `.kgui` package.
-
-    The lab directory is included when one exists, so a scenario saved after a
-    capture carries the captured configuration rather than a freshly generated
-    lab that has none of it.
-    """
+    """Write the scenario into its folder in the workspace."""
     topology = session.replace(request.topology)
-    destination = _package_path(session, request.filename or topology.name)
+    folder = _folder_in_workspace(session, request.name or topology.name)
 
-    lab_dir = session.lab_dir(topology)
-    written = kgui.write_package(
-        topology,
-        destination,
-        features=session.features,
-        lab_dir=lab_dir if lab_dir.is_dir() else None,
-    )
-    session.mark_saved(written)
-    return SaveResponse(path=str(written), filename=written.name)
+    scenario.save(topology, folder, features=session.features)
+    session.mark_saved(folder)
+    return SaveResponse(folder=str(folder), name=folder.name)
 
 
-@router.post("/download")
-def download(request: SaveRequest, session: Session = Depends(get_session)) -> Response:
-    """The scenario as a `.kgui` file, for the browser to download.
+@router.post("/export")
+def export(request: SaveRequest, session: Session = Depends(get_session)) -> Response:
+    """The scenario as a zip, for the browser to download.
 
-    Written through the workspace rather than assembled in memory: the same
-    code path as Save, so a downloaded package and a saved one cannot drift.
+    Saved first, so what leaves the machine is what the canvas currently shows
+    rather than whatever was last written.
     """
     topology = request.topology
-    stem = safe_dir_name(request.filename or topology.name) or "scenario"
-    scratch = session.workspace_root / ".download" / f"{stem}{kgui.SUFFIX}"
+    folder = _folder_in_workspace(session, request.name or topology.name)
+    scenario.save(topology, folder, features=session.features)
 
-    lab_dir = session.lab_dir(topology)
-    kgui.write_package(
-        topology,
-        scratch,
-        features=session.features,
-        lab_dir=lab_dir if lab_dir.is_dir() else None,
-    )
+    archive = session.workspace_root / _STAGING / f"{folder.name}.zip"
+    scenario.export_zip(folder, archive)
     try:
-        payload = scratch.read_bytes()
+        payload = archive.read_bytes()
     finally:
-        scratch.unlink(missing_ok=True)
+        archive.unlink(missing_ok=True)
 
     return Response(
         content=payload,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{stem}{kgui.SUFFIX}"'},
+        headers={"Content-Disposition": f'attachment; filename="{folder.name}.zip"'},
     )
 
 
 @router.post("/open", response_model=OpenResponse)
-def open_package(request: OpenRequest, session: Session = Depends(get_session)) -> OpenResponse:
-    """Open a package from the workspace and adopt it as the current scenario."""
-    source = _package_path(session, request.filename)
-    if not source.is_file():
+def open_scenario(
+    request: OpenRequest, session: Session = Depends(get_session)
+) -> OpenResponse:
+    """Open a scenario folder from the workspace."""
+    folder = _folder_in_workspace(session, request.folder)
+    if not folder.is_dir():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{source.name} is not in the workspace.",
+            detail=f"{folder.name} is not in the workspace.",
         )
-    return _adopt(session, source)
+    return _adopt(session, folder)
 
 
-@router.post("/upload", response_model=OpenResponse)
-async def upload(request: Request, session: Session = Depends(get_session)) -> OpenResponse:
-    """Open a package the browser sends as a raw body.
+@router.post("/import", response_model=OpenResponse)
+async def import_scenario(
+    request: Request, session: Session = Depends(get_session)
+) -> OpenResponse:
+    """Open a scenario the browser sends: a zip, or a bare ``lab.conf``.
 
     Raw bytes rather than a multipart form: the payload is a single file, so
     multipart would add a dependency and a parsing step to carry nothing extra.
@@ -260,58 +257,98 @@ async def upload(request: Request, session: Session = Depends(get_session)) -> O
             detail=f"That file is larger than the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
         )
 
-    # Percent-encoded by the client: an HTTP header cannot carry non-ASCII,
-    # and "ćwiczenie.kgui" is an entirely ordinary name for a scenario here.
-    filename = unquote(request.headers.get("X-KGUI-Filename", "uploaded.kgui"))
-    destination = _package_path(session, filename)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    # Landed in the workspace before being read, so an opened submission is a
-    # file the user can find again rather than something that existed only for
-    # the duration of one request.
-    destination.write_bytes(payload)
-    return _adopt(session, destination)
+    # Percent-encoded by the client: an HTTP header cannot carry non-ASCII, and
+    # "ćwiczenie.zip" is an ordinary name for a scenario here.
+    filename = unquote(request.headers.get("X-KGUI-Filename", "imported"))
+    stem = Path(filename.replace("\\", "/")).name
+    is_archive = payload[:2] == b"PK"
 
+    if is_archive:
+        target = _folder_in_workspace(session, Path(stem).stem)
+        staging = session.workspace_root / _STAGING / target.name
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True, exist_ok=True)
+        try:
+            scenario.import_archive_bytes(payload, staging)
+            # Only once it is known to be a real scenario does anything the
+            # user already had get touched.
+            shutil.rmtree(target, ignore_errors=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(staging), str(target))
+        except scenario.ScenarioError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return _adopt(session, target)
 
-def _adopt(session: Session, source: Path) -> OpenResponse:
-    """Make ``source`` the scenario being edited, lab directory and all."""
+    # A bare lab.conf. Its name says nothing useful, so the scenario is named
+    # from LAB_NAME inside it, falling back to the file's own stem.
     try:
-        package = kgui.read_package(source)
-    except kgui.PackageError as exc:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That file is neither a zip archive nor readable text.",
+        ) from exc
+
+    result = parse(text)
+    if not result.topology.nodes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No devices were found in that file, so it is not a lab.conf.",
+        )
+
+    named = result.topology.name
+    target = _folder_in_workspace(session, named if named != "lab" else Path(stem).stem)
+    target.mkdir(parents=True, exist_ok=True)
+    (target / scenario.LAB_CONF).write_text(text, encoding="utf-8", newline="\n")
+    return _adopt(session, target)
+
+
+def _adopt(session: Session, folder: Path) -> OpenResponse:
+    """Make ``folder`` the scenario being edited."""
+    try:
+        loaded = scenario.load(folder)
+    except scenario.ScenarioError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    topology = session.replace(package.topology, dirty=False)
-    session.set_features(package.features)
-
-    # The lab travels with the package and carries anything captured from
-    # running containers, so it is written out and deployed from.
-    lab_dir = session.workspace_root / safe_dir_name(topology.name)
-    try:
-        kgui.extract_lab(source, lab_dir)
-    except kgui.PackageError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    session.mark_saved(source, lab_dir=lab_dir)
+    session.replace(loaded.topology, dirty=False)
+    session.set_features(loaded.features)
+    session.mark_saved(folder)
     return OpenResponse(
-        topology=topology,
-        features=package.features,
-        project_file=str(source),
-        lab_dir=str(lab_dir),
-        application=package.application,
-        created=package.created,
+        topology=loaded.topology,
+        features=loaded.features,
+        folder=str(folder),
+        warnings=loaded.warnings,
+        foreign=loaded.foreign,
     )
 
 
 @router.post("/capture", response_model=CaptureResponse)
 def capture(request: CaptureRequest, session: Session = Depends(get_session)) -> CaptureResponse:
-    """Pull each running device's configuration into the lab directory.
+    """Pull each running device's live configuration into the scenario.
 
-    The result lands where Kathará copies from on the next deploy, so a
-    scenario saved afterwards resumes with the configuration it was captured
-    with — no separate restore step.
+    Two destinations, because a device keeps its configuration in two places.
+    A router's routing state goes to ``<device>/etc/frr/frr.conf``, where
+    Kathará copies from on the next deploy. Interface addresses go back into
+    the *model*, because that is what generates ``<device>.startup`` — writing
+    the file directly would be undone by the next save, and would leave the
+    canvas showing an address the device no longer has.
     """
     topology = session.replace(request.topology)
-    lab_dir = session.lab_dir(topology)
-    report = state.capture(topology, lab_dir)
+    folder = session.lab_dir(topology)
+
+    report = state.capture(topology, folder)
+    updated = state.recover_addresses(topology, folder)
+    if updated != topology:
+        topology = session.replace(updated)
+
+    # Regenerate so the .startup files match what was just learned, and the
+    # scenario on disk is consistent with the model.
+    if folder.is_dir():
+        scenario.save(topology, folder, features=session.features)
 
     return CaptureResponse(
         captured=[
@@ -320,5 +357,6 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
         ],
         skipped=report.skipped,
         message=report.message,
-        lab_dir=str(lab_dir),
+        folder=str(folder),
+        topology=topology,
     )

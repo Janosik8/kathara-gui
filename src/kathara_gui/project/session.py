@@ -31,7 +31,7 @@ class Session:
         self._lock = threading.RLock()
         self._topology = Topology(name="untitled")
         self._path: Path | None = None
-        self._project_file: Path | None = None
+        self._deployed: Topology | None = None
         self._dirty = False
         self._features = Features()
         # Resolved once, at construction. Re-reading the process's working
@@ -81,21 +81,15 @@ class Session:
 
     @property
     def path(self) -> Path | None:
-        """Directory this topology was loaded from or last saved to."""
-        with self._lock:
-            return self._path
+        """The scenario folder this topology was opened from or saved to.
 
-    @property
-    def project_file(self) -> Path | None:
-        """The `.kgui` package this scenario was opened from or saved to.
-
-        Deliberately *not* the same thing as :attr:`path`. A package is a file
-        and a lab is a directory; conflating them would have had `lab_dir`
-        return `scenario.kgui` and deployment generate a lab inside a path that
-        is not a directory.
+        One path, not two. An earlier design kept a `.kgui` package file
+        alongside the lab directory, which meant two things could disagree
+        about what the scenario was; the folder is now the document, and the
+        export is a zip of it.
         """
         with self._lock:
-            return self._project_file
+            return self._path
 
     @property
     def dirty(self) -> bool:
@@ -110,24 +104,38 @@ class Session:
             self._dirty = dirty
             return self._topology
 
-    def mark_saved(self, project_file: Path, *, lab_dir: Path | None = None) -> None:
-        """Record that the scenario now exists on disk as ``project_file``.
+    @property
+    def deployed_topology(self) -> Topology | None:
+        """The topology as it was when the lab was last deployed.
 
-        ``lab_dir`` is supplied when opening a package, whose lab was extracted
-        somewhere specific: the scenario should then deploy from those files,
-        including any configuration captured before it was packaged.
+        Held so the interface can say *how* the canvas has drifted from what is
+        running. The running containers cannot answer that themselves: they
+        know their own state, not which edits have happened since.
         """
         with self._lock:
-            self._project_file = Path(project_file)
-            if lab_dir is not None:
-                self._path = Path(lab_dir)
+            return self._deployed
+
+    def mark_deployed(self, topology: Topology | None) -> None:
+        """Record what was deployed, or ``None`` once the lab is stopped."""
+        with self._lock:
+            self._deployed = topology
+
+    def mark_saved(self, folder: Path) -> None:
+        """Record that the scenario lives in ``folder`` and is up to date.
+
+        The folder becomes what deployment generates into, so a scenario
+        opened from elsewhere runs the files it arrived with — including any
+        configuration captured before it was shared.
+        """
+        with self._lock:
+            self._path = Path(folder)
             self._dirty = False
 
     def reset(self) -> Topology:
         with self._lock:
             self._topology = Topology(name="untitled")
             self._path = None
-            self._project_file = None
+            self._deployed = None
             self._dirty = False
             # Feature toggles belong to the scenario, so a new one starts
             # from the permissive default rather than inheriting an exam's

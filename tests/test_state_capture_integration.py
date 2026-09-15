@@ -13,7 +13,7 @@ import pytest
 
 from kathara_gui.domain.model import Interface, Node, Topology
 from kathara_gui.kathara import runner, state
-from kathara_gui.project.kgui import extract_lab, read_package, write_package
+from kathara_gui.project import scenario
 
 pytestmark = pytest.mark.docker
 
@@ -110,19 +110,69 @@ def test_configuration_survives_a_stop_and_redeploy(
     assert "65099" in stdout.decode(errors="replace")
 
 
-def test_a_captured_lab_travels_inside_a_package(
+def test_a_captured_lab_travels_inside_an_export(
     deployed: Topology, lab_dir: Path, tmp_path: Path
 ) -> None:
     """Capability 5's exam submission: one file carrying the student's work."""
     configure(deployed, lab_dir, "router bgp 65123")
     state.capture(deployed, lab_dir)
+    scenario.save(deployed, lab_dir)
 
-    package = write_package(deployed, tmp_path / "submission.kgui", lab_dir=lab_dir)
+    archive = scenario.export_zip(lab_dir, tmp_path / "submission.zip")
 
     # The instructor opens it elsewhere and finds both topology and config.
-    assert read_package(package).topology.node("r1") is not None
-    restored = extract_lab(package, tmp_path / "marking")
-    assert "65123" in (restored / "r1" / "etc" / "frr" / "frr.conf").read_text()
+    marking = scenario.import_archive(archive, tmp_path / "marking")
+    assert scenario.load(marking).topology.node("r1") is not None
+    assert "65123" in (marking / "r1" / "etc" / "frr" / "frr.conf").read_text()
+
+
+def test_captured_addresses_reach_the_model(deployed: Topology, lab_dir: Path) -> None:
+    """A PC keeps no routing daemon, so its addressing lives in the model.
+
+    Configuring an address by hand and capturing has to change what the canvas
+    shows, or the interface goes on reporting an address the device no longer
+    has — and the next save would write the stale one back.
+    """
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    lab = LabParser.parse(str(lab_dir))
+    manager = Kathara.get_instance()
+    original = deployed.node("r1").interfaces[0].ip
+    assert original
+
+    # What "I changed the IP address" actually means inside a container.
+    for command in (
+        ["ip", "address", "del", original, "dev", "eth0"],
+        ["ip", "address", "add", "10.77.77.77/24", "dev", "eth0"],
+    ):
+        manager.exec("r1", command, lab=lab, wait=False, stream=False)
+
+    recovered = state.recover_addresses(deployed, lab_dir)
+    addresses = [i.ip for node in recovered.nodes if node.name == "r1" for i in node.interfaces]
+    assert addresses == ["10.77.77.77/24"]
+
+
+def test_a_secondary_address_does_not_displace_the_primary(
+    deployed: Topology, lab_dir: Path
+) -> None:
+    """The model holds one address per interface, so the first one wins.
+
+    Adding a second address is not the same as changing the first, and
+    silently promoting it would rewrite a topology the user did not edit.
+    """
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    lab = LabParser.parse(str(lab_dir))
+    original = deployed.node("r1").interfaces[0].ip
+    Kathara.get_instance().exec(
+        "r1", ["ip", "address", "add", "10.88.88.88/24", "dev", "eth0"],
+        lab=lab, wait=False, stream=False,
+    )
+
+    recovered = state.recover_addresses(deployed, lab_dir)
+    assert recovered.node("r1").interfaces[0].ip == original
 
 
 def test_a_device_without_routing_is_skipped_not_failed(lab_dir: Path) -> None:

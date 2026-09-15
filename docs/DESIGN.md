@@ -50,7 +50,7 @@ tool removes the transcription.
 | 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified |
 | 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
-| 5 | State extraction | `vtysh -c "show running-config"` captures what a router is *actually* running into the lab directory; `.kgui` packages the lot |
+| 5 | State extraction | `vtysh -c "show running-config"` captures a router's live routing state, and `ip addr` its interface addresses; the scenario folder holds both and exports as a zip |
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; palette contrast asserted in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
 | 8 | Exam mode | `features.py`, enforced server-side |
@@ -180,6 +180,15 @@ have looked like it worked while capturing nothing. Asking `vtysh` for the runni
 configuration also means the capture lands where Kathará copies from on the next deploy, so
 resuming a hibernated lab is capture-then-deploy with no separate restore step to get wrong.
 
+**A running lab is a snapshot, and the difference from the canvas is named, not hinted at.**
+Deploying freezes the topology into containers; the canvas then moves on. The consequence
+surfaced as a complaint that diagnostics were wrong: an address changed on the canvas, and
+Verify links reported the old one. It could not do otherwise — it pings real containers — so
+the defect was the silence, not the answer. The session keeps the topology as deployed and
+the interface lists each difference in a sentence, because the question a user actually has
+is *which* thing differs. Canvas position is excluded: it changes the picture, not the
+network, and warning about it would teach the user to ignore the warning.
+
 **The interface reports what is running, not what it last did.** A user can stop containers
 from a terminal, and Docker stops the whole lab when it restarts or the machine sleeps — so
 every status is a fresh comparison against the daemon rather than a memory of the last
@@ -189,16 +198,42 @@ no status at all, because the interface then contradicts the error the user is s
 A stopped container is also distinct from an absent one — it still owns its name, so it
 blocks the next deployment and has to be cleared rather than ignored.
 
-**A scenario is one file, and the browser moves it.** Everything a laboratory needs travels
-in a single `.kgui` zip: the topology with its canvas positions, the generated Kathará lab,
-the configuration captured from running containers, and the scenario's feature toggles. The
-driving case is an exam — a student submits a file to an e-learning platform, an instructor
-opens that submission — which is also why saving in place is confined to the workspace while
-anything crossing the machine boundary goes through the browser's own download and upload.
-Letting the page name a path for the server to write to would serve those flows no better
-and would hand a local server an arbitrary-write surface. Because it is an ordinary zip, a
-student who cannot open the application on the morning of a deadline can still see what they
-submitted.
+**The scenario folder is the document, and the export is a plain zip of it.** An earlier
+design wrapped everything in a bespoke `.kgui` package holding a `topology.json` beside a
+copy of the lab. That was a mistake, and an instructive one: `lab.conf` already round-trips
+the entire model, because the positions and device kinds it cannot express ride in `# kgui:`
+comments Kathará ignores. The stored topology was therefore a *second* source of truth, and
+it silently won over an edited `lab.conf` inside the same archive. Deleting the format
+removed the contradiction and, incidentally, a whole module.
+
+What remains is a Kathará lab directory: `lab.conf`, the startup scripts, the configuration
+captured from running containers, and one small `kgui.json` for the scenario's feature
+toggles. The driving case is an exam — a student submits to an e-learning platform, an
+instructor opens the submission — which is why saving in place is confined to the workspace
+while anything crossing the machine boundary goes through the browser's own download and
+upload. Letting the page name a path for the server to write to would serve those flows no
+better and would hand a local server an arbitrary-write surface. And because it is an
+ordinary zip of ordinary files, a student who cannot open the application on the morning of
+a deadline can still read what they submitted.
+
+**A lab that arrives from outside is met halfway.** Import accepts a zip, a folder zipped by
+a file manager, or a bare `lab.conf`, and none of them will carry our conventions. What
+Kathará's format cannot express is recovered from the files beside it: addressing from each
+`.startup` — in the modern `ip address add` form and the Netkit-era `ifconfig` one — and
+routing daemons from `/etc/frr/daemons`. Without that, an imported lab looked unaddressed
+and the validator complained about addresses that were on disk all along. Device kinds,
+which Kathará genuinely does not record, are guessed from FRR evidence first and naming
+convention second, and the guess is presentational: it picks an icon the user can change.
+
+**The layout is laid out, not simulated.** A foreign lab has no coordinates, so every device
+would land on one point. A force-directed spring model is the usual reach and the wrong
+tool: it optimises for even edge lengths, does nothing about crossings — which is what makes
+a diagram unreadable — and is unstable, so reopening your own work rearranges it. This uses
+the middle of the classical Sugiyama method instead: layer by distance from the graph's
+centre, then order each layer by the barycentre of its neighbours. It is deterministic, and
+its claim is measured rather than asserted — the test suite counts crossings, and it was
+that measurement which caught barycentre ordering *increasing* them on a dense graph until
+the best pass was kept rather than the last.
 
 **Stopping someone else's work requires consent.** Kathará derives a lab's identity from a
 hash of its *name*, so two labs called `untitled` in different folders are one lab to it.

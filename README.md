@@ -17,11 +17,12 @@ Under development. Phases 0–3 complete — integration spike and CI, domain mo
 Phase 4 (deploy, diagnostics, terminal) is in progress: labs deploy, conflicting deployments
 are caught, and links are verified; the in-app terminal is outstanding.
 
-Phase 5 is largely done. A scenario saves to a single `.kgui` file holding the topology, the
-generated lab and configuration captured from running containers — so a lab can be
-configured by hand, captured, saved, reopened and redeployed with that configuration and its
-canvas layout intact. Existing `lab.conf` labs import and export. Variants, a PDF manual
-viewer and auto-layout for imports without positions remain.
+Phase 5 is largely done. A scenario is a Kathará lab folder and exports as a plain zip of
+it, so a lab can be configured by hand, captured, saved, reopened and redeployed with its
+configuration and canvas layout intact — and anyone can unzip it and read the files. Labs
+made without this application import too: their addressing is recovered from the startup
+scripts, and a crossing-minimising layout is applied since they carry no coordinates.
+Variants, a PDF manual viewer and an in-app terminal remain.
 
 - **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
   will not do, with current status against each item.

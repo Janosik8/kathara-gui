@@ -113,6 +113,7 @@ TEXT_PAIRS = [
     ("warning text on a panel", "--warning", "--bg-panel"),
     # The two working areas have surfaces of their own, so every pairing that
     # text actually lands on has to be checked, not just the generic panel.
+    ("the device block's accent as text", "--device", "--bg-panel-devices"),
     ("body text on the device panel", "--fg", "--bg-panel-devices"),
     ("secondary text on the device panel", "--fg-muted", "--bg-panel-devices"),
     ("body text on the lab panel", "--fg", "--bg-panel-lab"),
@@ -159,11 +160,51 @@ def test_interface_boundaries_meet_wcag_non_text_contrast(
     )
 
 
+def channel_distance(a: str, b: str) -> int:
+    """The largest per-channel difference between two colours.
+
+    Crude, and deliberately so. Contrast ratio measures *lightness*, and two
+    colours can be identical in lightness while being obviously different
+    colours — which is the whole reason the greyscale cue has to be carried by
+    shape. It is also the reason a lightness test could not catch the reported
+    defect: the device block was a blue tint on a blue-grey panel, 1.05:1 apart
+    and visually the same surface. This measures whether they are the same
+    *colour* at all.
+    """
+    left, right = a.lstrip("#"), b.lstrip("#")
+    return max(
+        abs(int(left[i : i + 2], 16) - int(right[i : i + 2], 16)) for i in (0, 2, 4)
+    )
+
+
+#: Below this the two surfaces read as one. The blue-on-blue-grey block that
+#: prompted this scored 10 in light mode and 2 in dark.
+SURFACE_DISTANCE_MINIMUM = 15
+
+
+@pytest.mark.parametrize(("theme", "palette"), THEMES)
+@pytest.mark.parametrize("block", ["--bg-panel-devices", "--bg-panel-lab"])
+def test_a_block_does_not_vanish_into_the_panel_behind_it(
+    theme: str, palette: dict[str, str], block: str
+) -> None:
+    distance = channel_distance(palette[block], palette["--bg-panel"])
+    assert distance >= SURFACE_DISTANCE_MINIMUM, (
+        f"{theme}: {block} is only {distance} from --bg-panel and reads as the "
+        "same surface"
+    )
+
+
+def test_the_device_and_laboratory_blocks_are_different_colours() -> None:
+    for theme, palette in THEMES:
+        distance = channel_distance(palette["--bg-panel-devices"], palette["--bg-panel-lab"])
+        assert distance >= SURFACE_DISTANCE_MINIMUM, f"{theme}: the two blocks look alike"
+
+
 def test_the_panel_accents_are_visible_on_their_own_surfaces() -> None:
     """WCAG 1.4.11: the edge marking each working area is a UI boundary."""
     for theme, palette in THEMES:
         for accent, surface in (
-            ("--accent", "--bg-panel-devices"),
+            ("--device", "--bg-panel-devices"),
             ("--warning", "--bg-panel-lab"),
         ):
             ratio = contrast_ratio(palette[accent], palette[surface])
