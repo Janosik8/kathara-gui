@@ -193,9 +193,14 @@ button:disabled {
   min-height: 0;
 }
 
+/* Sized in rem and allowed to shrink, so the layout survives zoom.
+   At 200% on a 1280px display the viewport is 640 CSS pixels; two panels
+   fixed at 340 and 300 with flex-shrink: 0 consumed all of it and the canvas
+   disappeared behind a horizontal scrollbar (WCAG 1.4.10, ACC-05). */
 .panel {
-  width: 340px;
-  flex-shrink: 0;
+  width: 21rem;
+  min-width: 13rem;
+  flex-shrink: 1;
   padding: 12px;
   border-right: 1px solid var(--border);
   background: var(--bg-panel);
@@ -425,7 +430,38 @@ button:disabled {
 .panel--right {
   border-right: none;
   border-left: 1px solid var(--border);
-  width: 300px;
+  width: 19rem;
+}
+
+/* Below this the three columns cannot all be usable, so they stack and the
+   page scrolls in one direction only. Reached by a narrow window or by zoom —
+   the two are the same thing to a stylesheet, which is why supporting reflow
+   supports both.
+
+   The canvas keeps a minimum height rather than collapsing to nothing: a
+   diagram you cannot see is a loss of function, and the panels alone are not
+   the application. */
+@media (max-width: 60rem) {
+  .app__body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .panel,
+  .panel--right {
+    width: auto;
+    min-width: 0;
+    max-height: none;
+    border-right: none;
+    border-left: none;
+    border-bottom: 1px solid var(--border);
+    overflow-y: visible;
+  }
+
+  .app__canvas {
+    min-height: 60vh;
+    order: -1; /* the diagram is the document; it leads */
+  }
 }
 
 .field {

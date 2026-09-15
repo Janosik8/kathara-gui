@@ -136,6 +136,15 @@ everything else. Changing the kind follows the image, unless you have typed one 
 at all: no `vtysh`, nothing to read `/etc/frr/daemons`, and no way to configure routing. A
 router with a blank image cannot run a routing lab.
 
+### A narrow window, or a magnified one
+
+Below about 960 pixels of viewport the three columns stack: the diagram first, then the
+panels beneath it, with the page scrolling downwards only. Zoom reaches the same place — at
+200% on a 1280-pixel display the viewport is 640 CSS pixels — so magnifying the page reflows
+it rather than pushing the canvas off the side.
+
+The breakpoint is in `rem`, so enlarging the text alone reflows too, not only zooming.
+
 ### Finding your way around
 
 Two blocks carry their own surfaces, because they do different jobs and were being confused.
@@ -348,7 +357,7 @@ outside has no such settings, so everything is on.
 
 - **In-app terminal.** Use `kathara connect` in a real terminal for now — see §4.
 - **Variants** of a scenario (exam groups), **PDF manuals**, and a **built-in lab library**.
-- **Setting exam-mode toggles.** The server enforces them and they are stored in the package,
+- **Setting exam-mode toggles.** The server enforces them and they are stored in the scenario folder,
   but there is no interface for an instructor to change them, so a new scenario has
   everything on.
 
