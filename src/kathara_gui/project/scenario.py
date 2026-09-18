@@ -25,7 +25,6 @@ layout.
 
 from __future__ import annotations
 
-import datetime as dt
 import io
 import json
 import zipfile
@@ -219,12 +218,20 @@ def is_scenario(folder: Path) -> bool:
 
 
 def _settings(features: Features) -> str:
+    """The scenario's settings file.
+
+    Deliberately carries no timestamp. One was here, and it quietly defeated
+    the property the fixed zip timestamps exist to provide: exporting an
+    unchanged scenario twice produced different bytes whenever the clock ticked
+    between the two, so the test asserting reproducibility failed roughly at
+    random. The filesystem records when a file was written; a scenario does not
+    need to disagree with it.
+    """
     return (
         json.dumps(
             {
                 "format": FORMAT_VERSION,
                 "application": __version__,
-                "saved": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                 "features": features.model_dump(),
             },
             indent=2,

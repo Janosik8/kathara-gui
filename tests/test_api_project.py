@@ -297,6 +297,21 @@ def test_exporting_twice_produces_the_same_bytes(client: TestClient) -> None:
     assert client.post("/api/project/export", json={"topology": TRIANGLE}).content == first
 
 
+def test_the_settings_file_records_no_time(client: TestClient) -> None:
+    """The invariant behind the test above, which otherwise passes by luck.
+
+    `kgui.json` used to carry a `saved` timestamp, so two exports matched only
+    when both landed in the same second — the byte comparison failed roughly at
+    random and looked like flakiness rather than the real defect it was.
+    Asserting the absence directly cannot pass by timing.
+    """
+    stored = json.loads((Path(save(client)["folder"]) / "kgui.json").read_text())
+
+    assert set(stored) == {"format", "application", "features"}, (
+        f"a time-varying field would defeat reproducible exports: {sorted(stored)}"
+    )
+
+
 def test_exporting_leaves_no_staging_file_behind(client: TestClient, workspace: Path) -> None:
     client.post("/api/project/export", json={"topology": TRIANGLE})
     assert not list((workspace / ".import").glob("*.zip"))

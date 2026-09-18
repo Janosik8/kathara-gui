@@ -51,10 +51,10 @@ tool removes the transcription.
 | 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
 | 5 | State extraction | `vtysh -c "show running-config"` captures a router's live routing state, and `ip addr` its interface addresses; the scenario folder holds both and exports as a zip |
-| 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; palette contrast asserted in tests |
+| 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; every pointer control has a keyboard equivalent, including the panel dividers; contrast and reflow asserted against the real stylesheet in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
 | 8 | Exam mode | `features.py`, enforced server-side |
-| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens exactly as it was drawn. Laying out a legacy lab that carries no positions is **not yet built** |
+| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so |
 
 ### The idea that ties it together
 

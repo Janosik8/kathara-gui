@@ -203,6 +203,7 @@ report anything that is not.
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + A` | Select every device. Ignored while typing, where it selects the field's text. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
+| `←` `→` on a panel divider | Widen or narrow that panel. `Home` and `End` reach its limits. |
 
 The first `Tab` on a fresh page reveals a **Skip to topology** link.
 
