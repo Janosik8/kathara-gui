@@ -1138,6 +1138,77 @@ describe("finding the lab on disk", () => {
   });
 })
 
+describe("resizing the side panels", () => {
+  // Requested after the layout crowded the canvas on a small window. A divider
+  // that only responds to dragging is unusable from the keyboard, so this is
+  // the ARIA separator pattern and the keyboard route is tested first.
+
+  const divider = (name: string) => screen.getByRole("separator", { name });
+
+  it("offers a divider for each panel", async () => {
+    await renderApp();
+    expect(divider("Width of the devices panel")).toBeInTheDocument();
+    expect(divider("Width of the details panel")).toBeInTheDocument();
+  });
+
+  it("reports its width, and its limits, to assistive technology", async () => {
+    await renderApp();
+    const handle = divider("Width of the devices panel");
+
+    expect(handle).toHaveAttribute("aria-valuenow", "336");
+    expect(handle).toHaveAttribute("aria-valuemin", "208");
+    expect(handle).toHaveAttribute("aria-valuemax", "560");
+    expect(handle).toHaveAttribute("aria-orientation", "vertical");
+  });
+
+  it("widens the left panel with the right arrow", async () => {
+    const user = await renderApp();
+    const handle = divider("Width of the devices panel");
+    handle.focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(divider("Width of the devices panel")).toHaveAttribute("aria-valuenow", "352");
+  });
+
+  it("widens the right panel with the *left* arrow", async () => {
+    // Arrows mean a direction on screen, not "bigger". Dragging the right
+    // panel's edge leftwards widens it, and the keyboard has to agree or the
+    // two controls contradict each other.
+    const user = await renderApp();
+    const handle = divider("Width of the details panel");
+    handle.focus();
+    await user.keyboard("{ArrowLeft}");
+
+    expect(divider("Width of the details panel")).toHaveAttribute("aria-valuenow", "320");
+  });
+
+  it("stops at the narrow limit rather than collapsing the panel", async () => {
+    const user = await renderApp();
+    const handle = divider("Width of the devices panel");
+    handle.focus();
+    await user.keyboard("{Home}");
+
+    expect(divider("Width of the devices panel")).toHaveAttribute("aria-valuenow", "208");
+  });
+
+  it("stops at the wide limit rather than swallowing the canvas", async () => {
+    const user = await renderApp();
+    const handle = divider("Width of the devices panel");
+    handle.focus();
+    await user.keyboard("{End}");
+
+    expect(divider("Width of the devices panel")).toHaveAttribute("aria-valuenow", "560");
+  });
+
+  it("can be reached by keyboard at all", async () => {
+    const user = await renderApp();
+    await user.tab();
+    // Whatever comes first, the divider must be somewhere in the tab order.
+    const handle = divider("Width of the devices panel");
+    expect(handle).toHaveAttribute("tabindex", "0");
+  });
+});
+
 describe("the selected device's own panel", () => {
   // Requested: the controls belonging to one device should sit in a coloured
   // rectangle of their own, and that rectangle should not be there when no

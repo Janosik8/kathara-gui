@@ -193,14 +193,69 @@ button:disabled {
   min-height: 0;
 }
 
+/* The grab strip between a panel and the canvas.
+
+   Wider than it looks: the visible line is 1px but the target is 8px, because
+   a one-pixel hit area is a dexterity barrier (WCAG 2.5.8 asks for 24px, which
+   a divider cannot have without eating the layout — so it is as generous as it
+   can be and the keyboard route is a first-class alternative, not a fallback). */
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  border: none;
+  padding: 0;
+  touch-action: none; /* or the browser pans instead of resizing */
+  z-index: 2;
+}
+
+.panel-resizer--left {
+  right: 0;
+}
+
+.panel-resizer--right {
+  left: 0;
+}
+
+.panel-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border);
+}
+
+.panel-resizer:hover::before,
+.panel-resizer:focus-visible::before {
+  background: var(--accent);
+}
+
+.panel-resizer:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* Stacked, there is nothing left to resize horizontally. */
+@media (max-width: 60rem) {
+  .panel-resizer {
+    display: none;
+  }
+}
+
 /* Sized in rem and allowed to shrink, so the layout survives zoom.
    At 200% on a 1280px display the viewport is 640 CSS pixels; two panels
    fixed at 340 and 300 with flex-shrink: 0 consumed all of it and the canvas
    disappeared behind a horizontal scrollbar (WCAG 1.4.10, ACC-05). */
 .panel {
+  /* A starting width only: App sets the live one inline, because the user
+     drags it. The floor stays here so a drag cannot squeeze a panel into
+     uselessness, and so the value survives if the inline style is absent. */
   width: 21rem;
   min-width: 13rem;
   flex-shrink: 1;
+  position: relative; /* the resizer sits on this panel's edge */
   padding: 12px;
   border-right: 1px solid var(--border);
   background: var(--bg-panel);
@@ -274,6 +329,10 @@ button:disabled {
 .app__canvas {
   flex: 1;
   min-width: 0;
+  /* Named so the minimap can ask how much canvas there is, rather than how
+     wide the window is. `size` rather than `inline-size` because the minimap
+     is hidden on height as well. */
+  container: canvas / size;
 }
 
 .canvas {
@@ -449,7 +508,9 @@ button:disabled {
 
   .panel,
   .panel--right {
-    width: auto;
+    /* !important because App sets the width inline for the drag, and a stacked
+       panel must be full width regardless of where it was last dragged to. */
+    width: auto !important;
     min-width: 0;
     max-height: none;
     border-right: none;
@@ -694,9 +755,29 @@ select {
   outline-offset: -3px;
 }
 
+/* React Flow gives the minimap a fixed 200x150. On a small canvas that covered
+   most of the diagram it was meant to help navigate, so it is sized against the
+   canvas instead and capped at the original size. */
 .react-flow__minimap {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
+  width: 28%;
+  height: 28%;
+  min-width: 5.5rem;
+  min-height: 4rem;
+  max-width: 200px;
+  max-height: 150px;
+}
+
+/* Below this there is no room for an overview *and* the thing it overviews.
+   The minimap is an aid, and the canvas is the work — so the aid goes.
+   Container units rather than a viewport media query: what matters is how much
+   canvas there is, which is not the same question as how wide the window is
+   once the panels have taken their share. */
+@container canvas (max-width: 28rem) or (max-height: 20rem) {
+  .react-flow__minimap {
+    display: none;
+  }
 }
 
 .react-flow__edge-text {

@@ -30,6 +30,10 @@ def css() -> str:
     return STYLES.read_text(encoding="utf-8")
 
 
+def _strip_comments(text: str) -> str:
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
 def _without_comments_and_media(text: str) -> str:
     """The stylesheet's top level: comments gone, media blocks gone.
 
@@ -65,6 +69,28 @@ def rule(selector: str) -> str:
         if selector in selectors:
             return block.group(2)
     raise AssertionError(f"no base rule for {selector}")
+
+
+def at_rule_bodies(prefix: str) -> str:
+    """Every ``@media``/``@container`` block whose query starts with ``prefix``.
+
+    Concatenated rather than sliced by index: there is more than one
+    narrow-screen block, and taking "the first one" quietly tested the wrong
+    rules — which is how this helper came to exist.
+    """
+    text = _strip_comments(css())
+    found: list[str] = []
+    for match in re.finditer(re.escape(prefix), text):
+        start = text.index("{", match.start())
+        depth, i = 0, start
+        while i < len(text):
+            depth += (text[i] == "{") - (text[i] == "}")
+            i += 1
+            if depth == 0:
+                break
+        found.append(text[start:i])
+    assert found, f"no block matching {prefix!r}"
+    return "\n".join(found)
 
 
 def declaration(selector: str, prop: str) -> str | None:
@@ -127,18 +153,70 @@ def test_the_layout_stacks_when_it_is_too_narrow_for_columns() -> None:
 
 
 def test_stacking_puts_the_columns_into_one() -> None:
-    narrow = css()[css().index("@media (max-width: 60rem)") :]
-    block = narrow[: narrow.index("\n}\n\n") if "\n}\n\n" in narrow else len(narrow)]
-    assert "flex-direction: column" in block
+    assert "flex-direction: column" in at_rule_bodies("@media (max-width: 60rem)")
 
 
 def test_the_canvas_keeps_a_height_when_stacked() -> None:
     """A diagram collapsed to nothing is a loss of function, not a reflow."""
-    narrow = css()[css().index("@media (max-width: 60rem)") :]
-    assert "min-height" in narrow[: narrow.index("\n}\n\n")] or "min-height" in narrow
+    assert "min-height" in at_rule_bodies("@media (max-width: 60rem)")
 
 
 def test_the_breakpoint_is_in_rem_so_it_follows_the_user_font_size() -> None:
     """A user who enlarges text, rather than zooming, must reflow too — and a
     breakpoint in pixels would ignore them entirely."""
     assert re.search(r"@media \(max-width: \d+rem\)", css())
+
+
+# -- the overview must not swallow the thing it overviews ---------------
+
+
+def test_the_minimap_is_sized_against_the_canvas_not_fixed() -> None:
+    """React Flow ships a fixed 200x150 minimap. On a small canvas that covered
+    most of the diagram it exists to help navigate — the reported defect."""
+    body = rule(".react-flow__minimap")
+    assert "%" in body, "the minimap is not proportional to the canvas"
+    assert "max-width" in body and "max-height" in body, "no cap on the minimap"
+
+
+def test_the_minimap_gives_up_when_there_is_no_room() -> None:
+    """Below a point an overview and the thing it overviews cannot share the
+    space. The canvas is the work, so the aid is what goes."""
+    assert "@container canvas" in css(), "no container query on the canvas"
+    assert "display: none" in at_rule_bodies("@container canvas")
+
+
+def test_the_canvas_is_a_named_container() -> None:
+    """Without this the container query silently matches nothing, and the
+    minimap would never hide."""
+    assert "container: canvas" in rule(".app__canvas")
+
+
+def test_the_minimap_asks_about_the_canvas_not_the_window() -> None:
+    """A media query would measure the window, which is the wrong question:
+    with two panels open a wide window can still leave a narrow canvas."""
+    text = css()
+    query = text[text.index("@container canvas") :].split("{", 1)[0]
+    assert "max-width" in query and "max-height" in query
+
+
+# -- the panels can be resized ------------------------------------------
+
+
+def test_the_resizer_target_is_wider_than_the_line_it_draws() -> None:
+    """A one-pixel grab strip is a dexterity barrier. The visible divider is
+    1px; the target is 8. WCAG 2.5.8 asks for 24, which a divider cannot have
+    without eating the layout — hence the keyboard route being first-class
+    rather than a fallback."""
+    assert declaration(".panel-resizer", "width") == "8px"
+
+
+def test_the_resizer_does_not_let_the_browser_pan_instead() -> None:
+    """Without this a touch drag scrolls the page and the divider never moves."""
+    assert declaration(".panel-resizer", "touch-action") == "none"
+
+
+def test_the_resizer_disappears_once_the_layout_has_stacked() -> None:
+    """Stacked, the panels are full width and there is no horizontal room to
+    trade — a divider there would adjust nothing."""
+    stacked = at_rule_bodies("@media (max-width: 60rem)")
+    assert ".panel-resizer" in stacked and "display: none" in stacked

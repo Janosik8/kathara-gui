@@ -21,6 +21,7 @@ import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
 import { LabTitle } from "./panels/LabTitle";
+import { PanelResizer } from "./panels/PanelResizer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
@@ -49,6 +50,11 @@ function isTextEntry(target: EventTarget | null): boolean {
 function isTreeItem(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && target.getAttribute("role") === "treeitem";
 }
+
+/** Narrower than this and the panel's own controls stop fitting. */
+const PANEL_MIN = 208;
+/** Wider than this and the canvas is the thing being squeezed out. */
+const PANEL_MAX = 560;
 
 export default function App() {
   const {
@@ -103,6 +109,10 @@ export default function App() {
   const [capture, setCapture] = useState<CaptureResponse | null>(null);
   const [scenarioBusy, setScenarioBusy] = useState<string | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
+
+  // Panel widths, in pixels. Kept here rather than in CSS because the user
+  // drags them; the stylesheet supplies only the starting point and the floor.
+  const [panelWidths, setPanelWidths] = useState({ left: 336, right: 304 });
 
   const canConnect = topology.nodes.length >= 2;
 
@@ -684,7 +694,20 @@ export default function App() {
       </header>
 
       <div className="app__body">
-        <aside className="panel" aria-label="Devices">
+        <aside
+          className="panel"
+          aria-label="Devices"
+          style={{ width: `${panelWidths.left}px` }}
+        >
+          <PanelResizer
+            width={panelWidths.left}
+            min={PANEL_MIN}
+            max={PANEL_MAX}
+            side="left"
+            label="Width of the devices panel"
+            onResize={(left) => setPanelWidths((w) => ({ ...w, left }))}
+          />
+
           <Palette topology={topology} onAdd={addDevice} />
 
           <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
@@ -730,7 +753,20 @@ export default function App() {
           />
         </main>
 
-        <aside className="panel panel--right" aria-label="Device details">
+        <aside
+          className="panel panel--right"
+          aria-label="Device details"
+          style={{ width: `${panelWidths.right}px` }}
+        >
+          <PanelResizer
+            width={panelWidths.right}
+            min={PANEL_MIN}
+            max={PANEL_MAX}
+            side="right"
+            label="Width of the details panel"
+            onResize={(right) => setPanelWidths((w) => ({ ...w, right }))}
+          />
+
           <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
           <AddressingPanel
             issues={issues}

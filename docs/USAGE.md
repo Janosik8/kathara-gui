@@ -145,6 +145,14 @@ it rather than pushing the canvas off the side.
 
 The breakpoint is in `rem`, so enlarging the text alone reflows too, not only zooming.
 
+**The side panels can be resized.** Drag the divider on a panel's inner edge, or focus it
+with `Tab` and use the arrow keys — `Home` and `End` jump to the narrowest and widest, and a
+double click returns it to the middle. Arrow keys mean a direction on screen rather than
+"wider", so they agree with the drag: `←` widens the right-hand panel and narrows the left.
+
+**The minimap shrinks with the canvas, and hides when there is no room for it.** It is an
+aid to navigating the diagram, so on a small canvas the diagram wins.
+
 ### Finding your way around
 
 Two blocks carry their own surfaces, because they do different jobs and were being confused.
@@ -565,6 +573,11 @@ says "Exited"* above.
 ---
 
 ## 7. Accessibility testing
+
+> The EN 301 549 conformance table (ACC-09) is written at the end of the project, once the
+> interface has stopped changing. The automated evidence it will rest on is listed below and
+> runs today.
+
 
 Capability 6 is graded, so this is part of the deliverable rather than optional QA.
 
