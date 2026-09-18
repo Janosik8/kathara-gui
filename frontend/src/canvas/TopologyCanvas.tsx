@@ -30,7 +30,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PendingEnd, Topology } from "../types";
 import { DeviceNode } from "./DeviceNode";
-import { type Placement, computePlacements } from "./layout";
+import { type Placement, computePlacements, domainPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
@@ -100,6 +100,8 @@ export function mergeMeasurements(
  * only once the DOM actually carries the new placements. Measuring earlier
  * would measure the previous layout.
  */
+export { domainPosition };
+
 export function placementSignature(nodes: readonly FlowNode[]): string {
   return nodes
     .map((node) => {
@@ -116,13 +118,6 @@ export function placementSignature(nodes: readonly FlowNode[]): string {
       return `${node.id}@${where}[${handles}]`;
     })
     .join("|");
-}
-
-/** Where to place a collision-domain node: the centroid of its members. */
-function centroid(points: { x: number; y: number }[]): { x: number; y: number } {
-  if (points.length === 0) return { x: 0, y: 0 };
-  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
-  return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
 function CanvasInner({
@@ -193,7 +188,10 @@ function CanvasInner({
       const hubId = `cd:${cd.name}`;
       flowNodes.push({
         id: hubId,
-        position: centroid(members.map((m) => m.node.position)),
+        position: domainPosition(
+          members.map((m) => m.node.position),
+          cd.name,
+        ),
         data: {
           label: `${cd.name}${cd.subnet ? `\n${cd.subnet}` : ""}`,
           collisionDomain: cd.name,

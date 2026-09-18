@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from kathara_gui.domain.model import Node, Topology
 
-__all__ = ["describe_drift"]
+__all__ = ["describe_drift", "describe_live_drift"]
 
 
 def _interfaces(node: Node) -> dict[int, tuple[str, str | None]]:
@@ -65,6 +65,41 @@ def _describe_device(deployed: Node, current: Node) -> list[str]:
             changes.append(
                 f"{current.name} eth{number} is {new_ip or 'unaddressed'} on the canvas "
                 f"but {old_ip or 'unaddressed'} in the running lab"
+            )
+
+    return changes
+
+
+def describe_live_drift(baseline: Topology, live: dict[str, dict[int, str]]) -> list[str]:
+    """Configuration changed inside a container since it was deployed.
+
+    The other direction, and it is deliberately measured against what was
+    *deployed* rather than against the canvas. Comparing with the canvas
+    reported every canvas edit a second time, backwards — one difference, two
+    sentences, and a header claiming twice as many changes as there were.
+
+    Against the deployed snapshot the two comparisons answer separate
+    questions: :func:`describe_drift` asks what the user changed on the canvas,
+    this asks what was changed inside a container by hand. Neither can produce
+    the other's finding.
+
+    ``live`` maps a device name to its interfaces' actual addresses. A device
+    that is not running, or could not be read, simply does not appear and is
+    not reported as changed.
+    """
+    changes: list[str] = []
+
+    for node in sorted(baseline.nodes, key=lambda n: n.name):
+        observed = live.get(node.name)
+        if observed is None:
+            continue
+        for interface in sorted(node.interfaces, key=lambda i: i.number):
+            actual = observed.get(interface.number)
+            if actual is None or actual == interface.ip:
+                continue
+            changes.append(
+                f"{node.name} eth{interface.number} is {actual} in the running container "
+                f"but was deployed as {interface.ip or 'unaddressed'}"
             )
 
     return changes

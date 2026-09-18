@@ -53,18 +53,90 @@ function centroid(points: Point[]): Point {
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
+/** How far a lone segment sits from the single device left on it. */
+export const STUB_DISTANCE = 150;
+
 /**
- * Where an interface should point: at its single peer, or at the notional
- * centre of the segment when several devices share it.
+ * Directions a stub segment can take.
+ *
+ * Several stubs on one device must not land on each other, so the direction is
+ * chosen by the domain's name rather than being the same every time.
+ *
+ * The four faces come first and the diagonals after, because a stub's
+ * direction also decides which face its interface leaves from: leading with
+ * diagonals put two stubs on one face while the other three faces stood empty.
+ * Cardinals first fans the first four across all four sides, which is how
+ * anyone would draw it by hand.
+ */
+const STUB_DIRECTIONS: readonly Point[] = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+  { x: 1, y: 0.6 },
+  { x: -1, y: 0.6 },
+  { x: -1, y: -0.6 },
+  { x: 1, y: -0.6 },
+];
+
+/** A stable small number from a name, so a layout does not change per render. */
+function nameIndex(name: string, buckets: number): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 100003;
+  return hash % buckets;
+}
+
+/**
+ * Where a collision domain is drawn.
+ *
+ * The centroid of its members, except when only one member is left: the
+ * centroid is then that device's own position, so the segment was drawn on top
+ * of the device and followed it around. That is what disconnecting an
+ * interface produced — the remaining stub jumped onto the device still
+ * attached to it.
+ *
+ * A stub is pushed out from the device instead, in a direction fixed by its
+ * name. Fixed rather than arbitrary for two reasons: the diagram must not
+ * rearrange itself between renders, and two stubs on the same device must not
+ * be given the same spot.
+ */
+export function domainPosition(points: Point[], domain?: string): Point {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) {
+    const [only] = points as [Point];
+    const direction = STUB_DIRECTIONS[nameIndex(domain ?? "", STUB_DIRECTIONS.length)]!;
+    return {
+      x: only.x + direction.x * STUB_DISTANCE,
+      y: only.y + direction.y * STUB_DISTANCE,
+    };
+  }
+  return centroid(points);
+}
+
+/**
+ * Where an interface should point: at whatever its link actually reaches.
+ *
+ * Which is not the same as "at its peers". A segment shared by three or more
+ * devices is drawn as a node of its own, and the link runs to *that* — so
+ * aiming the interface at the centroid of the other devices pointed it
+ * slightly beside the thing it connects to. A stub with no peers at all
+ * returned null and pointed nowhere.
  */
 function targetFor(topology: Topology, device: string, collisionDomain: string): Point | null {
-  const peers = topology.nodes.filter(
-    (node) =>
-      node.name !== device &&
-      node.interfaces.some((iface) => iface.collision_domain === collisionDomain),
+  const members = topology.nodes.filter((node) =>
+    node.interfaces.some((iface) => iface.collision_domain === collisionDomain),
   );
-  if (peers.length === 0) return null;
-  return centroid(peers.map((node) => node.position));
+  const peers = members.filter((node) => node.name !== device);
+
+  // Two devices are wired directly to each other, with no node in between.
+  if (members.length === 2 && peers.length === 1) return peers[0]!.position;
+
+  // Otherwise the link ends at the segment's own node — including a stub,
+  // whose node sits offset from this very device.
+  return domainPosition(
+    members.map((node) => node.position),
+    collisionDomain,
+  );
 }
 
 /**

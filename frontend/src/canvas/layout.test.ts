@@ -8,7 +8,7 @@
 import { Position } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import type { Node, Topology } from "../types";
-import { computePlacements, preferredSide } from "./layout";
+import { computePlacements, domainPosition, STUB_DISTANCE, preferredSide } from "./layout";
 
 function device(name: string, x: number, y: number, domains: string[]): Node {
   return {
@@ -203,5 +203,75 @@ describe("ordering along a side", () => {
     const placements = computePlacements(t).get("r1")!;
     expect(placements.get(0)).toBeDefined();
     expect(placements.get(1)).toBeDefined();
+  });
+});
+
+
+describe("domainPosition", () => {
+  const at = (x: number, y: number) => ({ x, y });
+
+  it("puts a shared segment between the devices on it", () => {
+    expect(domainPosition([at(0, 0), at(200, 100)], "A")).toEqual({ x: 100, y: 50 });
+  });
+
+  it("does not put a stub on top of the device it is attached to", () => {
+    // Reported: disconnecting an interface made the remaining network jump
+    // onto the device still attached to it, and follow it around when dragged.
+    const placed = domainPosition([at(400, 300)], "A");
+
+    expect(placed).not.toEqual({ x: 400, y: 300 });
+    const distance = Math.hypot(placed.x - 400, placed.y - 300);
+    expect(distance).toBeCloseTo(STUB_DISTANCE, 0);
+  });
+
+  it("keeps two stubs on one device apart", () => {
+    // Otherwise they stack, and the fix for one device becomes a defect for two.
+    const a = domainPosition([at(0, 0)], "A");
+    const b = domainPosition([at(0, 0)], "B");
+    expect(a).not.toEqual(b);
+  });
+
+  it("places a stub in the same spot every time", () => {
+    // A diagram that rearranges itself between renders is worse than one that
+    // is merely badly arranged.
+    expect(domainPosition([at(10, 20)], "Z")).toEqual(domainPosition([at(10, 20)], "Z"));
+  });
+
+  it("moves the stub with its device", () => {
+    const near = domainPosition([at(0, 0)], "A");
+    const far = domainPosition([at(500, 0)], "A");
+    expect(far.x - near.x).toBe(500);
+  });
+});
+
+describe("an interface points at what its link actually reaches", () => {
+  it("aims at the segment node when three or more devices share it", () => {
+    // Not at the centroid of the *other* devices: the link ends at the
+    // segment's own node, which includes this device in its position, so
+    // aiming at the peers put the interface slightly beside its own link.
+    const t = topology(
+      device("r1", 0, 0, ["A"]),
+      device("r2", 300, 0, ["A"]),
+      device("r3", 300, 300, ["A"]),
+    );
+    const hub = domainPosition(
+      [
+        { x: 0, y: 0 },
+        { x: 300, y: 0 },
+        { x: 300, y: 300 },
+      ],
+      "A",
+    );
+    // The hub is down and to the right of r1, so r1's interface must not be
+    // on its top or left face.
+    expect(hub.x).toBeGreaterThan(0);
+    const side = computePlacements(t).get("r1")!.get(0)!.position;
+    expect(["top", "left"]).not.toContain(side);
+  });
+
+  it("aims a stub at its own offset segment rather than nowhere", () => {
+    const t = topology(device("r1", 0, 0, ["A"]));
+    // A is placed below r1, so the interface belongs on the bottom face.
+    expect(computePlacements(t).get("r1")!.get(0)!.position).toBe("bottom");
   });
 });

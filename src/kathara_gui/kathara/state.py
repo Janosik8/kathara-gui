@@ -32,7 +32,14 @@ from Kathara.parser.netkit.LabParser import LabParser
 from kathara_gui.domain.model import Topology
 from kathara_gui.fsutil import write_text_lf
 
-__all__ = ["Captured", "CaptureReport", "capture", "recover_addresses", "parse_ip_addr"]
+__all__ = [
+    "Captured",
+    "CaptureReport",
+    "capture",
+    "live_addresses",
+    "parse_ip_addr",
+    "recover_addresses",
+]
 
 #: Where FRR reads its configuration from inside the container, and therefore
 #: where a captured configuration has to be placed to be restored.
@@ -119,6 +126,33 @@ def parse_ip_addr(output: str) -> dict[int, str]:
         except ValueError:
             continue
         found.setdefault(int(number.group(1)), cidr)
+    return found
+
+
+def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str]]:
+    """Each running device's actual interface addresses, by device name.
+
+    Cheap enough to ask on every status check — measured at about 50ms per
+    container — which is what lets the interface notice a change made inside a
+    container rather than waiting to be told.
+    """
+    lab_dir = Path(lab_dir)
+    if not topology.nodes:
+        return {}
+
+    manager = Kathara.get_instance()
+    try:
+        lab = LabParser.parse(str(lab_dir))
+    except Exception:  # noqa: BLE001 - no lab on disk means nothing is running
+        return {}
+
+    found: dict[str, dict[int, str]] = {}
+    for node in topology.nodes:
+        output, exit_code = _run(manager, lab, node.name, ["ip", "-o", "-4", "addr", "show"])
+        if exit_code == 0:
+            observed = parse_ip_addr(output)
+            if observed:
+                found[node.name] = observed
     return found
 
 

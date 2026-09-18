@@ -262,6 +262,43 @@ export default function App() {
     [choose, connectMode],
   );
 
+  /**
+   * Re-check the running lab as the design changes.
+   *
+   * The drift warning was only ever computed when the user pressed a lab
+   * button, so editing an address after deploying changed nothing on screen —
+   * the very case the warning exists for. Debounced, and only while something
+   * is deployed, so an untouched editor makes no requests at all.
+   *
+   * Affordable because `status` was measured at 50ms: it used to sample CPU
+   * and memory for ten seconds on a five-device lab, which would have made
+   * this unthinkable.
+   */
+  useEffect(() => {
+    if (!labStatus?.deployed) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api
+        .labStatus(topology)
+        .then((result) => {
+          if (!cancelled) setLabStatus(result);
+        })
+        .catch(() => {
+          // A failed refresh must not replace a real status with nothing; the
+          // next edit, or the next deliberate action, will try again.
+        });
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // Deliberately not depending on labStatus: that would re-arm the timer
+    // with every result and poll forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topology, labStatus?.deployed]);
+
   // Validate as the design changes, debounced so a drag does not produce a
   // request per frame. The rules live on the server, so the editor and the
   // exported lab can never disagree about what is wrong.

@@ -8,7 +8,7 @@ so a correct answer looked like a fault.
 
 from __future__ import annotations
 
-from kathara_gui.domain.drift import describe_drift
+from kathara_gui.domain.drift import describe_drift, describe_live_drift
 from kathara_gui.domain.model import Interface, Node, Position, Topology
 
 
@@ -152,3 +152,52 @@ def test_several_changes_are_listed_separately_and_stably() -> None:
     assert any("r2 was removed" in c for c in changes)
     assert any("r3 was added" in c for c in changes)
     assert any("r1 eth0" in c for c in changes)
+
+
+# -- the other direction: the container changed, the canvas did not -----
+
+
+class TestLiveDrift:
+    """Configuring an address inside a container leaves the canvas *and* the
+    deployed snapshot stale in the same way, so they agree with each other and
+    both are wrong. Only reading the container can see it."""
+
+    def test_an_address_changed_inside_a_container_is_reported(self) -> None:
+        deployed = lab(r1="10.0.0.1/24")
+        (change,) = describe_live_drift(deployed, {"r1": {0: "192.168.5.5/24"}})
+
+        assert "192.168.5.5/24" in change, "what the container has"
+        assert "10.0.0.1/24" in change, "what was deployed"
+        assert "running container" in change
+
+    def test_a_canvas_edit_is_not_reported_twice(self) -> None:
+        """Measured against the deployed snapshot precisely so that it is not.
+
+        Comparing the containers with the canvas restated every canvas edit
+        backwards, and the header counted one difference as two.
+        """
+        deployed = lab(r1="10.0.0.1/24")
+        edited_on_canvas = lab(r1="192.168.1.1/24")
+
+        # The container still has what was deployed; only the canvas moved.
+        assert describe_live_drift(deployed, {"r1": {0: "10.0.0.1/24"}}) == []
+        assert len(describe_drift(deployed, edited_on_canvas)) == 1
+
+    def test_agreement_is_silence(self) -> None:
+        assert describe_live_drift(lab(r1="10.0.0.1/24"), {"r1": {0: "10.0.0.1/24"}}) == []
+
+    def test_a_device_that_could_not_be_read_is_not_called_changed(self) -> None:
+        """A stopped container reports nothing; that is not a difference."""
+        assert describe_live_drift(lab(r1="10.0.0.1/24"), {}) == []
+
+    def test_an_interface_that_was_not_read_is_left_alone(self) -> None:
+        assert describe_live_drift(lab(r1="10.0.0.1/24"), {"r1": {1: "10.9.9.9/24"}}) == []
+
+    def test_an_address_appearing_where_the_canvas_has_none_is_reported(self) -> None:
+        (change,) = describe_live_drift(lab(r1=None), {"r1": {0: "10.0.0.1/24"}})
+        assert "unaddressed" in change
+
+    def test_the_order_is_stable(self) -> None:
+        current = lab(r1="10.0.0.1/24", r2="10.0.0.2/24")
+        live = {"r1": {0: "1.1.1.1/24"}, "r2": {0: "2.2.2.2/24"}}
+        assert describe_live_drift(current, live) == describe_live_drift(current, live)

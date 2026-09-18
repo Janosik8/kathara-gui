@@ -16,9 +16,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from kathara_gui.domain.drift import describe_drift
+from kathara_gui.domain.drift import describe_drift, describe_live_drift
 from kathara_gui.domain.model import Topology
-from kathara_gui.kathara import diagnostics, probe, runner
+from kathara_gui.kathara import diagnostics, probe, runner, state
 from kathara_gui.project.session import Session, get_session
 
 router = APIRouter(prefix="/api/lab", tags=["lab"])
@@ -50,6 +50,9 @@ class ConflictsModel(BaseModel):
 class StatusResponse(BaseModel):
     #: How the canvas differs from what is running, one sentence per
     #: difference. Empty when they agree, or when nothing is deployed.
+    #:
+    #: Covers both directions: edits made on the canvas since the lab was
+    #: deployed, and configuration changed inside a container by hand.
     drift: list[str] = []
     devices: list[DeviceStatusModel]
     running: list[str]
@@ -145,10 +148,24 @@ def lab_status(
     stop containers from a terminal at any moment, so the interface polls this
     rather than trusting that its last action still holds.
     """
-    return _status_response(
-        runner.status(request.topology, session.lab_dir(request.topology)),
-        describe_drift(session.deployed_topology, request.topology),
-    )
+    lab_dir = session.lab_dir(request.topology)
+    status = runner.status(request.topology, lab_dir)
+
+    drift = describe_drift(session.deployed_topology, request.topology)
+    if status.running:
+        # Reading the containers costs about 50ms each and catches the
+        # direction the snapshot cannot: an address changed inside a container
+        # leaves the canvas and the snapshot stale in the same way, so they
+        # agree with each other and both are wrong.
+        #
+        # Measured against the deployed snapshot, not the canvas, or every
+        # canvas edit is reported twice — once forwards and once backwards.
+        baseline = session.deployed_topology or request.topology
+        drift += describe_live_drift(
+            baseline, state.live_addresses(request.topology, lab_dir)
+        )
+
+    return _status_response(status, drift)
 
 
 @router.post("/deploy", response_model=StatusResponse)

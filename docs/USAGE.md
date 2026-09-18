@@ -303,6 +303,15 @@ the Laboratory panel lists exactly what now differs:
 > until then, diagnostics describe what is running.
 > - r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab
 
+**It works in both directions.** Editing the canvas after deploying is one; changing an
+address inside a container with `kathara connect` is the other, and it is reported
+separately:
+
+> - r2 eth0 is 10.0.0.77/24 in the running container but was deployed as 10.0.0.2/24
+
+Which to keep is yours to decide: **Deploy** again to make the containers match the canvas,
+or **Capture running state** to bring the containers' configuration back onto it.
+
 **The header changes colour while this is true**, and says how many changes behind the
 running lab is. The panel message was being missed, and the difference changes what every
 other control means — so it is stated where it cannot be scrolled away from. The colour is
