@@ -115,6 +115,8 @@ export default function App() {
   const [panelWidths, setPanelWidths] = useState({ left: 336, right: 304 });
 
   const canConnect = topology.nodes.length >= 2;
+  /** How far the canvas has moved on from what is actually running. */
+  const driftCount = labStatus?.drift.length ?? 0;
 
   useEffect(() => {
     api
@@ -652,7 +654,10 @@ export default function App() {
         Skip to topology
       </a>
 
-      <header className="app__header">
+      {/* The drift warning lives here as well as in the Laboratory panel: it
+          was being missed in the panel, and it changes what every other
+          control in the application means. */}
+      <header className="app__header" data-drift={driftCount > 0 ? "true" : undefined}>
         <h1 className="app__title">
           Kathara GUI
           <LabTitle
@@ -661,6 +666,13 @@ export default function App() {
             onRename={(name) => dispatch({ type: "setLabMetadata", changes: { name } })}
             onAnnounce={setStatus}
           />
+          {driftCount > 0 && (
+            <span className="app__drift">
+              {/* Words, not only a colour, and specific about the count so it
+                  is clear this is a real difference and not a generic nag. */}
+              Deployed lab is {driftCount} change{driftCount === 1 ? "" : "s"} behind
+            </span>
+          )}
           {dirty && (
             <span className="app__dirty" title="Unsaved changes">
               {/* Text, not just a dot: a colour or shape alone is not a status. */}
@@ -708,6 +720,8 @@ export default function App() {
             onResize={(left) => setPanelWidths((w) => ({ ...w, left }))}
           />
 
+          <div className="panel__scroll">
+
           <Palette topology={topology} onAdd={addDevice} />
 
           <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
@@ -732,6 +746,7 @@ export default function App() {
             onRemove={(name) => dispatch({ type: "removeNode", name })}
             onDisconnect={(node, number) => dispatch({ type: "disconnect", node, number })}
           />
+          </div>
         </aside>
 
         <main className="app__canvas">
@@ -766,6 +781,8 @@ export default function App() {
             label="Width of the details panel"
             onResize={(right) => setPanelWidths((w) => ({ ...w, right }))}
           />
+
+          <div className="panel__scroll">
 
           <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
           <AddressingPanel
@@ -822,6 +839,7 @@ export default function App() {
             }}
             onAnnounce={setNotice}
           />
+          </div>
         </aside>
       </div>
 

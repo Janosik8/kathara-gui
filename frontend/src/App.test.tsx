@@ -1260,6 +1260,40 @@ describe("when the canvas has drifted from the running lab", () => {
     conflicts: null,
   };
 
+  it("turns the header so the difference cannot be missed", async () => {
+    // Reported twice: the panel warning was not being seen. A colour alone is
+    // not a status, so the header carries the words too.
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/Deployed lab is 1 change behind/)).toBeInTheDocument();
+    expect(document.querySelector('.app__header[data-drift="true"]')).not.toBeNull();
+  });
+
+  it("counts the differences, rather than nagging generically", async () => {
+    deploy.mockResolvedValue({
+      ...drifted,
+      drift: ["r1 eth0 differs", "r2 was added and is not running"],
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(await screen.findByText(/2 changes behind/)).toBeInTheDocument();
+  });
+
+  it("leaves the header alone when the two agree", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() =>
+      expect(document.querySelector('.app__header[data-drift="true"]')).toBeNull(),
+    );
+  });
+
   it("says the two no longer match", async () => {
     deploy.mockResolvedValue(drifted);
     const user = await renderApp();

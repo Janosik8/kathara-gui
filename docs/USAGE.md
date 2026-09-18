@@ -145,8 +145,8 @@ it rather than pushing the canvas off the side.
 
 The breakpoint is in `rem`, so enlarging the text alone reflows too, not only zooming.
 
-**The side panels can be resized.** Drag the divider on a panel's inner edge, or focus it
-with `Tab` and use the arrow keys — `Home` and `End` jump to the narrowest and widest, and a
+**The side panels can be resized.** Drag the divider running the full height of a panel's
+inner edge, or focus it with `Tab` and use the arrow keys — `Home` and `End` jump to the narrowest and widest, and a
 double click returns it to the middle. Arrow keys mean a direction on screen rather than
 "wider", so they agree with the drag: `←` widens the right-hand panel and narrows the left.
 
@@ -302,6 +302,11 @@ the Laboratory panel lists exactly what now differs:
 > **The canvas no longer matches the running lab.** Deploy again to apply these changes;
 > until then, diagnostics describe what is running.
 > - r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab
+
+**The header changes colour while this is true**, and says how many changes behind the
+running lab is. The panel message was being missed, and the difference changes what every
+other control means — so it is stated where it cannot be scrolled away from. The colour is
+backed by words, because a colour alone is not a status.
 
 This matters most for **Verify links**, which pings real containers and can therefore only
 report the lab as deployed. Changing an address on the canvas and verifying gives results

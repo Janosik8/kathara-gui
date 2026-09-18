@@ -220,3 +220,38 @@ def test_the_resizer_disappears_once_the_layout_has_stacked() -> None:
     trade — a divider there would adjust nothing."""
     stacked = at_rule_bodies("@media (max-width: 60rem)")
     assert ".panel-resizer" in stacked and "display: none" in stacked
+
+
+# -- the divider must stay reachable ------------------------------------
+
+
+def test_the_panel_itself_does_not_scroll() -> None:
+    """Reported: the divider vanished once the panel was scrolled down.
+
+    An absolutely positioned element inside a scrolling box scrolls away with
+    the content. Splitting the panel into a fixed shell and an inner scrolling
+    wrapper keeps the divider pinned to the panel's edge at any scroll offset.
+    """
+    assert declaration(".panel", "overflow") == "hidden"
+    assert declaration(".panel", "display") == "flex"
+
+
+def test_the_inner_wrapper_is_what_scrolls() -> None:
+    assert declaration(".panel__scroll", "overflow-y") == "auto"
+    assert declaration(".panel__scroll", "min-height") == "0", (
+        "a flex child without min-height: 0 will not shrink, and scrolls the page instead"
+    )
+
+
+def test_the_scrollbar_does_not_land_on_the_controls() -> None:
+    """Reported: narrowing a panel put the scrollbar over the controls at its
+    right-hand edge. Overlay scrollbars take no space until they appear, so the
+    space has to be reserved up front."""
+    assert declaration(".panel__scroll", "scrollbar-gutter") == "stable"
+
+
+def test_the_inner_wrapper_stops_scrolling_once_stacked() -> None:
+    """Stacked, the page scrolls as one; a panel scrolling inside a scrolling
+    page is the nested-scroll trap."""
+    stacked = at_rule_bodies("@media (max-width: 60rem)")
+    assert ".panel__scroll" in stacked

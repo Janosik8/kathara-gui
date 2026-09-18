@@ -38,6 +38,10 @@
   --bg-panel-devices: #ece2f8;
   --bg-panel-lab: #faecd2;
   --device: #6b3fa0;
+  /* The header when the canvas and the running lab have parted company. Loud
+     on purpose — the warning in the side panel was being missed — but it still
+     carries words, because a colour alone is not a status (ACC-03). */
+  --bg-header-drift: #ffcf85;
   --focus: #0b5cad;
 
   --radius: 6px;
@@ -64,6 +68,7 @@
     --bg-panel-devices: #2a2140;
     --bg-panel-lab: #302616;
     --device: #c9a7f5;
+    --bg-header-drift: #5a3d00;
     --focus: #6fb3ff;
     --minimap-mask: rgba(0, 0, 0, 0.5);
   }
@@ -130,6 +135,12 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* Impossible to miss, and still readable: 12.3:1 in light, 8.8:1 in dark. */
+.app__header[data-drift="true"] {
+  background: var(--bg-header-drift);
+  border-bottom: 3px solid var(--warning);
 }
 
 .app__header {
@@ -256,10 +267,24 @@ button:disabled {
   min-width: 13rem;
   flex-shrink: 1;
   position: relative; /* the resizer sits on this panel's edge */
-  padding: 12px;
   border-right: 1px solid var(--border);
   background: var(--bg-panel);
+  /* The panel itself does not scroll — its inner wrapper does. An absolutely
+     positioned resizer inside a scrolling box scrolls away with the content,
+     so the divider vanished as soon as the panel was scrolled down. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel__scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: 12px;
+  /* Reserve the scrollbar's width even when it is an overlay, so appearing it
+     cannot land on top of the controls at the right-hand edge. */
+  scrollbar-gutter: stable;
 }
 
 .panel__heading {
@@ -516,6 +541,10 @@ button:disabled {
     border-right: none;
     border-left: none;
     border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+
+  .panel__scroll {
     overflow-y: visible;
   }
 
@@ -990,6 +1019,16 @@ select {
   border-radius: var(--radius);
   background: var(--bg-raised);
   color: var(--fg);
+}
+
+/* The words that carry the meaning when the colour cannot — a monochrome
+   display, or anyone who does not read the hue as alarming. */
+.app__drift {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 2px solid var(--fg);
+  border-radius: var(--radius);
 }
 
 .app__rename-refused {

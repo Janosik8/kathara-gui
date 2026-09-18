@@ -111,6 +111,9 @@ TEXT_PAIRS = [
     ("accent text", "--accent", "--bg"),
     ("error text on a panel", "--danger", "--bg-panel"),
     ("warning text on a panel", "--warning", "--bg-panel"),
+    # The header turns loud when the canvas has drifted from the running lab.
+    # Loud is no use if it stops the title being readable.
+    ("the title on a drifted header", "--fg", "--bg-header-drift"),
     # The two working areas have surfaces of their own, so every pairing that
     # text actually lands on has to be checked, not just the generic panel.
     ("the device block's accent as text", "--device", "--bg-panel-devices"),
@@ -192,6 +195,14 @@ def test_a_block_does_not_vanish_into_the_panel_behind_it(
         f"{theme}: {block} is only {distance} from --bg-panel and reads as the "
         "same surface"
     )
+
+
+def test_the_drifted_header_is_unmistakably_not_the_normal_one() -> None:
+    """The point of the colour. The side-panel warning was being missed, so
+    this one has to register without being looked for."""
+    for theme, palette in THEMES:
+        distance = channel_distance(palette["--bg-header-drift"], palette["--bg-panel"])
+        assert distance >= 60, f"{theme}: the drifted header barely differs ({distance})"
 
 
 def test_the_device_and_laboratory_blocks_are_different_colours() -> None:
