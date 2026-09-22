@@ -1,0 +1,16 @@
+# Keep the working tree LF on every platform.
+#
+# This project generates shell scripts and configuration that run inside Linux
+# containers regardless of the host, and writes them through
+# `fsutil.write_text_lf` for exactly that reason. Letting Git hand a Windows
+# checkout CRLF versions of the sources would undo that care at the other end,
+# and would fill every diff with line-ending churn the moment the project is
+# edited on two machines.
+* text=auto eol=lf
+
+# Binary, so Git must not touch them at all.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.kgui binary
