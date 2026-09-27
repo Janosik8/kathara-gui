@@ -73,9 +73,10 @@ kathara-gui
 
 Your browser opens automatically. To stop the server, press Ctrl+C.
 
-Deploying writes each lab to `./kathara-labs/<name>`, beside wherever you started the
-command, and the path is printed at startup — so `cd` into it and `kathara connect r1`
-works from a terminal.
+Deploying writes each lab to `./kathara-labs/<name>`, next to wherever you started the
+command; the path is printed at startup. To open a shell on a running device, choose it in
+the Laboratory panel and copy the `docker exec` command there. It works in any terminal and
+doesn't need Kathará's own command-line tool.
 
 ```
 kathara-gui --help              # options
@@ -87,7 +88,8 @@ kathara-gui --workspace ~/labs  # where deployed labs are written
 ## Development
 
 ```
-git clone https://github.com/<user>/kathara-gui && cd kathara-gui
+git clone https://github.com/<user>/kathara-gui
+cd kathara-gui
 uv sync
 uv run kathara-gui --no-browser
 ```
@@ -98,6 +100,9 @@ Frontend (only needed when working on the UI — releases ship it pre-built):
 npm --prefix frontend ci
 npm --prefix frontend run build
 ```
+
+In PowerShell on Windows, type `npm.cmd` instead of `npm`: the default execution policy
+blocks `npm.ps1`. See `docs/USAGE.md` §2.
 
 ### Tests
 

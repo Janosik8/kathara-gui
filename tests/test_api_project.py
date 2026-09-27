@@ -539,3 +539,49 @@ def test_state_reports_the_folder_once_saved(client: TestClient) -> None:
 
     assert body["folder"].endswith("ospf-triangle")
     assert body["dirty"] is False
+
+
+# -- capture as adoption ------------------------------------------------
+
+
+def test_a_capture_becomes_what_the_lab_is_compared_against(
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bug 20: capturing reported itself as a difference.
+
+    An address changed inside a container, then captured, left the snapshot of
+    what was deployed holding the old address — so the header announced a
+    mismatch immediately after the user had asked to adopt the containers'
+    state. Capturing is adopting, so the capture becomes the new baseline.
+    """
+    from kathara_gui.domain.model import Topology
+    from kathara_gui.kathara import state
+
+    save(client)
+    deployed = Topology.model_validate(TRIANGLE)
+    session.mark_deployed(deployed)
+
+    changed = deployed.model_copy(deep=True)
+    changed.nodes[0].interfaces[0].ip = "10.0.0.11/24"
+    monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
+    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder: changed)
+
+    response = client.post("/api/project/capture", json={"topology": TRIANGLE})
+    assert response.status_code == 200, response.text
+
+    baseline = session.deployed_topology
+    assert baseline is not None
+    assert baseline.nodes[0].interfaces[0].ip == "10.0.0.11/24"
+
+
+def test_a_capture_with_nothing_deployed_invents_no_baseline(
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kathara_gui.kathara import state
+
+    save(client)
+    monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
+    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder: topology)
+
+    client.post("/api/project/capture", json={"topology": TRIANGLE})
+    assert session.deployed_topology is None

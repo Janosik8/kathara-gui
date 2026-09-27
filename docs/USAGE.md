@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-09-09 (Phases 0–3 complete; Phase 4 mostly done)
+- **Last updated:** 2026-09-27 (Phases 0–3 complete; 4–6 mostly done; first Windows run)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -32,9 +32,30 @@ The UI is gitignored, so build it once before the first run and again after any
 frontend change:
 
 ```bash
-cd frontend && npm install && npm run build && cd ..
+npm --prefix frontend ci
+npm --prefix frontend run build
 uv run kathara-gui
 ```
+
+One command per line, and `--prefix` instead of `cd frontend`, so the same lines work in
+PowerShell, Command Prompt and a Unix shell. Windows PowerShell 5.1, the default on
+Windows 10 and 11, has no `&&` and rejects `cd frontend && npm install` outright (bug 21).
+
+**In PowerShell on Windows, type `npm.cmd` where these say `npm`:**
+
+```powershell
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+uv run kathara-gui
+```
+
+Windows ships with PowerShell's execution policy set to *Restricted*, and Node installs
+`npm` as a PowerShell script (`npm.ps1`), so plain `npm` fails with "npm.ps1 cannot be
+loaded because running scripts is disabled on this system". `npm.cmd` is the same program
+without the script wrapper, and needs no change to your security settings. If you'd rather
+type `npm`, allow locally created scripts once, for your account only:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Command Prompt and Unix shells are
+not affected, and `uv` isn't either, because it's a real executable.
 
 Your browser opens automatically. The terminal prints a URL containing a session token:
 
@@ -72,13 +93,15 @@ one origin and the `Origin` check behaves exactly as in production.
 uv run kathara-gui --no-browser --port 8000
 
 # terminal 2
-cd frontend && npm run dev
+npm --prefix frontend run dev
 ```
 
 Open the Vite URL (usually `http://localhost:5173`) but **append the token** from terminal 1:
 `http://localhost:5173/?token=<token>`. Without it every API call returns 401.
 
-Point the proxy elsewhere with `KGUI_BACKEND=http://127.0.0.1:9000 npm run dev`.
+Point the proxy elsewhere with `KGUI_BACKEND=http://127.0.0.1:9000 npm run dev` in a Unix
+shell, or `$env:KGUI_BACKEND="http://127.0.0.1:9000"; npm --prefix frontend run dev` in
+PowerShell.
 
 ### Installed as a tool
 
@@ -92,9 +115,9 @@ uv tool uninstall kathara-gui
 
 ## 3. What you can do in the UI today
 
-The editor, addressing and deployment all work. What is still missing is the in-app
-terminal, saving to a project file, and pulling configuration back out of running
-containers — see [PLAN.md](../PLAN.md).
+The editor, addressing, deployment, verification, saving and capturing running
+configuration all work. What is still missing is listed under *Not built yet* below and in
+[PLAN.md](../PLAN.md).
 
 | Action | How |
 |---|---|
@@ -122,7 +145,14 @@ containers — see [PLAN.md](../PLAN.md).
 | Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
 | Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
 | Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. |
-| Save | **Save** sends the topology to the backend. |
+| Save | **Save** writes the scenario folder in the workspace: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name. |
+| Open, export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
+| Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
+| Verify links | **Laboratory** → **Verify links**: pings across every link. |
+| See what changed inside the containers | **Laboratory** → **Check for changes**. |
+| Keep what changed inside the containers | **Scenario** → **Capture running state**. |
+| Open a shell on a device | **Laboratory** → choose the device → **Copy command**, then paste it into any terminal. |
+| Stop the lab | **Laboratory** → **Stop**, then choose whether to capture first or discard. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
 
@@ -295,35 +325,54 @@ stays a router, and the inspector changes it.
 **It is laid out for you.** A foreign lab has no coordinates, so every device would arrive
 on the same spot. See below.
 
-### When the canvas and the running lab disagree
+### While the lab is running, the design is read-only
 
-Deploying takes a snapshot. Edit anything afterwards — an address, a link, a device — and
-the Laboratory panel lists exactly what now differs:
+Once a lab is deployed the header says **Lab running — design is read-only**, and every
+editing control is disabled: adding, deleting, linking, moving, the inspector, addressing,
+arranging, undo, Open and Import. You can still select devices and read their settings, on
+the canvas and in the tree. Anything that tries to edit anyway, such as a keyboard
+shortcut, is refused and says why.
 
-> **The canvas no longer matches the running lab.** Deploy again to apply these changes;
-> until then, diagnostics describe what is running.
-> - r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab
+The reason is that there are two places the network can change, the canvas and the
+containers, and when both can change at once there's no simple answer to "which one is
+right?". Locking the canvas leaves only one direction: things you change inside the
+containers with `kathara connect`.
 
-**It works in both directions.** Editing the canvas after deploying is one; changing an
-address inside a container with `kathara connect` is the other, and it is reported
-separately:
+**To bring those changes onto the canvas**, press **Capture running state**. Routing
+configuration goes to each router's `frr.conf` and interface addresses onto the canvas, and
+the captured state becomes what the running lab is compared against.
 
+**To find out whether anything has changed inside the containers**, press **Check for
+changes** in the Laboratory panel. It only looks when you ask; nothing polls in the
+background, so an idle editor puts no load on the machine running the lab. What differs is
+listed in words:
+
+> **The running lab no longer matches the canvas.** Capture running state to keep these
+> changes, or stop the lab and discard them.
 > - r2 eth0 is 10.0.0.77/24 in the running container but was deployed as 10.0.0.2/24
 
-Which to keep is yours to decide: **Deploy** again to make the containers match the canvas,
-or **Capture running state** to bring the containers' configuration back onto it.
+While there's a difference, the header also changes colour and says how many places differ,
+so it can't be scrolled out of sight. The colour always comes with words, because colour
+alone doesn't convey a status.
 
-**The header changes colour while this is true**, and says how many changes behind the
-running lab is. The panel message was being missed, and the difference changes what every
-other control means — so it is stated where it cannot be scrolled away from. The colour is
-backed by words, because a colour alone is not a status.
+**To edit the design, stop the lab.** **Stop** asks what to do with anything changed inside
+the containers:
 
-This matters most for **Verify links**, which pings real containers and can therefore only
-report the lab as deployed. Changing an address on the canvas and verifying gives results
-about the *old* address — correctly, but confusingly, which is why the panel now says so
-both at the top and beside the results.
+- **Capture, then stop** keeps it. If the capture fails, nothing is stopped and nothing is
+  lost.
+- **Stop and discard container changes** drops it. The canvas stays as it was at the last
+  deploy or capture.
+- **Keep running** changes nothing.
 
-Moving a device on the canvas is not counted: it changes the picture, not the network.
+If every container has already exited there's nothing to capture from, so Stop just clears
+them without asking.
+
+A page reloaded while its lab is running comes back locked, because the containers keep
+running after the browser tab closes.
+
+**Verify links** pings the real containers, so it always reports the lab as it is running.
+If you changed something inside a container and haven't captured it, the results describe
+that changed state, and the panel says so next to them.
 
 ### Tidying the layout
 
@@ -378,7 +427,7 @@ outside has no such settings, so everything is on.
 
 ### Not built yet
 
-- **In-app terminal.** Use `kathara connect` in a real terminal for now — see §4.
+- **In-app terminal.** Copy the shell command from the Laboratory panel into a terminal for now — see §4.
 - **Variants** of a scenario (exam groups), **PDF manuals**, and a **built-in lab library**.
 - **Setting exam-mode toggles.** The server enforces them and they are stored in the scenario folder,
   but there is no interface for an instructor to change them, so a new scenario has
@@ -390,21 +439,38 @@ See [PLAN.md](../PLAN.md).
 
 ## 4. Verifying a topology outside the UI
 
-Until the Deploy button exists (Phase 4), check your work through the API and the Kathará
-CLI. Export the generated `lab.conf`:
+Everything here can be done in the interface. The API is for scripting it. Use the port
+and token printed at startup. Export the generated `lab.conf`:
 
 ```bash
+# Unix shell
 TOKEN=<token from startup>
 curl -s -H "X-KGUI-Token: $TOKEN" http://127.0.0.1:8150/api/topology/export \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["text"])'
 ```
 
+```powershell
+# PowerShell. In Windows PowerShell 5.1, `curl` is an alias for Invoke-WebRequest and
+# does not take curl's options, so use Invoke-RestMethod.
+$h = @{ "X-KGUI-Token" = "<token from startup>" }
+(Invoke-RestMethod -Headers $h http://127.0.0.1:8150/api/topology/export).text
+```
+
 Import a hand-written lab:
 
 ```bash
+# Unix shell
 curl -s -X POST -H "X-KGUI-Token: $TOKEN" -H "Content-Type: application/json" \
   --data "$(python3 -c 'import json;print(json.dumps({"text":open("lab.conf").read()}))')" \
   http://127.0.0.1:8150/api/topology/import
+```
+
+```powershell
+# PowerShell. The [string] matters: Windows PowerShell 5.1's Get-Content attaches
+# hidden properties that ConvertTo-Json would send too, and the server refuses them.
+$body = @{ text = [string](Get-Content -Raw lab.conf) } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Headers $h -ContentType "application/json" `
+  -Body $body http://127.0.0.1:8150/api/topology/import
 ```
 
 ### Redeploying
@@ -413,7 +479,9 @@ Pressing **Deploy** while a lab is already running **replaces** it: the old cont
 stopped and new ones started from the current design. The button says **Redeploy** to make
 that clear, and anything changed inside a container is lost — export first if you need it.
 
-This is the normal working loop. Edit the topology, press Redeploy, look again.
+The working loop is: stop (capturing if you want to keep what you configured), edit,
+deploy, look again. The design can't be edited while the lab runs; see *While the lab is
+running, the design is read-only* above.
 
 **Kathará identifies a lab by its name, not its folder.** `Lab.hash` is derived from
 `LAB_NAME`, so two labs both called `untitled` in different directories are *the same lab*
@@ -428,18 +496,33 @@ in your topology, another lab is probably using the name, and the warning says s
 
 ### Getting a shell on a running device
 
-Deploying writes the lab to `./kathara-labs/<name>` — beside wherever you started
-`kathara-gui`, and printed at startup. The Laboratory panel shows the exact path and a
-copy-able command once a lab is running.
+Deploying writes the lab to `./kathara-labs/<name>`, next to wherever you started
+`kathara-gui`; the path is printed at startup. Once a lab is running, the Laboratory panel
+shows that path, lets you choose a device, and gives a command you can copy:
 
-```bash
-cd kathara-labs/untitled
-kathara connect r1
+```
+docker exec -it kathara_<user>_r1_<hash> bash
 ```
 
-**The `cd` matters.** Kathará identifies a lab by its directory, so `kathara connect r1`
-from anywhere else fails with `MachineNotRunningError` even while `kathara list` shows the
-device running.
+This works in **any terminal** (PowerShell, Command Prompt, or a Unix shell) from any
+directory, and needs nothing installed except Docker, which you already have. The panel
+fills in the real container name.
+
+If you have Kathará's own command-line tool, the panel also shows the equivalent:
+
+```
+kathara connect -d "C:\path\to\kathara-labs\untitled" r1
+```
+
+`-d` names the lab directory. Kathará identifies a lab by its directory, so `kathara
+connect r1` run from anywhere else fails with `MachineNotRunningError`, even while `kathara
+list` shows the device running.
+
+**On Windows, the Kathará CLI is a separate install** (from kathara.org), and without it
+`kathara` is "not recognized as an internal or external command". The panel used to
+suggest `cd <dir> && kathara connect r1`, which failed on Windows in three ways: no CLI,
+no `&&` in Windows PowerShell 5.1, and `cd` in `cmd` doesn't switch drives. That is why it
+now leads with `docker exec`.
 
 Use `--workspace DIR` to put labs somewhere else.
 
@@ -464,7 +547,8 @@ capture the configuration next time before you stop for the day.
 ### Running an exported lab by hand
 
 ```bash
-mkdir mylab && cd mylab
+mkdir mylab
+cd mylab
 # paste the exported lab.conf here
 kathara lstart
 kathara list
@@ -536,9 +620,15 @@ npm run build        # build into ../src/kathara_gui/static/
 Run everything the way CI does:
 
 ```bash
-uv run ruff check . && uv run pytest -q \
-  && (cd frontend && npm run lint && npm test && npm run build)
+uv run ruff check .
+uv run pytest -q
+npm --prefix frontend run lint
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
+
+Run them in order and stop at the first failure. They're not chained with `&&` because
+Windows PowerShell 5.1 can't parse it.
 
 ### Layout
 
@@ -563,7 +653,7 @@ scripts/              the integration spike
 **`npm error EACCES ... _cacache`** — the npm cache is unwritable. Use another:
 `NPM_CONFIG_CACHE=./.npm-cache npm install`
 
-**Blank page, or 404 at the root** — the UI has not been built. `cd frontend && npm run build`
+**Blank page, or 404 at the root** — the UI has not been built. `npm --prefix frontend run build`
 
 **Every API call returns 401** — the token is missing. Use the full URL printed at startup,
 including `?token=…`. It is stored per browser tab, so a new tab needs the URL again.
@@ -573,6 +663,14 @@ origin than the backend. In dev, use the Vite URL and let the proxy handle `/api
 
 **`docker info` fails** — start Docker Desktop and wait for it to report running.
 
+**"npm.ps1 cannot be loaded because running scripts is disabled on this system"** —
+PowerShell's default execution policy on Windows. Type `npm.cmd` instead of `npm`, or run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. See §2.
+
+**A traceback after Ctrl+C** (`KeyboardInterrupt`, then `CancelledError`) — fixed. It was
+a clean stop that looked like a crash: on Windows, Ctrl+C reaches the server twice. The
+application now just prints "Kathara GUI stopped."
+
 **Port already in use** — omit `--port` and an unused one is chosen for you.
 
 **Kathará on Windows** — Docker Desktop ≥ 2.5 with the **WSL2** backend, **Linux containers
@@ -580,6 +678,35 @@ only** ("Use Windows Containers" must be off), and the drive holding your labs s
 Docker settings. The Kathará CLI works in PowerShell, not `cmd`.
 
 **Containers left running** — `kathara wipe` removes all of them.
+
+**The disk filled up, and now nothing works even with space free** — found on the Windows
+machine (F18). When the disk holding Docker Desktop's data fills, Docker's storage goes
+read-only and Docker Desktop stops with "unable to start". Freeing space brings it back,
+but **images that were being written at the time stay damaged**: files inside them are
+truncated to zero bytes. The symptom is containers that deploy but fail every command, with
+
+```
+exec /usr/sbin/ip: exec format error
+```
+
+Check with:
+
+```bash
+docker run --rm --entrypoint ls kathara/base -la /usr/sbin/ip /usr/bin/ping
+```
+
+A size of `0` means the local copy is damaged. The published image is fine: upstream, `ip`
+is 760 KB and `ping` 90 KB. **Pulling again does not fix it, and neither does `docker
+system prune -a`**: with the containerd image store Docker keeps the already-unpacked
+layers and reuses them, and the pull reports "Download complete" without downloading
+anything. What worked was Docker Desktop → Troubleshoot → **Reset to factory defaults**,
+which also resets Docker's settings. **Clean / Purge data** did not recreate the data disk
+on the machine where this was found. Either way, afterwards check that `docker_data.vhdx`
+under `%LOCALAPPDATA%\Docker\wsl\disk` has a new creation time; if it doesn't, the damaged
+layers are still there.
+
+To keep Docker away from a full system drive, move its disk image to another drive:
+Settings → Resources → Advanced → **Disk image location**.
 
 **Every device shows "Exited" after a break** — Docker stopped them; the containers are
 still there but nothing is running inside. Press **Deploy** and confirm. See *When a device
@@ -599,7 +726,7 @@ Capability 6 is graded, so this is part of the deliverable rather than optional 
 Automated, on every commit:
 
 ```bash
-cd frontend && npm test        # axe-core audits over tree, panels and the whole app
+npm --prefix frontend test     # axe-core audits over tree, panels and the whole app
 ```
 
 ```bash
@@ -617,7 +744,8 @@ Manual:
 - **VoiceOver** (macOS) — Cmd+F5. Navigate the tree; every device and interface should
   announce its kind, addresses and neighbours.
 - **NVDA** (Windows, free) — the screen reader most desktop users actually use, and it
-  interprets ARIA differently from VoiceOver. Needs the Windows VM.
+  interprets ARIA differently from VoiceOver. Step by step in §6 of
+  [TEST-PROCEDURE-WINDOWS.md](TEST-PROCEDURE-WINDOWS.md).
 - **Zoom to 200%** — layout must not break or overlap.
 - **Dark mode and increased contrast** — both follow the OS setting.
 - **Reduced motion** — animations are suppressed when the OS asks.

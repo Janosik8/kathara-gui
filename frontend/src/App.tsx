@@ -25,8 +25,15 @@ import { PanelResizer } from "./panels/PanelResizer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
+import type { Operation } from "./store/operations";
 import { useTopologyStore } from "./store/topology";
-import { type DeviceKind, type PendingEnd, newNode, suggestCollisionDomain } from "./types";
+import {
+  type DeviceKind,
+  type PendingEnd,
+  type Topology,
+  newNode,
+  suggestCollisionDomain,
+} from "./types";
 
 /** Lay new devices out on a loose grid rather than stacking them at the origin. */
 function placeNew(count: number) {
@@ -51,6 +58,9 @@ function isTreeItem(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && target.getAttribute("role") === "treeitem";
 }
 
+/** Said whenever an edit is refused because the lab is deployed. */
+const LOCKED_NOTICE = "The lab is running, so the design is read-only. Stop the lab to edit it.";
+
 /** Narrower than this and the panel's own controls stop fitting. */
 const PANEL_MIN = 208;
 /** Wider than this and the canvas is the thing being squeezed out. */
@@ -74,13 +84,23 @@ export default function App() {
 
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedLink, setSelectedLink] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
 
   // Connect mode: click one device, then another, and a link appears — the
   // interaction people expect from a topology editor.
   const [connectMode, setConnectMode] = useState(false);
   const [pending, setPending] = useState<PendingEnd | null>(null);
+
+  /**
+   * The latest thing worth saying that is not an edit's own description.
+   *
+   * One channel, not two. There used to be a `status` beside this, announced
+   * as `notice ?? status`, so once any notice had been set — every deploy and
+   * stop sets one — a failed save or capture was never heard at all. A
+   * standing notice likewise masked every edit's description after it; a
+   * successful edit now clears it (see `edit`).
+   */
   const [notice, setNotice] = useState<string | null>(null);
+  const setStatus = setNotice;
 
   // Addressing. Feature flags start permissive and are switched off when the
   // server refuses, so a withdrawn feature disappears rather than erroring
@@ -115,13 +135,66 @@ export default function App() {
   const [panelWidths, setPanelWidths] = useState({ left: 336, right: 304 });
 
   const canConnect = topology.nodes.length >= 2;
-  /** How far the canvas has moved on from what is actually running. */
+  /** How far the running lab has moved on from the canvas. */
   const driftCount = labStatus?.drift.length ?? 0;
+
+  /**
+   * The design is read-only while its lab is deployed (D9).
+   *
+   * Two sources of truth that can both change — the canvas and the containers
+   * — can drift in both directions at once, and no amount of warning makes
+   * that easy to reason about. Locking the canvas leaves one direction: the
+   * containers. Capture brings their state onto the canvas; stopping asks
+   * whether to keep it. `deployed`, not `running`, so exited containers,
+   * which still hold their names, keep the design locked too.
+   */
+  const locked = labStatus?.deployed ?? false;
+
+  /**
+   * Every edit goes through here, so no control — button, shortcut, drag or
+   * tree key — can change a deployed design, including ones added later.
+   */
+  const edit = useCallback(
+    (op: Operation): boolean => {
+      if (locked) {
+        setNotice(LOCKED_NOTICE);
+        return false;
+      }
+      const applied = dispatch(op);
+      // Let the edit's own description be heard over whatever was said last.
+      if (applied) setNotice(null);
+      return applied;
+    },
+    [dispatch, locked],
+  );
+
+  const undoEdit = useCallback(() => {
+    if (locked) return setNotice(LOCKED_NOTICE);
+    setNotice(null);
+    undo();
+  }, [locked, undo]);
+
+  const redoEdit = useCallback(() => {
+    if (locked) return setNotice(LOCKED_NOTICE);
+    setNotice(null);
+    redo();
+  }, [locked, redo]);
 
   useEffect(() => {
     api
       .read()
-      .then((state) => load(state.topology))
+      .then(async (state) => {
+        load(state.topology);
+        // A page reloaded while its lab runs must come back locked, not
+        // editable: the containers outlive the tab.
+        if (state.topology.nodes.length === 0) return;
+        try {
+          const result = await api.labStatus(state.topology);
+          if (result.deployed) setLabStatus(result);
+        } catch {
+          // No daemon, or no answer: treat as not deployed, as the probe will.
+        }
+      })
       .catch((err) => setStatus(err instanceof ApiError ? err.message : String(err)));
   }, [load]);
 
@@ -195,7 +268,7 @@ export default function App() {
       setNotice(null);
 
       if (first.kind === "device" && second.kind === "device") {
-        dispatch({
+        edit({
           type: "link",
           a: first.name,
           b: second.name,
@@ -204,12 +277,12 @@ export default function App() {
       } else {
         const device = first.kind === "device" ? first : second;
         const domain = first.kind === "domain" ? first : second;
-        dispatch({ type: "connect", node: device.name, collisionDomain: domain.name });
+        edit({ type: "connect", node: device.name, collisionDomain: domain.name });
       }
       // Stay in mode so several links can be drawn in a row.
       setPending(null);
     },
-    [dispatch, topology],
+    [edit, topology],
   );
 
   const choose = useCallback(
@@ -263,41 +336,33 @@ export default function App() {
   );
 
   /**
-   * Re-check the running lab as the design changes.
+   * Ask the containers whether anything has changed inside them.
    *
-   * The drift warning was only ever computed when the user pressed a lab
-   * button, so editing an address after deploying changed nothing on screen —
-   * the very case the warning exists for. Debounced, and only while something
-   * is deployed, so an untouched editor makes no requests at all.
+   * On request, not on a timer. With the design locked the canvas cannot
+   * drift, so the only thing to find is a change made from a terminal — and
+   * polling for that every few seconds would load the very host running the
+   * simulation (NFR-11) to answer a question nobody has asked yet.
    *
-   * Affordable because `status` was measured at 50ms: it used to sample CPU
-   * and memory for ten seconds on a five-device lab, which would have made
-   * this unthinkable.
+   * This replaces a debounced re-check on every edit, which existed for the
+   * canvas-side direction that the lock has removed.
    */
-  useEffect(() => {
-    if (!labStatus?.deployed) return;
-
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      api
-        .labStatus(topology)
-        .then((result) => {
-          if (!cancelled) setLabStatus(result);
-        })
-        .catch(() => {
-          // A failed refresh must not replace a real status with nothing; the
-          // next edit, or the next deliberate action, will try again.
-        });
-    }, 600);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-    // Deliberately not depending on labStatus: that would re-arm the timer
-    // with every result and poll forever.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topology, labStatus?.deployed]);
+  const checkLab = useCallback(async () => {
+    setLabBusy("check");
+    try {
+      const result = await api.labStatus(topology);
+      setLabStatus(result);
+      setNotice(
+        result.drift.length === 0
+          ? "No changes found inside the containers."
+          : `Found ${result.drift.length} change${result.drift.length === 1 ? "" : "s"} ` +
+              "inside the containers.",
+      );
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLabBusy(null);
+    }
+  }, [topology]);
 
   // Validate as the design changes, debounced so a drag does not produce a
   // request per frame. The rules live on the server, so the editor and the
@@ -343,7 +408,7 @@ export default function App() {
         // Send the document we hold: the saved session may be far behind.
         const result = await api.allocateAddressing({ topology, overwrite, pool, prefix });
         // One operation, so the whole allocation undoes in one step.
-        dispatch({ type: "replaceTopology", topology: result.topology });
+        edit({ type: "replaceTopology", topology: result.topology });
         setNotice(
           result.changed
             ? `Assigned ${Object.keys(result.assigned_addresses).length} addresses across ` +
@@ -364,7 +429,7 @@ export default function App() {
         setAllocating(false);
       }
     },
-    [dispatch, topology],
+    [edit, topology],
   );
 
   // Check the environment once at startup, and learn which features the
@@ -385,16 +450,22 @@ export default function App() {
   }, []);
 
   const runLabAction = useCallback(
-    async (action: "deploy" | "undeploy" | "verify", confirm = false) => {
+    async (
+      action: "deploy" | "undeploy" | "verify",
+      confirm = false,
+      // A capture replaces the topology moments before "Capture, then stop"
+      // stops the lab, so that caller passes the fresh one explicitly.
+      subject: Topology = topology,
+    ) => {
       setLabBusy(action);
       try {
         if (action === "verify") {
-          setDiagnostics(await api.verify(topology));
+          setDiagnostics(await api.verify(subject));
         } else {
           const result =
             action === "deploy"
-              ? await api.deploy(topology, confirm)
-              : await api.undeploy(topology);
+              ? await api.deploy(subject, confirm)
+              : await api.undeploy(subject);
 
           if (result.needs_confirmation) {
             // Nothing was changed, so the last known status still holds.
@@ -407,10 +478,15 @@ export default function App() {
           setLabStatus(result);
           // A previous run's results describe a lab that is no longer there.
           setDiagnostics(null);
+          // Connect mode is an editing mode, and the design is now locked.
+          if (result.deployed) leaveConnectMode(false);
           setNotice(
             action === "deploy"
-              ? `Deployed ${result.running.length} of ${result.devices.length} devices.`
-              : "Lab stopped.",
+              ? result.deployed
+                ? `Deployed ${result.running.length} of ${result.devices.length} devices. ` +
+                  "The design is read-only until the lab is stopped."
+                : `Deployed ${result.running.length} of ${result.devices.length} devices.`
+              : "Lab stopped. The design can be edited again.",
           );
         }
       } catch (err) {
@@ -424,32 +500,32 @@ export default function App() {
         setLabBusy(null);
       }
     },
-    [topology],
+    [topology, leaveConnectMode],
   );
 
   const addDevice = useCallback(
     (kind: DeviceKind) => {
       const name = suggestName(topology, kind);
-      dispatch({
+      edit({
         type: "addNode",
         node: newNode(name, kind, placeNew(topology.nodes.length)),
       });
       setSelected([name]);
     },
-    [dispatch, topology],
+    [edit, topology],
   );
 
   const removeSelected = useCallback(() => {
     // Selecting a link clears any device selection and vice versa, so at most
     // one of these branches can apply.
     if (selectedLink) {
-      dispatch({ type: "removeLink", collisionDomain: selectedLink });
+      edit({ type: "removeLink", collisionDomain: selectedLink });
       setSelectedLink(null);
       return;
     }
-    for (const name of selected) dispatch({ type: "removeNode", name });
+    for (const name of selected) edit({ type: "removeNode", name });
     setSelected([]);
-  }, [dispatch, selected, selectedLink]);
+  }, [edit, selected, selectedLink]);
 
   const align = useCallback(
     (action: AlignmentAction) => {
@@ -457,9 +533,9 @@ export default function App() {
       const positions = computeAlignment(nodes, action);
       // An alignment that changes nothing should not create an undo step.
       if (Object.keys(positions).length === 0) return;
-      dispatch({ type: "moveNodes", positions, label: `${ALIGNMENT_LABELS[action]} applied` });
+      edit({ type: "moveNodes", positions, label: `${ALIGNMENT_LABELS[action]} applied` });
     },
-    [dispatch, selected, topology],
+    [edit, selected, topology],
   );
 
   /**
@@ -482,13 +558,13 @@ export default function App() {
         setStatus("The layout is already tidy.");
         return;
       }
-      dispatch({ type: "moveNodes", positions: moved, label: "Tidied the layout" });
+      edit({ type: "moveNodes", positions: moved, label: "Tidied the layout" });
     } catch (err) {
       setStatus(err instanceof ApiError ? err.message : String(err));
     } finally {
       setScenarioBusy(null);
     }
-  }, [topology, dispatch]);
+  }, [topology, edit]);
 
   // -- the scenario as a folder -----------------------------------------
 
@@ -604,26 +680,41 @@ export default function App() {
     [adopt],
   );
 
-  const captureState = useCallback(async () => {
+  /** Returns the captured topology, or null when the capture failed. */
+  const captureState = useCallback(async (): Promise<Topology | null> => {
     setScenarioBusy("capture");
     try {
       const report = await api.captureState(topology);
       setCapture(report);
       // The capture reads live interface addresses back into the model, so a
-      // PC configured by hand shows its real address on the canvas.
+      // PC configured by hand shows its real address on the canvas. `load`
+      // rather than an edit: this is adopting the containers' state, which is
+      // exactly what the lock permits, and it is not the user's to undo.
       load(report.topology);
       setFolder(report.folder);
+      // The server now measures the lab against what was just captured, so
+      // any differences previously listed have been adopted, not ignored.
+      setLabStatus((current) => (current ? { ...current, drift: [] } : current));
       setStatus(
         report.captured.length > 0
           ? `Captured configuration from ${report.captured.length} device(s).`
           : (report.message ?? "Nothing was captured."),
       );
+      return report.topology;
     } catch (err) {
       setStatus(err instanceof ApiError ? err.message : String(err));
+      return null;
     } finally {
       setScenarioBusy(null);
     }
   }, [topology, load]);
+
+  /** Keep what the containers hold, then stop. A failed capture stops nothing. */
+  const captureAndStop = useCallback(async () => {
+    const captured = await captureState();
+    if (captured === null) return;
+    await runLabAction("undeploy", false, captured);
+  }, [captureState, runLabAction]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -642,8 +733,8 @@ export default function App() {
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
+        if (event.shiftKey) redoEdit();
+        else undoEdit();
         return;
       }
       if (meta && event.key.toLowerCase() === "a") {
@@ -656,7 +747,8 @@ export default function App() {
       }
       if (!meta && event.key.toLowerCase() === "c" && canConnect) {
         event.preventDefault();
-        toggleConnectMode();
+        if (locked) setNotice(LOCKED_NOTICE);
+        else toggleConnectMode();
         return;
       }
       // The tree implements Delete itself, so do not act twice.
@@ -674,8 +766,10 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
-    undo,
-    redo,
+    undoEdit,
+    redoEdit,
+    locked,
+    topology,
     removeSelected,
     selected,
     selectedLink,
@@ -700,14 +794,20 @@ export default function App() {
           <LabTitle
             name={topology.name}
             deployed={labStatus?.deployed ?? false}
-            onRename={(name) => dispatch({ type: "setLabMetadata", changes: { name } })}
+            onRename={(name) => edit({ type: "setLabMetadata", changes: { name } })}
             onAnnounce={setStatus}
           />
+          {locked && driftCount === 0 && (
+            // Said in words beside the name, because every editing control
+            // on the page is about to refuse, and that needs a reason.
+            <span className="app__locked">Lab running — design is read-only</span>
+          )}
           {driftCount > 0 && (
             <span className="app__drift">
               {/* Words, not only a colour, and specific about the count so it
                   is clear this is a real difference and not a generic nag. */}
-              Deployed lab is {driftCount} change{driftCount === 1 ? "" : "s"} behind
+              Running lab differs from the canvas in {driftCount} place
+              {driftCount === 1 ? "" : "s"}: capture to keep, or stop to discard
             </span>
           )}
           {dirty && (
@@ -719,16 +819,16 @@ export default function App() {
         </h1>
 
         <div className="app__actions" role="group" aria-label="Topology actions">
-          <button type="button" onClick={undo} disabled={!canUndo()}>
+          <button type="button" onClick={undoEdit} disabled={locked || !canUndo()}>
             Undo
           </button>
-          <button type="button" onClick={redo} disabled={!canRedo()}>
+          <button type="button" onClick={redoEdit} disabled={locked || !canRedo()}>
             Redo
           </button>
           <button
             type="button"
             onClick={removeSelected}
-            disabled={selected.length === 0 && !selectedLink}
+            disabled={locked || (selected.length === 0 && !selectedLink)}
           >
             {selectedLink ? "Delete link" : "Delete"}
           </button>
@@ -759,16 +859,23 @@ export default function App() {
 
           <div className="panel__scroll">
 
-          <Palette topology={topology} onAdd={addDevice} />
+          {locked && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
 
-          <CollisionDomainsPanel topology={topology} onDispatch={dispatch} />
+          {/* A disabled fieldset disables every control inside it natively,
+              so each stays visible and readable — a screen reader announces
+              it as unavailable rather than losing it — and none can act. */}
+          <fieldset className="edit-lock" disabled={locked}>
+            <Palette topology={topology} onAdd={addDevice} />
 
-          <ConnectModeBar
-            active={connectMode}
-            pending={pending}
-            enabled={canConnect}
-            onToggle={toggleConnectMode}
-          />
+            <CollisionDomainsPanel topology={topology} onDispatch={edit} />
+
+            <ConnectModeBar
+              active={connectMode}
+              pending={pending}
+              enabled={canConnect}
+              onToggle={toggleConnectMode}
+            />
+          </fieldset>
 
           <h2 className="panel__heading" id="topology">
             Topology
@@ -780,8 +887,12 @@ export default function App() {
             connectMode={connectMode}
             onSelectCollisionDomain={activateDomain}
             onSelect={activate}
-            onRemove={(name) => dispatch({ type: "removeNode", name })}
-            onDisconnect={(node, number) => dispatch({ type: "disconnect", node, number })}
+            // Left navigable while locked, since it is how a keyboard user
+            // reads the design; only its editing keys are withdrawn.
+            onRemove={locked ? undefined : (name) => edit({ type: "removeNode", name })}
+            onDisconnect={
+              locked ? undefined : (node, number) => edit({ type: "disconnect", node, number })
+            }
           />
           </div>
         </aside>
@@ -793,7 +904,7 @@ export default function App() {
             pending={pending}
             onSelect={activate}
             onSelectCollisionDomain={activateDomain}
-            onMove={(name, position) => dispatch({ type: "moveNode", name, position })}
+            onMove={(name, position) => edit({ type: "moveNode", name, position })}
             onSelectLink={(domain) => {
               // Exactly one thing is selected at a time, so Delete is never
               // ambiguous about what it will remove.
@@ -802,6 +913,7 @@ export default function App() {
             }}
             selectedLink={selectedLink}
             connectMode={connectMode}
+            locked={locked}
           />
         </main>
 
@@ -821,30 +933,35 @@ export default function App() {
 
           <div className="panel__scroll">
 
-          <Inspector topology={topology} selected={selected} onDispatch={dispatch} />
-          <AddressingPanel
-            issues={issues}
-            errors={counts.errors}
-            warnings={counts.warnings}
-            busy={allocating}
-            checking={checking}
-            canAllocate={canAllocate}
-            canValidate={canValidate}
-            onAllocate={allocateAddressing}
-          />
-          <AlignmentToolbar
-            selectionCount={selected.length}
-            deviceCount={topology.nodes.length}
-            busy={scenarioBusy === "arrange"}
-            onAlign={align}
-            onAutoArrange={autoArrange}
-          />
+          {locked && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
+
+          <fieldset className="edit-lock" disabled={locked}>
+            <Inspector topology={topology} selected={selected} onDispatch={edit} />
+            <AddressingPanel
+              issues={issues}
+              errors={counts.errors}
+              warnings={counts.warnings}
+              busy={allocating}
+              checking={checking}
+              canAllocate={canAllocate}
+              canValidate={canValidate}
+              onAllocate={allocateAddressing}
+            />
+            <AlignmentToolbar
+              selectionCount={selected.length}
+              deviceCount={topology.nodes.length}
+              busy={scenarioBusy === "arrange"}
+              onAlign={align}
+              onAutoArrange={autoArrange}
+            />
+          </fieldset>
           <ScenarioPanel
             folder={folder}
             dirty={dirty}
             busy={scenarioBusy}
             deviceCount={topology.nodes.length}
             anyRunning={(labStatus?.running.length ?? 0) > 0}
+            locked={locked}
             scenarios={scenarios}
             capture={capture}
             importWarnings={importWarnings}
@@ -867,6 +984,8 @@ export default function App() {
             deviceCount={topology.nodes.length}
             onDeploy={() => runLabAction("deploy")}
             onUndeploy={() => runLabAction("undeploy")}
+            onCaptureAndStop={captureAndStop}
+            onCheck={checkLab}
             onVerify={() => runLabAction("verify")}
             conflicts={conflicts}
             onConfirmDeploy={() => runLabAction("deploy", true)}
@@ -889,7 +1008,7 @@ export default function App() {
         </div>
       )}
 
-      <LiveRegion message={notice ?? status ?? lastAnnouncement} error={error} />
+      <LiveRegion message={notice ?? lastAnnouncement} error={error} />
     </div>
   );
 }

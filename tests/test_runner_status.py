@@ -12,7 +12,14 @@ end-to-end version, which stops a real container, lives in
 
 from __future__ import annotations
 
-from kathara_gui.kathara.runner import DeviceState, DeviceStatus, LabStatus, _state_of
+from kathara_gui.kathara.runner import (
+    DeviceState,
+    DeviceStatus,
+    LabStatus,
+    _Container,
+    _device,
+    _state_of,
+)
 
 # -- reading a single device -------------------------------------------
 
@@ -60,3 +67,25 @@ def test_a_lab_that_was_never_deployed_is_not_deployed() -> None:
 
 def test_an_empty_lab_is_not_deployed() -> None:
     assert LabStatus().deployed is False
+
+
+# -- what a terminal needs to reach the device --------------------------
+
+
+def test_a_device_carries_its_container_name_and_shell() -> None:
+    """Enough for `docker exec`, which works on every OS without Kathará's CLI.
+
+    Found on Windows: the panel's `cd … && kathara connect r1` failed because
+    the Kathará CLI is a separate install there, and `&&` does not exist in
+    Windows PowerShell 5.1.
+    """
+    device = _device("r1", _Container("running", name="kathara_u_r1_h", shell="/bin/bash"))
+    assert device.state is DeviceState.RUNNING
+    assert device.container == "kathara_u_r1_h"
+    assert device.shell == "/bin/bash"
+
+
+def test_a_device_with_no_container_has_nothing_to_connect_to() -> None:
+    device = _device("r1", None)
+    assert device.state is DeviceState.STOPPED
+    assert device.container is None

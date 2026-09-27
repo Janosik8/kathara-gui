@@ -350,6 +350,13 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
     if folder.is_dir():
         scenario.save(topology, folder, features=session.features)
 
+    # Capturing *is* adopting the containers' state, so what was just learned
+    # becomes the baseline the running lab is compared against. Without this
+    # the header reported the capture itself as a difference (bug 20): the
+    # snapshot still held the addresses from before the user changed them.
+    if session.deployed_topology is not None:
+        session.mark_deployed(topology.model_copy(deep=True))
+
     return CaptureResponse(
         captured=[
             CapturedModel(device=c.device, path=str(c.path), lines=c.lines)

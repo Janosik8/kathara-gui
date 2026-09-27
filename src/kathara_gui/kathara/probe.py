@@ -138,8 +138,9 @@ def _check_kathara_cli() -> Check:
         "Kathará CLI",
         Status.ADVISORY,
         "No `kathara` command on PATH.",
-        "Not required — the application talks to Kathará directly — but installing the CLI "
-        "lets you use `kathara connect` from a terminal.",
+        "Not required — the application talks to Kathará directly, and the Laboratory "
+        "panel gives a `docker exec` command that opens a shell on a device without it. "
+        "Install the CLI if you prefer `kathara connect`.",
     )
 
 

@@ -39,6 +39,9 @@ class ProbeResponse(BaseModel):
 class DeviceStatusModel(BaseModel):
     name: str
     state: str
+    #: Docker's container name, for ``docker exec``; null when none exists.
+    container: str | None = None
+    shell: str | None = None
 
 
 class ConflictsModel(BaseModel):
@@ -106,7 +109,12 @@ def _status_response(
 ) -> StatusResponse:
     return StatusResponse(
         drift=drift or [],
-        devices=[DeviceStatusModel(name=d.name, state=d.state.value) for d in status.devices],
+        devices=[
+            DeviceStatusModel(
+                name=d.name, state=d.state.value, container=d.container, shell=d.shell
+            )
+            for d in status.devices
+        ],
         running=status.running,
         exited=status.exited,
         deployed=status.deployed,

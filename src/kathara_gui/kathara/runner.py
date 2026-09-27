@@ -57,6 +57,20 @@ class DeviceState(StrEnum):
 class DeviceStatus:
     name: str
     state: DeviceState
+    #: Docker's name for the container, when one exists. Enough to open a
+    #: shell with ``docker exec`` from any terminal on any OS, which the
+    #: Kathará CLI cannot promise: it is a separate install on Windows, and
+    #: ``kathara connect`` must be run from the lab's own directory.
+    container: str | None = None
+    #: The shell Kathará configured for the device, from the container's label.
+    shell: str | None = None
+
+
+@dataclass(frozen=True)
+class _Container:
+    status: str
+    name: str | None = None
+    shell: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,8 +171,8 @@ def find_conflicts(topology: Topology, lab_dir: Path) -> Conflicts:
     )
 
 
-def _containers(lab_hash: str) -> dict[str, str]:
-    """Device name to container state, for one lab.
+def _containers(lab_hash: str) -> dict[str, _Container]:
+    """Device name to its container, for one lab.
 
     Asks Docker what exists, not how hard it is working.
     ``get_machine_stats`` samples CPU and memory over a time window, which took
@@ -168,11 +182,16 @@ def _containers(lab_hash: str) -> dict[str, str]:
     asked, in fifty milliseconds.
     """
     manager = Kathara.get_instance()
-    found: dict[str, str] = {}
+    found: dict[str, _Container] = {}
     for container in manager.get_machines_api_objects(lab_hash=lab_hash):
-        name = getattr(container, "labels", {}).get("name")
+        labels = getattr(container, "labels", {}) or {}
+        name = labels.get("name")
         if name:
-            found[name] = getattr(container, "status", "unknown")
+            found[name] = _Container(
+                status=getattr(container, "status", "unknown"),
+                name=getattr(container, "name", None),
+                shell=labels.get("shell"),
+            )
     return found
 
 
@@ -278,8 +297,16 @@ def status(topology: Topology, lab_dir: Path) -> LabStatus:
     except Exception:  # noqa: BLE001 - no daemon means nothing is running
         present = {}
 
-    devices = [DeviceStatus(name, _state_of(present.get(name))) for name in sorted(expected)]
+    devices = [_device(name, present.get(name)) for name in sorted(expected)]
     return LabStatus(devices=devices, lab_dir=str(directory))
+
+
+def _device(name: str, container: _Container | None) -> DeviceStatus:
+    if container is None:
+        return DeviceStatus(name, DeviceState.STOPPED)
+    return DeviceStatus(
+        name, _state_of(container.status), container=container.name, shell=container.shell
+    )
 
 
 def _state_of(status: str | None) -> DeviceState:

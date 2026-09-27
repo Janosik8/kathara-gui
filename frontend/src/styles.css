@@ -1031,6 +1031,33 @@ select {
   border-radius: var(--radius);
 }
 
+/* The design is read-only while the lab runs (D9). A border in the text
+   colour rather than a new hue, so the palette the contrast tests assert is
+   unchanged, and shape rather than colour distinguishes it from drift. */
+.app__locked {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 2px dashed var(--fg);
+  border-radius: var(--radius);
+}
+
+/* A grouping for native disabling only: it must not look like a form. */
+.edit-lock {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0; /* fieldsets default to min-content, which defeats reflow */
+}
+
+.edit-lock__note {
+  margin: 0 0 var(--gap);
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  border-left: 4px dashed var(--fg);
+  background: var(--bg-raised);
+}
+
 .app__rename-refused {
   display: block;
   font-size: 0.8rem;

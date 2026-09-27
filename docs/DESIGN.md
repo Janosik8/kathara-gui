@@ -299,7 +299,7 @@ genuinely efficient way to handle a common need.
 | The topology preview stays blank until enough fields are filled, so the drawing follows the form rather than leading it | **FR-01**, **FR-30** — the diagram is the document, and its layout persists |
 | No connection to Docker at all: the output is a ZIP the user must unpack and start by hand | **FR-16**, **FR-17** — deploy and stop from the application |
 | No way to recover configuration typed inside a running container | **FR-24** — pull running configuration back out |
-| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-15**, **FR-21** — iterate on a saved project, derive variants, and be told when the canvas has drifted from what is deployed |
+| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-15**, **FR-21** — iterate on a saved project, derive variants, and be told when the running lab has drifted from the design (read-only while deployed, D9) |
 
 The last is the important one. The tool is not *wrong*; it simply assumes a scenario is
 written once. The observed reality — an exam judged too easy, a link that creates an

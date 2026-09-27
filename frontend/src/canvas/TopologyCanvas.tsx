@@ -54,6 +54,12 @@ interface Props {
   selectedLink?: string | null;
   /** True while connect mode is on, when a click means "pick an end" instead. */
   connectMode?: boolean;
+  /**
+   * True while the lab is deployed. Devices can still be selected, so their
+   * details can be read, but not dragged: a move would be an edit, and the
+   * design is read-only until the lab is stopped.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -130,6 +136,7 @@ function CanvasInner({
   onSelectLink,
   selectedLink,
   connectMode,
+  locked = false,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
@@ -282,6 +289,7 @@ function CanvasInner({
           onSelect(null, false);
           onSelectLink?.(null);
         }}
+        nodesDraggable={!locked}
         snapToGrid
         snapGrid={[16, 16]}
         fitView

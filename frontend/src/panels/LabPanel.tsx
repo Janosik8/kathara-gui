@@ -11,6 +11,7 @@
  * than anything wrong with the topology.
  */
 
+import { useState } from "react";
 import type {
   Conflicts,
   DeviceStatus,
@@ -29,7 +30,12 @@ interface Props {
   busy: string | null;
   deviceCount: number;
   onDeploy: () => void;
+  /** Stop the lab, discarding anything changed inside the containers. */
   onUndeploy: () => void;
+  /** Capture what the containers are running, then stop the lab. */
+  onCaptureAndStop: () => void;
+  /** Ask the containers whether anything has changed inside them. */
+  onCheck: () => void;
   onVerify: () => void;
   /** Deploy anyway, stopping whatever is already running. */
   onConfirmDeploy: () => void;
@@ -56,14 +62,29 @@ const OUTCOME: Record<string, { glyph: string; label: string }> = {
 };
 
 /**
- * The command that opens a shell on a device.
+ * The command that opens a shell on a device, in any terminal on any OS.
  *
- * The `cd` is not decoration: Kathará identifies a lab by its directory, so
- * `kathara connect r1` from anywhere else fails with MachineNotRunningError
- * even while the container is plainly running.
+ * `docker exec`, not `kathara connect`, because Docker is already a hard
+ * prerequisite while the Kathará CLI is not: on Windows it is a separate
+ * installer, and the first manual Windows run found the panel's command
+ * failing with "'kathara' is not recognized". The earlier form,
+ * `cd DIR && kathara connect r1`, also failed on its own terms there: Windows
+ * PowerShell 5.1 has no `&&`, and `cmd`'s `cd` does not change drive.
  */
-function connectCommand(labDir: string, device: string | undefined): string {
-  return `cd ${labDir} && kathara connect ${device ?? "<device>"}`;
+function dockerCommand(device: DeviceStatus): string {
+  return `docker exec -it ${device.container} ${device.shell || "bash"}`;
+}
+
+/**
+ * The Kathará CLI's own form, for anyone who has it.
+ *
+ * `-d` names the lab directory, so there is no `cd` and no `&&` — Kathará
+ * identifies a lab by its directory, and `kathara connect r1` from anywhere
+ * else fails with MachineNotRunningError. Quoted, because paths on Windows
+ * routinely contain spaces.
+ */
+function kataraCommand(labDir: string, device: string): string {
+  return `kathara connect -d "${labDir}" ${device}`;
 }
 
 function describeLink(check: LinkCheck): string {
@@ -83,12 +104,16 @@ export function LabPanel({
   deviceCount,
   onDeploy,
   onUndeploy,
+  onCaptureAndStop,
+  onCheck,
   onVerify,
   onConfirmDeploy,
   onCancelDeploy,
   conflicts,
   onAnnounce,
 }: Props) {
+  const [confirmingStop, setConfirmingStop] = useState(false);
+  const [shellDevice, setShellDevice] = useState<string | null>(null);
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
   const exited = status?.exited ?? [];
@@ -161,6 +186,62 @@ export function LabPanel({
         </div>
       )}
 
+      {confirmingStop && (
+        // The one moment the two states can be reconciled, so the user is
+        // asked which one wins. The design is read-only while the lab runs, so
+        // the only thing that can have moved on is the containers.
+        <div className="confirm" role="alertdialog" aria-labelledby="stop-heading">
+          <h3 className="confirm__heading" id="stop-heading">
+            Keep what was changed inside the containers?
+          </h3>
+          <p>
+            Stopping removes the containers. Anything configured inside them since the last
+            deploy or capture is lost unless it is captured first.
+          </p>
+          {drift.length > 0 && (
+            <>
+              <p className="field__hint">Changes found so far:</p>
+              <ul>
+                {drift.map((change) => (
+                  <li key={change}>{change}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingStop(false);
+                onCaptureAndStop();
+              }}
+              disabled={busy !== null}
+            >
+              Capture, then stop
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingStop(false);
+                onUndeploy();
+              }}
+              disabled={busy !== null}
+            >
+              Stop and discard container changes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingStop(false);
+                onAnnounce?.("The lab is still running. Nothing was changed.");
+              }}
+            >
+              Keep running
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="lab__actions">
         <button
           type="button"
@@ -171,9 +252,23 @@ export function LabPanel({
               it, and a button that still said "Deploy" would hide that. */}
           {busy === "deploy" ? "Deploying…" : deployed ? "Redeploy" : "Deploy"}
         </button>
-        <button type="button" onClick={onUndeploy} disabled={busy !== null || !deployed}>
+        <button
+          type="button"
+          onClick={() => {
+            // With nothing running there is nothing to capture, so there is
+            // no choice to put to the user: the exited containers just go.
+            if (anyRunning) setConfirmingStop(true);
+            else onUndeploy();
+          }}
+          disabled={busy !== null || !deployed || confirmingStop}
+        >
           {busy === "undeploy" ? "Stopping…" : "Stop"}
         </button>
+        {anyRunning && (
+          <button type="button" onClick={onCheck} disabled={busy !== null}>
+            {busy === "check" ? "Checking…" : "Check for changes"}
+          </button>
+        )}
         {canVerify && (
           <button
             type="button"
@@ -196,21 +291,26 @@ export function LabPanel({
 
       {deployed && deviceCount > 0 && (
         <p className="field__hint">
+          The design is read-only while the lab runs. Capture running state to bring
+          changes made inside the containers onto the canvas; stop the lab to edit.
           Redeploying replaces the running lab, so anything changed inside a container is
-          lost. Deploy again after editing to apply your changes.
+          lost.
         </p>
       )}
 
       {drift.length > 0 && (
-        // The reported confusion: an address changed on the canvas, Verify
-        // pressed, and the results described the old one. Diagnostics ping
-        // real containers, so they can only report what is running — saying
-        // nothing about the two having parted company made a correct answer
-        // look like a fault.
+        // The reported confusion: an address changed, Verify pressed, and the
+        // results described something else. Diagnostics ping real containers,
+        // so they can only report what is running — saying nothing about the
+        // two having parted company made a correct answer look like a fault.
+        //
+        // With the design locked while deployed, the canvas cannot move on;
+        // what differs was changed inside a container.
         <div className="lab__warning" role="status">
           <p>
-            <strong>The canvas no longer matches the running lab.</strong> Deploy again to
-            apply these changes; until then, diagnostics describe what is running.
+            <strong>The running lab no longer matches the canvas.</strong> Capture running
+            state to keep these changes, or stop the lab and discard them. Until then,
+            diagnostics describe what is running.
           </p>
           <ul>
             {drift.map((change) => (
@@ -244,28 +344,58 @@ export function LabPanel({
           <p className="lab__path">
             <code>{status.lab_dir}</code>
           </p>
-          <p className="field__hint">
-            Open a shell on a device from a terminal:
-          </p>
-          <p className="lab__path">
-            <code>{connectCommand(status.lab_dir, status.running[0])}</code>
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              const command = connectCommand(status.lab_dir!, status.running[0]);
-              try {
-                await navigator.clipboard.writeText(command);
-                onAnnounce?.("Command copied to the clipboard.");
-              } catch {
-                // Clipboard access can be refused; the text is on screen
-                // anyway, so say so rather than failing silently.
-                onAnnounce?.("Could not copy. Select the command above instead.");
-              }
-            }}
-          >
-            Copy command
-          </button>
+          {(() => {
+            const reachable = status.devices.filter(
+              (d) => d.state === "running" && d.container,
+            );
+            const device =
+              reachable.find((d) => d.name === shellDevice) ?? reachable[0];
+            if (!device) return null;
+            const command = dockerCommand(device);
+            return (
+              <>
+                <div className="field">
+                  <label htmlFor="shell-device">Open a shell on</label>
+                  <select
+                    id="shell-device"
+                    value={device.name}
+                    onChange={(e) => setShellDevice(e.target.value)}
+                  >
+                    {reachable.map((d) => (
+                      <option key={d.name} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="field__hint">
+                  In any terminal — PowerShell, Command Prompt or a Unix shell:
+                </p>
+                <p className="lab__path">
+                  <code>{command}</code>
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(command);
+                      onAnnounce?.("Command copied to the clipboard.");
+                    } catch {
+                      // Clipboard access can be refused; the text is on
+                      // screen anyway, so say so rather than failing silently.
+                      onAnnounce?.("Could not copy. Select the command above instead.");
+                    }
+                  }}
+                >
+                  Copy command
+                </button>
+                <p className="field__hint">
+                  With the Kathará command-line tool installed, this works too:{" "}
+                  <code>{kataraCommand(status.lab_dir!, device.name)}</code>
+                </p>
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -64,5 +64,18 @@ def main(argv: list[str] | None = None) -> int:
         # Deferred so the server is accepting connections before the tab loads.
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
-    uvicorn.run(app, host=HOST, port=port, log_level="info")
+    try:
+        # lifespan="off": the application has no startup or shutdown hooks, and
+        # the lifespan task was what broke on Windows. Ctrl+C in a console
+        # reaches every process attached to it, so the server launched by
+        # `uv run` receives it twice; uvicorn treats the second as "force exit",
+        # skips the orderly shutdown, and the cancelled lifespan task was
+        # logged as an ERROR with two chained tracebacks — a clean stop that
+        # looked like a crash (bug reported in bugs/pwsh.txt).
+        uvicorn.run(app, host=HOST, port=port, log_level="info", lifespan="off")
+    except KeyboardInterrupt:
+        # uvicorn re-raises the signal after shutting down so that the exit
+        # status reflects it; stopping is what the user asked for, not a fault.
+        pass
+    print("Kathara GUI stopped.", flush=True)
     return 0

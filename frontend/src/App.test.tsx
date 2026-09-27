@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { api } from "./api/client";
 // Type-only, so it is erased at runtime and does not clash with vi.mock.
 import type {
   AllocateResponse,
@@ -998,6 +999,9 @@ describe("deploying and verifying", () => {
     expect(await screen.findByText("All 1 links passed")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Stop and discard container changes" }),
+    );
     await waitFor(() => expect(screen.queryByText("All 1 links passed")).toBeNull());
   });
 
@@ -1063,8 +1067,11 @@ describe("finding the lab on disk", () => {
   }
 
   const deployedAt = (dir: string): StatusResponse => ({
-    devices: [{ name: "r1", state: "running" }],
-    running: ["r1"],
+    devices: [
+      { name: "r1", state: "running", container: "kathara_u_r1_h", shell: "/bin/bash" },
+      { name: "r2", state: "running", container: "kathara_u_r2_h", shell: "/bin/bash" },
+    ],
+    running: ["r1", "r2"],
     exited: [],
     drift: [],
     deployed: true,
@@ -1090,17 +1097,43 @@ describe("finding the lab on disk", () => {
     ).toBeInTheDocument();
   });
 
-  it("gives a connect command that cds first", async () => {
-    // Without the cd, kathara connect fails with MachineNotRunningError even
-    // though the container is running: Kathará keys a lab by its directory.
+  it("gives a shell command that needs nothing but Docker", async () => {
+    // Found on the first Windows run: `cd DIR && kathara connect r1` failed,
+    // because the Kathará CLI is a separate install there and Windows
+    // PowerShell 5.1 has no `&&`. Docker is already required, so this works
+    // in any terminal.
     deploy.mockResolvedValue(deployedAt("/labs/untitled"));
     const user = await renderApp();
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
     expect(
-      await screen.findByText("cd /labs/untitled && kathara connect r1"),
+      await screen.findByText("docker exec -it kathara_u_r1_h /bin/bash"),
     ).toBeInTheDocument();
+  });
+
+  it("offers the Kathará form without cd or &&, quoted for spaces", async () => {
+    // Kathará keys a lab by its directory, so `-d` names it instead of a cd.
+    deploy.mockResolvedValue(deployedAt("C:\\Users\\Jan Kowalski\\kathara-labs\\untitled"));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    expect(
+      await screen.findByText(
+        'kathara connect -d "C:\\Users\\Jan Kowalski\\kathara-labs\\untitled" r1',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the user choose which device to open a shell on", async () => {
+    deploy.mockResolvedValue(deployedAt("/labs/untitled"));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await user.selectOptions(await screen.findByLabelText("Open a shell on"), "r2");
+    expect(screen.getByText("docker exec -it kathara_u_r2_h /bin/bash")).toBeInTheDocument();
   });
 
   it("copies the command and confirms in the live region", async () => {
@@ -1114,7 +1147,7 @@ describe("finding the lab on disk", () => {
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
     await user.click(await screen.findByRole("button", { name: "Copy command" }));
 
-    expect(writeText).toHaveBeenCalledWith("cd /labs/untitled && kathara connect r1");
+    expect(writeText).toHaveBeenCalledWith("docker exec -it kathara_u_r1_h /bin/bash");
     await waitFor(() =>
       expect(within(screen.getByRole("status")).getByText(/copied/i)).toBeTruthy(),
     );
@@ -1243,10 +1276,11 @@ describe("the selected device's own panel", () => {
   });
 });
 
-describe("when the canvas has drifted from the running lab", () => {
-  // Reported: an address changed on the canvas, Verify pressed, and the
-  // results described the old one. Diagnostics ping real containers, so they
-  // can only report what is running — the missing part was saying so.
+describe("when the running lab has drifted from the canvas", () => {
+  // Reported: an address changed, Verify pressed, and the results described
+  // something else. Diagnostics ping real containers, so they can only report
+  // what is running — the missing part was saying so. With the design locked
+  // while deployed, the difference can only come from inside a container.
 
   const drifted: StatusResponse = {
     drift: ["r1 eth0 is 192.168.1.1/24 on the canvas but 10.0.0.1/24 in the running lab"],
@@ -1268,7 +1302,9 @@ describe("when the canvas has drifted from the running lab", () => {
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
-    expect(await screen.findByText(/Deployed lab is 1 change behind/)).toBeInTheDocument();
+    expect(await screen.findByText(/differs from the canvas in 1 place:/)).toBeInTheDocument();
+    // And says what to do about it, not only that something is wrong.
+    expect(screen.getByText(/capture to keep, or stop to discard/)).toBeInTheDocument();
     expect(document.querySelector('.app__header[data-drift="true"]')).not.toBeNull();
   });
 
@@ -1281,7 +1317,7 @@ describe("when the canvas has drifted from the running lab", () => {
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
-    expect(await screen.findByText(/2 changes behind/)).toBeInTheDocument();
+    expect(await screen.findByText(/in 2 places/)).toBeInTheDocument();
   });
 
   it("leaves the header alone when the two agree", async () => {
@@ -1301,7 +1337,7 @@ describe("when the canvas has drifted from the running lab", () => {
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
     expect(
-      await screen.findByText(/The canvas no longer matches the running lab/),
+      await screen.findByText(/The running lab no longer matches the canvas/),
     ).toBeInTheDocument();
   });
 
@@ -1338,7 +1374,7 @@ describe("when the canvas has drifted from the running lab", () => {
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
     await waitFor(() =>
-      expect(screen.queryByText(/no longer matches the running lab/)).toBeNull(),
+      expect(screen.queryByText(/running lab no longer matches the canvas/)).toBeNull(),
     );
   });
 });
@@ -2093,3 +2129,260 @@ describe("device images", () => {
     expect(screen.getByLabelText("Container image")).toHaveValue("my/custom:1");
   });
 })
+
+describe("a deployed lab locks the design", () => {
+  // D9. Two sources of truth that can both change drift in both directions at
+  // once. While the lab runs, only the containers may move on: capture brings
+  // their state onto the canvas, and stopping asks whether to keep it.
+
+  const running: StatusResponse = {
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    exited: [],
+    drift: [],
+    deployed: true,
+    lab_dir: "/workspace/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  const captured = (ip: string): CaptureResponse => ({
+    captured: [{ device: "r1", path: "r1/etc/frr/frr.conf", lines: 7 }],
+    skipped: [],
+    message: null,
+    folder: "/workspace/untitled",
+    topology: {
+      name: "untitled",
+      nodes: [
+        {
+          name: "r1",
+          kind: "router",
+          image: "kathara/frr",
+          memory: null,
+          position: { x: 0, y: 0 },
+          daemons: [],
+          interfaces: [{ number: 0, collision_domain: "A", ip }],
+          extra_options: {},
+        },
+      ],
+      collision_domains: [],
+    } as unknown as Topology,
+  });
+
+  beforeEach(() => {
+    captureState.mockReset().mockImplementation(async (topology: Topology) => ({
+      captured: [],
+      skipped: [],
+      message: null,
+      folder: "/workspace/untitled",
+      topology,
+    }));
+    vi.mocked(api.labStatus).mockReset().mockResolvedValue(running);
+  });
+
+  async function deployed() {
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+    return user;
+  }
+
+  it("says so in the header, in words", async () => {
+    await deployed();
+    expect(screen.getAllByText(/the design is read-only/i).length).toBeGreaterThan(0);
+  });
+
+  it("withdraws every editing control", async () => {
+    await deployed();
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Open/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Import/ })).toBeDisabled();
+  });
+
+  it("still lets a device be selected and its settings read", async () => {
+    // Locked is not hidden: the point of the running design is to look at it.
+    const user = await deployed();
+    await user.click(row("r1"));
+    expect(screen.getByLabelText("Name")).toHaveValue("r1");
+    expect(screen.getByLabelText("Name")).toBeDisabled();
+  });
+
+  it("refuses the undo shortcut and says why", async () => {
+    const user = await deployed();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(useTopologyStore.getState().topology.nodes).toHaveLength(1);
+    // Announced, not only written on the page: a keyboard user pressing
+    // Ctrl+Z needs to hear why nothing happened.
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Stop the lab to edit it/),
+    );
+  });
+
+  it("refuses an edit however it arrives", async () => {
+    // The guard sits on the path every edit takes, not on each control, so a
+    // shortcut or a control added later cannot slip past it.
+    const user = await deployed();
+    await user.click(row("r1"));
+    await user.keyboard("{Delete}");
+    expect(useTopologyStore.getState().topology.nodes).toHaveLength(1);
+  });
+
+  it("asks before stopping whether to keep what changed inside the containers", async () => {
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByRole("button", { name: "Capture, then stop" })).toBeEnabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Stop and discard container changes" }),
+    ).toBeEnabled();
+    // Asking changes nothing.
+    expect(undeploy).not.toHaveBeenCalled();
+  });
+
+  it("discarding stops without capturing, and unlocks the design", async () => {
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Stop and discard container changes" }),
+    );
+
+    await waitFor(() => expect(undeploy).toHaveBeenCalledTimes(1));
+    expect(captureState).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled(),
+    );
+  });
+
+  it("keeping captures first, then stops the lab it captured", async () => {
+    captureState.mockResolvedValue(captured("10.9.9.9/24"));
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(await screen.findByRole("button", { name: "Capture, then stop" }));
+
+    await waitFor(() => expect(undeploy).toHaveBeenCalledTimes(1));
+    expect(captureState).toHaveBeenCalledTimes(1);
+    // The stop is sent the captured design, not the one from before it.
+    expect(undeploy.mock.calls[0]?.[0].nodes[0]?.interfaces[0]?.ip).toBe("10.9.9.9/24");
+    // And the canvas shows what the containers were running.
+    expect(useTopologyStore.getState().topology.nodes[0]?.interfaces[0]?.ip).toBe(
+      "10.9.9.9/24",
+    );
+  });
+
+  it("a failed capture stops nothing, so nothing is lost", async () => {
+    captureState.mockRejectedValue(new MockApiError("Docker went away", 500));
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(await screen.findByRole("button", { name: "Capture, then stop" }));
+
+    // This was silent before: the deploy's notice masked every later message.
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Docker went away/),
+    );
+    expect(undeploy).not.toHaveBeenCalled();
+  });
+
+  it("changing your mind keeps the lab running", async () => {
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(await screen.findByRole("button", { name: "Keep running" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(undeploy).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+  });
+
+  it("does not ask when nothing is running to capture from", async () => {
+    // Exited containers hold their names but answer nothing, so there is no
+    // choice to offer: they can only be cleared.
+    deploy.mockResolvedValue({
+      ...running,
+      running: [],
+      exited: ["r1"],
+      devices: [{ name: "r1", state: "exited" }],
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Stop" }));
+
+    await waitFor(() => expect(undeploy).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("looks inside the containers only when asked", async () => {
+    // No timer: an idle editor must not load the host running the lab.
+    const user = await deployed();
+    vi.mocked(api.labStatus).mockClear();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(api.labStatus).not.toHaveBeenCalled();
+
+    vi.mocked(api.labStatus).mockResolvedValue({
+      ...running,
+      drift: ["r1 eth0 is 10.0.0.1/24 on the canvas but 10.0.0.9/24 in the running lab"],
+    });
+    await user.click(screen.getByRole("button", { name: "Check for changes" }));
+
+    expect(await screen.findByText(/Found 1 change inside the containers/)).toBeInTheDocument();
+    expect(screen.getByText(/differs from the canvas in 1 place/)).toBeInTheDocument();
+  });
+
+  it("a capture clears the differences it has just adopted", async () => {
+    // Bug 20: capturing reported itself as a mismatch.
+    const user = await deployed();
+    vi.mocked(api.labStatus).mockResolvedValue({
+      ...running,
+      drift: ["r1 eth0 is 10.0.0.1/24 on the canvas but 10.0.0.9/24 in the running lab"],
+    });
+    await user.click(screen.getByRole("button", { name: "Check for changes" }));
+    await screen.findByText(/differs from the canvas in 1 place/);
+
+    await user.click(screen.getByRole("button", { name: "Capture running state" }));
+
+    await waitFor(() => expect(screen.queryByText(/differs from the canvas/)).toBeNull());
+    expect(screen.getByText("Lab running — design is read-only")).toBeInTheDocument();
+  });
+
+  it("comes back locked when the page is reloaded while the lab runs", async () => {
+    // The containers outlive the tab.
+    vi.mocked(api.read).mockResolvedValueOnce({
+      topology: captured("10.0.0.1/24").topology,
+      dirty: false,
+      path: null,
+    } as never);
+    render(<App />);
+
+    expect(await screen.findByText("Lab running — design is read-only")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+  });
+
+  it("announces edits again once the lab is stopped", async () => {
+    // A standing notice ("Lab stopped…") used to mask every edit's own
+    // description, so a screen reader user stopped hearing what they did.
+    const user = await deployed();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Stop and discard container changes" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled(),
+    );
+
+    await addRouter(user);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Added router r2/),
+    );
+  });
+
+  it("passes the accessibility audit while locked", async () => {
+    await deployed();
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});

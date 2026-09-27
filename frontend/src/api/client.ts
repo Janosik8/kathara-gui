@@ -150,6 +150,10 @@ export type DeviceState = "running" | "stopped" | "exited" | "orphaned";
 export interface DeviceStatus {
   name: string;
   state: DeviceState;
+  /** Docker's container name, for `docker exec`. Absent when none exists. */
+  container?: string | null;
+  /** The shell Kathará configured for the device. */
+  shell?: string | null;
 }
 
 export interface Conflicts {
