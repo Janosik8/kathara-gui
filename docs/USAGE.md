@@ -57,6 +57,13 @@ type `npm`, allow locally created scripts once, for your account only:
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Command Prompt and Unix shells are
 not affected, and `uv` isn't either, because it's a real executable.
 
+**The `npm` steps are only needed the first time, and after the frontend source changes**
+(for example after a `git pull`). `uv run kathara-gui` alone always runs the current Python
+code, but it serves the interface as last built. In a source checkout it compares the two
+at startup and prints a warning with the rebuild command when the build is missing or older
+than the source, so an out-of-date interface never goes unnoticed. An installed release
+ships its interface pre-built and never shows the warning.
+
 Your browser opens automatically. The terminal prints a URL containing a session token:
 
 ```

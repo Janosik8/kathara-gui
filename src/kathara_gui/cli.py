@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import socket
+import sys
 import threading
 import webbrowser
 from pathlib import Path
@@ -11,9 +12,51 @@ from pathlib import Path
 import uvicorn
 
 from kathara_gui import __version__
-from kathara_gui.main import create_app
+from kathara_gui.main import STATIC_DIR, create_app
 
 HOST = "127.0.0.1"
+
+#: Where the interface is built from — present only in a source checkout.
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+
+def _newest(paths: list[Path]) -> float:
+    return max((p.stat().st_mtime for p in paths if p.is_file()), default=0.0)
+
+
+def frontend_staleness(frontend: Path, static: Path, npm: str = "npm") -> str | None:
+    """Why the served interface may not match its source, or None if it does.
+
+    `uv run kathara-gui` serves whatever is already in ``static/`` and never
+    rebuilds it. That is right — end users need no Node (NFR-03) — but in a
+    source checkout it means a `git pull` that changes the frontend starts
+    cleanly and silently serves the *old* interface against the *new* backend,
+    which looks exactly like "the fix did not work". A missing build at least
+    fails visibly, as a blank page; a stale one does not.
+
+    Only a source checkout has ``frontend/``; an installed release ships the
+    build and has nothing to compare against, so it is never warned about.
+    Warns only: never blocks startup, and never runs npm itself.
+    """
+    if not (frontend / "src").is_dir():
+        return None
+
+    built = static / "index.html"
+    if not built.is_file():
+        return (
+            "The interface has not been built, so the page will be blank. Run:\n"
+            f"  {npm} --prefix frontend ci\n"
+            f"  {npm} --prefix frontend run build"
+        )
+
+    sources = [*(frontend / "src").rglob("*"), frontend / "index.html"]
+    if _newest(sources) > built.stat().st_mtime:
+        return (
+            "The interface is older than its source code, so you may be seeing an "
+            "old version of it. Rebuild with:\n"
+            f"  {npm} --prefix frontend run build"
+        )
+    return None
 
 
 def _free_port() -> int:
@@ -44,6 +87,14 @@ def main(argv: list[str] | None = None) -> int:
     port = args.port or _free_port()
     app = create_app(workspace=args.workspace)
     url = f"http://{HOST}:{port}/?token={app.state.token}"
+
+    # npm.cmd on Windows: in PowerShell's default Restricted policy, plain `npm`
+    # resolves to npm.ps1 and is refused (F22).
+    stale = frontend_staleness(
+        FRONTEND_DIR, STATIC_DIR, npm="npm.cmd" if sys.platform == "win32" else "npm"
+    )
+    if stale:
+        print(f"Warning: {stale}\n", flush=True)
 
     if args.check:
         print(f"kathara-gui {__version__} OK", flush=True)
