@@ -187,11 +187,27 @@ def scenarios(session: Session = Depends(get_session)) -> list[ScenarioSummary]:
     return sorted(found, key=lambda s: s.modified, reverse=True)
 
 
+def _target_folder(session: Session, name: str | None, topology: Topology) -> Path:
+    """Which folder a save or export writes: a new name, else the folder open.
+
+    It used to be the new name, else the *lab* name. A copy made with "Save
+    as" kept the original's lab name, so saving it again wrote into the
+    original's folder — test step 1B.1: save as `homework`, reopen it, save,
+    and the edit landed in `base-exam`. The folder the user opened is the
+    document; only a scenario never saved has to be placed by its name.
+    """
+    if name:
+        return _folder_in_workspace(session, name)
+    if session.path is not None:
+        return session.path
+    return _folder_in_workspace(session, topology.name)
+
+
 @router.post("/save", response_model=SaveResponse)
 def save(request: SaveRequest, session: Session = Depends(get_session)) -> SaveResponse:
     """Write the scenario into its folder in the workspace."""
     topology = session.replace(request.topology)
-    folder = _folder_in_workspace(session, request.name or topology.name)
+    folder = _target_folder(session, request.name, topology)
 
     scenario.save(topology, folder, features=session.features)
     session.mark_saved(folder)
@@ -206,7 +222,7 @@ def export(request: SaveRequest, session: Session = Depends(get_session)) -> Res
     rather than whatever was last written.
     """
     topology = request.topology
-    folder = _folder_in_workspace(session, request.name or topology.name)
+    folder = _target_folder(session, request.name, topology)
     scenario.save(topology, folder, features=session.features)
 
     archive = session.workspace_root / _STAGING / f"{folder.name}.zip"

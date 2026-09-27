@@ -707,9 +707,27 @@ export default function App() {
    */
   const save = useCallback(
     async (name?: string) => {
+      // "Save as" names the copy, not just its folder. A copy that kept the
+      // original's name looked identical in the Open list, and — since
+      // Kathará knows a running lab by its name — would clash with the
+      // original when both were deployed (test step 1B.1).
+      const newName = name?.trim();
+      let subject = topology;
+      if (newName && newName !== topology.name) {
+        if (locked) {
+          fail(
+            "Stop the lab before saving it under a new name: the name is how Kathará " +
+              "knows the running lab.",
+          );
+          return;
+        }
+        if (!edit({ type: "setLabMetadata", changes: { name: newName } })) return;
+        subject = useTopologyStore.getState().topology;
+      }
+
       setScenarioBusy("save");
       try {
-        const result = await api.saveProject(topology, name);
+        const result = await api.saveProject(subject, name);
         setFolder(result.folder);
         markSaved();
         setStatus(`Saved in ${result.name}`);
@@ -719,7 +737,7 @@ export default function App() {
         setScenarioBusy(null);
       }
     },
-    [topology, markSaved],
+    [topology, markSaved, locked, edit],
   );
 
   const download = useCallback((blob: Blob, filename: string) => {

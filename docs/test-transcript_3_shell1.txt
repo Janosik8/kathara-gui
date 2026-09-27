@@ -132,3 +132,267 @@ INFO:     Finished server process [20348]
 Kathara GUI stopped.
 PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
 >> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> after commit on 2:34PM
+after : The term 'after' is not recognized as the name of a cmdlet, function, script file, or operable program. Check th
+e spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ after commit on 2:34PM
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (after:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+after : The term 'after' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of
+ the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ after commit on 2:34PM
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (after:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Users\Janek\Desktop\kathara-gui> Get-Date -Format "yyyy-MM-dd HH:mm"
+2026-09-27 14:35
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test"
+Kathara GUI running at:
+  http://127.0.0.1:65145/?token=JLI0XMvzN5pZJ3rKUsHSrMBPvPo-_fq-qBQDb_Dlxpw
+
+Labs are written to:
+  C:\Temp\kgui test
+
+Press Ctrl+C to stop.
+INFO:     Started server process [10624]
+INFO:     Uvicorn running on http://127.0.0.1:65145 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65148 - "GET /?token=JLI0XMvzN5pZJ3rKUsHSrMBPvPo-_fq-qBQDb_Dlxpw HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65148 - "GET /assets/index-BHawBZwH.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65149 - "GET /assets/index-00K1KQo6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65149 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65150 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65150 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65148 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65151 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65165 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/allocate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65166 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65172 - "POST /api/topology/addressing/check HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65173 - "POST /api/topology/addressing/allocate HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:65174 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65174 - "POST /api/topology/addressing/allocate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65174 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65176 - "POST /api/project/save HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65177 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65178 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65178 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65178 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65179 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65179 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65179 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [10624]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test"
+Kathara GUI running at:
+  http://127.0.0.1:65182/?token=F2eTlly3DdIunySn2xsYBx0BawgRFFDtiX83E2YqItE
+
+Labs are written to:
+  C:\Temp\kgui test
+
+Press Ctrl+C to stop.
+INFO:     Started server process [8320]
+INFO:     Uvicorn running on http://127.0.0.1:65182 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65185 - "GET /?token=F2eTlly3DdIunySn2xsYBx0BawgRFFDtiX83E2YqItE HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65185 - "GET /assets/index-BHawBZwH.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65186 - "GET /assets/index-00K1KQo6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65186 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65187 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65188 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65185 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65185 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65185 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65185 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65185 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65193 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65193 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65193 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65199 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65201 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65203 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65204 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65205 - "POST /api/project/save HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [8320]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test"
+Kathara GUI running at:
+  http://127.0.0.1:65207/?token=qZmhCOXKvoO29RDCor8efkmVt_diqCeF2wpxOZcWRrA
+
+Labs are written to:
+  C:\Temp\kgui test
+
+Press Ctrl+C to stop.
+INFO:     Started server process [7732]
+INFO:     Uvicorn running on http://127.0.0.1:65207 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65210 - "GET /?token=qZmhCOXKvoO29RDCor8efkmVt_diqCeF2wpxOZcWRrA HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "GET /assets/index-00K1KQo6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65210 - "GET /assets/index-BHawBZwH.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65210 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65212 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65213 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65211 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "POST /api/topology/arrange HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65211 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [7732]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test"
+Kathara GUI running at:
+  http://127.0.0.1:65218/?token=yl5eIjLIFYzLbMkm_SpfHe9sp-PnaCMQP8MyVsRqmnk
+
+Labs are written to:
+  C:\Temp\kgui test
+
+Press Ctrl+C to stop.
+INFO:     Started server process [19928]
+INFO:     Uvicorn running on http://127.0.0.1:65218 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65221 - "GET /?token=yl5eIjLIFYzLbMkm_SpfHe9sp-PnaCMQP8MyVsRqmnk HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65221 - "GET /assets/index-BHawBZwH.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65222 - "GET /assets/index-00K1KQo6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65221 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65223 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65222 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65224 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65223 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65223 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65223 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65223 - "POST /api/topology/arrange HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65223 - "POST /api/project/save HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65228 - "POST /api/project/save HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [19928]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test"
+Kathara GUI running at:
+  http://127.0.0.1:65230/?token=A-j-zp2pJioDJEAj5e8iTTjwFnU3x-Il8OUJetZ40xU
+
+Labs are written to:
+  C:\Temp\kgui test
+
+Press Ctrl+C to stop.
+INFO:     Started server process [16600]
+INFO:     Uvicorn running on http://127.0.0.1:65230 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65233 - "GET /?token=A-j-zp2pJioDJEAj5e8iTTjwFnU3x-Il8OUJetZ40xU HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65233 - "GET /assets/index-BHawBZwH.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "GET /assets/index-00K1KQo6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65233 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65235 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65236 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65234 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "GET /api/project/scenarios HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65234 - "POST /api/project/open HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65424 - "POST /api/lab/deploy HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65424 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65431 - "POST /api/lab/verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65433 - "POST /api/lab/wipe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65433 - "POST /api/lab/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65433 - "POST /api/project/save HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65433 - "POST /api/lab/deploy HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65433 - "GET /api/lab/everything HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65438 - "POST /api/lab/verify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65440 - "POST /api/lab/wipe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65440 - "POST /api/lab/status HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [16600]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."

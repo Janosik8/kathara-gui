@@ -152,7 +152,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
 | Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
 | Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. |
-| Save | **Save** writes the scenario folder in the workspace: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name. |
+| Save | **Save** writes the scenario to the folder it was opened from, or, the first time, to a folder named after it: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name, and the copy takes that name too. |
 | Open, export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
 | Verify links | **Laboratory** → **Verify links**: pings across every link. |

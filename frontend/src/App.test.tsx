@@ -1494,6 +1494,23 @@ describe("the scenario as a folder", () => {
     );
   });
 
+  it("names the copy as well as its folder", async () => {
+    // Test step 1B.1: a copy kept the original's name, so the two looked the
+    // same in Open and would clash in Kathará, which knows a lab by its name.
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Save as…" }));
+    await user.type(screen.getByLabelText("Save as"), "homework");
+    await user.click(screen.getByRole("button", { name: "Save scenario" }));
+
+    await waitFor(() => expect(saveProject).toHaveBeenCalled());
+    const sent = saveProject.mock.calls.at(-1)?.[0];
+    expect(sent?.name).toBe("homework");
+    expect(useTopologyStore.getState().topology.name).toBe("homework");
+    // A rename is an edit, but a saved one.
+    await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  });
+
   it("lists the scenarios in the workspace when the chooser opens", async () => {
     scenarios.mockResolvedValue([
       { folder: "week-3", name: "OSPF triangle", devices: 3, modified: 1, foreign: false },

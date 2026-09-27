@@ -70,3 +70,23 @@ d-----        27.09.2026     13:47                r4
 
 PS C:\Temp\kgui test\base-exam> (Get-Content -Raw r1.startup).Contains("`r")
 False
+PS C:\Temp\kgui test\base-exam> after commit on 2:34PM
+after : The term 'after' is not recognized as the name of a cmdlet, function, script file, or operable program. Check th
+e spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ after commit on 2:34PM
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (after:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+after : The term 'after' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of
+ the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ after commit on 2:34PM
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (after:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\Temp\kgui test\base-exam> $DATE
+PS C:\Temp\kgui test\base-exam> echo $DATE
+PS C:\Temp\kgui test\base-exam> Get-Date -Format "yyyy-MM-dd HH:mm"
+2026-09-27 14:35

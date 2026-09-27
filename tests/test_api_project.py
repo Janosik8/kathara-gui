@@ -607,3 +607,48 @@ def test_a_refusal_from_the_file_system_is_a_reason_not_a_bare_500(
     detail = response.json()["detail"]
     assert "The operating system refused: The filename is invalid." in detail
     assert r"kgui test\n" in detail  # the invisible character, made visible
+
+
+# -- saving goes to the folder that is open -----------------------------
+
+
+def _moved(topology: dict, x: int) -> dict:
+    changed = json.loads(json.dumps(topology))
+    changed["nodes"][0]["position"]["x"] = x
+    return changed
+
+
+def test_saving_a_copy_again_writes_the_copy_not_the_original(
+    client: TestClient, workspace: Path
+) -> None:
+    """Test step 1B.1: save as "homework", reopen it, save — it went to base-exam.
+
+    The copy kept the original's lab name, and a plain Save chose its folder
+    by lab name. The folder the user opened is the document.
+    """
+    save(client, TRIANGLE)  # ospf-triangle
+    save(client, TRIANGLE, name="homework")
+    client.post("/api/project/open", json={"folder": "homework"})
+
+    body = save(client, _moved(TRIANGLE, 999))
+
+    assert Path(body["folder"]).name == "homework"
+    assert "pos=999" in (workspace / "homework" / "lab.conf").read_text()
+    assert "pos=999" not in (workspace / "ospf-triangle" / "lab.conf").read_text()
+
+
+def test_exporting_a_copy_exports_the_copy(client: TestClient) -> None:
+    save(client, TRIANGLE)
+    save(client, TRIANGLE, name="homework")
+    client.post("/api/project/open", json={"folder": "homework"})
+
+    response = client.post("/api/project/export", json={"topology": _moved(TRIANGLE, 777)})
+
+    assert response.status_code == 200
+    assert "homework" in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert "pos=777" in archive.read("lab.conf").decode()
+
+
+def test_a_scenario_never_saved_is_placed_by_its_name(client: TestClient) -> None:
+    assert Path(save(client, TRIANGLE)["folder"]).name == "ospf-triangle"
