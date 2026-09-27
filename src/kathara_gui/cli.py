@@ -82,6 +82,27 @@ def frontend_staleness(frontend: Path, static: Path, npm: str = "npm") -> str | 
     return None
 
 
+def workspace_arg(text: str) -> Path:
+    """Parse ``--workspace``, refusing a path Windows cannot create.
+
+    Found in the Windows test run (step 0.8): the command wrapped across two
+    lines in the terminal, so the quoted path ended in a line break. The
+    application started as if nothing were wrong, and every Save then failed
+    with WinError 123. Surrounding whitespace is never intended — Windows does
+    not even allow a name to end in a space — so it is trimmed; a control
+    character anywhere else is refused with a reason that names it.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        raise argparse.ArgumentTypeError("the workspace path is empty")
+    if any(ord(ch) < 32 for ch in cleaned):
+        raise argparse.ArgumentTypeError(
+            f"the workspace path {cleaned!r} contains a line break or another control "
+            "character. Was the command split across two lines? Type it on one line."
+        )
+    return Path(cleaned)
+
+
 def _free_port() -> int:
     """Ask the OS for an unused port.
 
@@ -101,11 +122,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="Verify startup, then exit")
     parser.add_argument(
         "--workspace",
-        type=Path,
+        type=workspace_arg,
         default=None,
         help="Directory for generated labs (default: ./kathara-labs)",
     )
     args = parser.parse_args(argv)
+
+    if args.workspace is not None:
+        # Created now, so a folder that cannot exist is reported before the
+        # browser opens, not as a failed Save half an hour into building a lab.
+        try:
+            args.workspace.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            reason = exc.strerror or exc
+            parser.error(f"cannot use {str(args.workspace)!r} as the workspace: {reason}")
 
     port = args.port or _free_port()
     app = create_app(workspace=args.workspace)

@@ -585,3 +585,25 @@ def test_a_capture_with_nothing_deployed_invents_no_baseline(
 
     client.post("/api/project/capture", json={"topology": TRIANGLE})
     assert session.deployed_topology is None
+
+
+def test_a_refusal_from_the_file_system_is_a_reason_not_a_bare_500(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Step 0.8 of the Windows run: Save failed with WinError 123 and a traceback.
+
+    The workspace path ended in a line break. The response now names the
+    refusal and shows the path with that line break visible.
+    """
+    from kathara_gui.project import scenario
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError(22, "The filename is invalid", "C:\Temp\kgui test\n")
+
+    monkeypatch.setattr(scenario, "save", refuse)
+    response = client.post("/api/project/save", json={"topology": TRIANGLE})
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert "The operating system refused: The filename is invalid." in detail
+    assert r"kgui test\n" in detail  # the invisible character, made visible

@@ -59,6 +59,19 @@ function isTreeItem(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && target.getAttribute("role") === "treeitem";
 }
 
+/**
+ * Report a failed request on screen, and assertively to a screen reader.
+ *
+ * Failures used to go to the notice channel, which is rendered only in the
+ * visually hidden live region: a sighted user whose Save failed saw nothing at
+ * all ("Not saved yet" simply stayed), as found in the Windows test run, step
+ * 0.8. The store's error is the visible, dismissable banner, and the live
+ * region already announces it as an alert.
+ */
+function fail(err: unknown): void {
+  useTopologyStore.setState({ error: err instanceof ApiError ? err.message : String(err) });
+}
+
 /** Said whenever an edit is refused because the lab is deployed. */
 const LOCKED_NOTICE = "The lab is running, so the design is read-only. Stop the lab to edit it.";
 
@@ -209,7 +222,7 @@ export default function App() {
           // No daemon, or no answer: treat as not deployed, as the probe will.
         }
       })
-      .catch((err) => setStatus(err instanceof ApiError ? err.message : String(err)));
+      .catch((err) => fail(err));
   }, [load]);
 
   // Drop devices that an edit or an undo removed, so neither an alignment nor a
@@ -372,7 +385,7 @@ export default function App() {
               "inside the containers.",
       );
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : String(err));
+      fail(err);
     } finally {
       setLabBusy(null);
       refreshEverything();
@@ -393,7 +406,7 @@ export default function App() {
       const result = await api.wipeLabs();
       setEverything(result);
       if (result.message) {
-        setNotice(result.message);
+        fail(result.message);
         return;
       }
       // This lab went with the rest, so the design unlocks. Asked of Docker,
@@ -406,7 +419,7 @@ export default function App() {
           "The design can be edited again.",
       );
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : String(err));
+      fail(err);
     } finally {
       setLabBusy(null);
     }
@@ -471,7 +484,7 @@ export default function App() {
           setCanAllocate(false);
           setNotice("The subnet calculator is disabled for this scenario.");
         } else {
-          setNotice(err instanceof ApiError ? err.message : String(err));
+          fail(err);
         }
       } finally {
         setAllocating(false);
@@ -544,7 +557,7 @@ export default function App() {
           setCanVerify(false);
           setNotice("Link verification is disabled for this scenario.");
         } else {
-          setNotice(err instanceof ApiError ? err.message : String(err));
+          fail(err);
         }
       } finally {
         setLabBusy(null);
@@ -611,7 +624,7 @@ export default function App() {
       }
       edit({ type: "moveNodes", positions: moved, label: "Tidied the layout" });
     } catch (err) {
-      setStatus(err instanceof ApiError ? err.message : String(err));
+      fail(err);
     } finally {
       setScenarioBusy(null);
     }
@@ -635,7 +648,7 @@ export default function App() {
         markSaved();
         setStatus(`Saved in ${result.name}`);
       } catch (err) {
-        setStatus(err instanceof ApiError ? err.message : String(err));
+        fail(err);
       } finally {
         setScenarioBusy(null);
       }
@@ -665,7 +678,7 @@ export default function App() {
       markSaved(); // exporting saves the folder first, so it is on disk
       setStatus("Scenario exported.");
     } catch (err) {
-      setStatus(err instanceof ApiError ? err.message : String(err));
+      fail(err);
     } finally {
       setScenarioBusy(null);
     }
@@ -675,7 +688,7 @@ export default function App() {
     api
       .scenarios()
       .then(setScenarios)
-      .catch((err) => setStatus(err instanceof ApiError ? err.message : String(err)));
+      .catch((err) => fail(err));
   }, []);
 
   /** Adopt an opened scenario: its topology, its folder, and its exam toggles. */
@@ -709,7 +722,7 @@ export default function App() {
       try {
         adopt(await api.openProject(name));
       } catch (err) {
-        setStatus(err instanceof ApiError ? err.message : String(err));
+        fail(err);
       } finally {
         setScenarioBusy(null);
       }
@@ -723,7 +736,7 @@ export default function App() {
       try {
         adopt(await api.importProject(file));
       } catch (err) {
-        setStatus(err instanceof ApiError ? err.message : String(err));
+        fail(err);
       } finally {
         setScenarioBusy(null);
       }
@@ -753,7 +766,7 @@ export default function App() {
       );
       return report.topology;
     } catch (err) {
-      setStatus(err instanceof ApiError ? err.message : String(err));
+      fail(err);
       return null;
     } finally {
       setScenarioBusy(null);

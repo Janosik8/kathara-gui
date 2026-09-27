@@ -2289,10 +2289,12 @@ describe("a deployed lab locks the design", () => {
     await user.click(screen.getByRole("button", { name: "Stop" }));
     await user.click(await screen.findByRole("button", { name: "Capture, then stop" }));
 
-    // This was silent before: the deploy's notice masked every later message.
+    // Shown on screen and announced as an alert. It used to reach only the
+    // hidden live region, where a sighted user never saw it (step 0.8).
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/Docker went away/),
+      expect(screen.getByRole("alert")).toHaveTextContent(/Docker went away/),
     );
+    expect(document.querySelector(".app__error")).toHaveTextContent(/Docker went away/);
     expect(undeploy).not.toHaveBeenCalled();
   });
 
@@ -2500,8 +2502,9 @@ describe("stopping every lab at once", () => {
     await user.click(await screen.findByRole("button", { name: "Stop everything" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/Docker went away/),
+      expect(screen.getByRole("alert")).toHaveTextContent(/Docker went away/),
     );
+    expect(document.querySelector(".app__error")).toHaveTextContent(/Docker went away/);
     expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
   });
 
@@ -2513,5 +2516,34 @@ describe("stopping every lab at once", () => {
 
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("a failed request is shown, not only announced", () => {
+  // Found in the Windows test run, step 0.8: every Save failed on the server,
+  // and the interface showed nothing but "Not saved yet". Failures went only
+  // to the visually hidden live region.
+
+  it("shows why a save failed, on screen", async () => {
+    saveProject.mockRejectedValueOnce(
+      new MockApiError(
+        "The operating system refused: The filename is invalid. Path: C:\Temp\kgui test\n",
+        500,
+      ),
+    );
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]!);
+
+    await waitFor(() =>
+      expect(document.querySelector(".app__error")).toHaveTextContent(
+        /The operating system refused/,
+      ),
+    );
+    // Announced as an alert as well, for a screen-reader user.
+    expect(screen.getByRole("alert")).toHaveTextContent(/The operating system refused/);
+    // And the message can be dismissed.
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(document.querySelector(".app__error")).toBeNull();
   });
 });

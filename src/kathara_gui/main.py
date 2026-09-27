@@ -65,6 +65,24 @@ def create_app(token: str | None = None, workspace: Path | None = None) -> FastA
 
         return await call_next(request)
 
+    @app.exception_handler(OSError)
+    async def operating_system_refused(request: Request, exc: OSError) -> JSONResponse:
+        """A refusal from the file system as a reason, not a bare 500.
+
+        Found in the Windows test run (step 0.8): a workspace path ending in a
+        line break made every Save fail with WinError 123, and the interface
+        showed nothing but "Not saved yet". The path is quoted with control
+        characters made visible, since an invisible one was the whole problem.
+        """
+        where = ""
+        if exc.filename:
+            shown = str(exc.filename).replace("\r", "\\r").replace("\n", "\\n")
+            where = f" Path: {shown}"
+        reason = exc.strerror or str(exc) or exc.__class__.__name__
+        return JSONResponse(
+            {"detail": f"The operating system refused: {reason}.{where}"}, status_code=500
+        )
+
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}

@@ -168,3 +168,46 @@ def test_an_installed_release_is_never_warned_about(tmp_path: Any) -> None:
     static = tmp_path / "static"
     static.mkdir()
     assert cli.frontend_staleness(tmp_path / "frontend", static) is None
+
+
+# -- the workspace path -------------------------------------------------
+
+
+def test_a_line_break_at_the_end_of_the_workspace_is_trimmed() -> None:
+    """Step 0.8: the command wrapped in the terminal, so the path ended in "\n".
+
+    Windows cannot create such a folder, and every Save then failed.
+    """
+    assert cli.workspace_arg("C:\Temp\kgui test\n") == cli.Path("C:\Temp\kgui test")
+    assert cli.workspace_arg("  labs  ") == cli.Path("labs")
+
+
+def test_a_line_break_inside_the_workspace_is_refused_with_a_reason() -> None:
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError, match="split across two lines"):
+        cli.workspace_arg("C:\Temp\nkgui test")
+
+
+def test_an_empty_workspace_is_refused() -> None:
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError, match="empty"):
+        cli.workspace_arg("   ")
+
+
+def test_the_workspace_is_created_at_startup(tmp_path: Any) -> None:
+    """A folder that cannot exist is reported before the browser opens."""
+    workspace = tmp_path / "kgui test" / "nested"
+    assert cli.main(["--check", "--workspace", str(workspace)]) == 0
+    assert workspace.is_dir()
+
+
+def test_a_workspace_that_cannot_be_created_stops_startup(
+    tmp_path: Any, capsys: Any
+) -> None:
+    blocker = tmp_path / "a file"
+    blocker.write_text("not a folder")
+    with pytest.raises(SystemExit):
+        cli.main(["--check", "--workspace", str(blocker / "labs")])
+    assert "cannot use" in capsys.readouterr().err

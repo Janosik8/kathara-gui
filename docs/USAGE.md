@@ -706,6 +706,13 @@ application now just prints "Kathara GUI stopped."
 only** ("Use Windows Containers" must be off), and the drive holding your labs shared in
 Docker settings. The Kathará CLI works in PowerShell, not `cmd`.
 
+**Save does nothing, or "the workspace path … contains a line break"** — the command was
+split across two lines, usually because the terminal wrapped it and the closing `"` ended
+up on the next line. Type `uv run kathara-gui --workspace "C:\path with spaces"` on one
+line. A line break at the very end is trimmed automatically; one inside the path is
+refused at startup. Any failure the application can't recover from is shown in a red
+banner at the bottom of the window, with the reason.
+
 **Containers left running** — **Stop every lab** in the Laboratory panel removes all of
 them, or `kathara wipe` if you have the Kathará command-line tool. They're left running on
 purpose when the application stops, and it says so as it exits.
