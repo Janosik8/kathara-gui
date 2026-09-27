@@ -9,6 +9,7 @@ import {
   type DiagnosticsResponse,
   type Conflicts,
   type EnvironmentCheck,
+  type EverythingResponse,
   type ScenarioSummary,
   type StatusResponse,
   api,
@@ -121,6 +122,19 @@ export default function App() {
   const [canVerify, setCanVerify] = useState(true);
   const [labBusy, setLabBusy] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Conflicts | null>(null);
+  /** Every Kathará lab of this user, for "Stop every lab". Null until known. */
+  const [everything, setEverything] = useState<EverythingResponse | null>(null);
+
+  /**
+   * Re-count every deployed lab. Called on load and after each lab action,
+   * never on a timer (NFR-11). A failure leaves the last answer in place.
+   */
+  const refreshEverything = useCallback(() => {
+    api
+      .labEverything()
+      .then(setEverything)
+      .catch(() => undefined);
+  }, []);
 
   // The scenario as a file. `projectFile` is null until it has been written
   // somewhere; `scenarioBusy` names the action in flight, like labBusy.
@@ -361,8 +375,42 @@ export default function App() {
       setNotice(err instanceof ApiError ? err.message : String(err));
     } finally {
       setLabBusy(null);
+      refreshEverything();
     }
-  }, [topology]);
+  }, [topology, refreshEverything]);
+
+  /**
+   * Stop every lab of this user — `kathara wipe` — capturing nothing.
+   *
+   * Requested during the first Windows run: labs outlive the application, and
+   * a machine without the Kathará command-line tool had no way to clear them
+   * all. The panel has already asked, and said what will stop.
+   */
+  const wipeLabs = useCallback(async () => {
+    setLabBusy("wipe");
+    try {
+      const before = everything?.devices ?? 0;
+      const result = await api.wipeLabs();
+      setEverything(result);
+      if (result.message) {
+        setNotice(result.message);
+        return;
+      }
+      // This lab went with the rest, so the design unlocks. Asked of Docker,
+      // not assumed, like every other status.
+      setLabStatus(await api.labStatus(topology));
+      setDiagnostics(null);
+      setConflicts(null);
+      setNotice(
+        `Stopped every lab: ${before} device${before === 1 ? "" : "s"}. ` +
+          "The design can be edited again.",
+      );
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLabBusy(null);
+    }
+  }, [everything, topology]);
 
   // Validate as the design changes, debounced so a drag does not produce a
   // request per frame. The rules live on the server, so the editor and the
@@ -447,7 +495,9 @@ export default function App() {
       .features()
       .then((f) => setCanVerify(f.infrastructure_verification))
       .catch(() => undefined);
-  }, []);
+
+    refreshEverything();
+  }, [refreshEverything]);
 
   const runLabAction = useCallback(
     async (
@@ -498,9 +548,10 @@ export default function App() {
         }
       } finally {
         setLabBusy(null);
+        if (action !== "verify") refreshEverything();
       }
     },
-    [topology, leaveConnectMode],
+    [topology, leaveConnectMode, refreshEverything],
   );
 
   const addDevice = useCallback(
@@ -986,6 +1037,8 @@ export default function App() {
             onUndeploy={() => runLabAction("undeploy")}
             onCaptureAndStop={captureAndStop}
             onCheck={checkLab}
+            everything={everything}
+            onWipe={wipeLabs}
             onVerify={() => runLabAction("verify")}
             conflicts={conflicts}
             onConfirmDeploy={() => runLabAction("deploy", true)}

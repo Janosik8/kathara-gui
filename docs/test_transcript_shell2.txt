@@ -1,0 +1,97 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260927123938
+Username: DESKTOP-05KGM4O\Janek
+RunAs User: DESKTOP-05KGM4O\Janek
+Configuration Name: 
+Machine: DESKTOP-05KGM4O (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+Process ID: 11316
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is .\docs\test_transcript_shell2.txt
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui
+Kathara GUI running at:
+  http://127.0.0.1:55699/?token=gt7Vgv3rKeBo9IZcOwM_m3WlNYHcJnFrzBLgezQmsxo
+
+Labs are written to:
+  C:\Users\Janek\Desktop\kathara-gui\kathara-labs
+
+Press Ctrl+C to stop.
+INFO:     Started server process [1412]
+INFO:     Uvicorn running on http://127.0.0.1:55699 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55703 - "GET /?token=gt7Vgv3rKeBo9IZcOwM_m3WlNYHcJnFrzBLgezQmsxo HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55703 - "GET /assets/index-BdYwTdys.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "GET /assets/index-BpYjhvTw.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55703 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55705 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55705 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55704 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "POST /api/topology/addressing/check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "POST /api/lab/deploy HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [1412]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui
+Kathara GUI running at:
+  http://127.0.0.1:55736/?token=d_PACO16xbnqux8TrWsCxjhTQbvqdvGGoSq1D5soMBY
+
+Labs are written to:
+  C:\Users\Janek\Desktop\kathara-gui\kathara-labs
+
+Press Ctrl+C to stop.
+INFO:     Started server process [2180]
+INFO:     Uvicorn running on http://127.0.0.1:55736 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55740 - "GET /?token=d_PACO16xbnqux8TrWsCxjhTQbvqdvGGoSq1D5soMBY HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55740 - "GET /assets/index-BdYwTdys.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55741 - "GET /assets/index-BpYjhvTw.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55740 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55742 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55742 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55741 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Finished server process [2180]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+PS C:\Users\Janek\Desktop\kathara-gui> docker exec -it kathara_janek-kuz4yakkdhrquehhecg0rg_r1_k0tTWACxy6j5al1y9y8WEQ /bin/bash
+root@r1:/# exit
+exit
+
+What's next:
+    Try Docker Debug for seamless, persistent debugging tools in any container or image → docker debug kathara_janek-kuz
+4yakkdhrquehhecg0rg_r1_k0tTWACxy6j5al1y9y8WEQ
+    Learn more at https://docs.docker.com/go/debug-cli/
+PS C:\Users\Janek\Desktop\kathara-gui> uv run kathara-gui --workspace "C:\Temp\kgui test
+"
+Kathara GUI running at:
+  http://127.0.0.1:55859/?token=rWJrJvoHcMN7R4xsyrk_IEEYXPkYhCwDuWRpmjGSkGQ
+
+Labs are written to:
+  C:\Temp\kgui test
+
+
+Press Ctrl+C to stop.
+INFO:     Started server process [5212]
+INFO:     Uvicorn running on http://127.0.0.1:55859 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55863 - "GET /?token=rWJrJvoHcMN7R4xsyrk_IEEYXPkYhCwDuWRpmjGSkGQ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55863 - "GET /assets/index-BdYwTdys.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55864 - "GET /assets/index-BpYjhvTw.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55864 - "GET /api/topology HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55866 - "GET /api/lab/features HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55863 - "GET /api/lab/probe HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55863 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     Shutting down
+INFO:     Finished server process [5212]
+Kathara GUI stopped.
+PS C:\Users\Janek\Desktop\kathara-gui> TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."

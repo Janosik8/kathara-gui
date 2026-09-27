@@ -1183,7 +1183,8 @@ select {
   stroke-width: 2;
 }
 
-.lab__location {
+.lab__location,
+.lab__everything {
   border-top: 1px solid var(--border);
   margin-top: 10px;
   padding-top: 8px;

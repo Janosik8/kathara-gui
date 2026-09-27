@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import socket
 import sys
 import threading
@@ -12,9 +13,31 @@ from pathlib import Path
 import uvicorn
 
 from kathara_gui import __version__
+from kathara_gui.kathara import runner
 from kathara_gui.main import STATIC_DIR, create_app
 
 HOST = "127.0.0.1"
+
+
+def shutdown_notice(devices: int, labs: int) -> str | None:
+    """What the user should know about labs left behind, or None if there are none.
+
+    Containers outlive the application on purpose: a lab keeps running while
+    its editor restarts, and the reopened page comes back locked (D9). But
+    someone pressing Ctrl+C cannot see that, and would reasonably assume
+    stopping the application stopped the lab.
+    """
+    if devices == 0:
+        return None
+    what = "1 device" if devices == 1 else f"{devices} devices"
+    where = "1 lab" if labs == 1 else f"{labs} labs"
+    verb = "is" if devices == 1 else "are"
+    return (
+        f"{what} in {where} {verb} still deployed. Kathará containers do not stop "
+        "with this application; they keep running until they are stopped.\n"
+        'To stop them: start the application again and use "Stop every lab" in the '
+        "Laboratory panel, or run `kathara wipe` if you have Kathará's command-line tool."
+    )
 
 #: Where the interface is built from — present only in a source checkout.
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -129,4 +152,21 @@ def main(argv: list[str] | None = None) -> int:
         # status reflects it; stopping is what the user asked for, not a fault.
         pass
     print("Kathara GUI stopped.", flush=True)
+
+    try:
+        left = runner.running_everywhere()
+    except (Exception, KeyboardInterrupt):  # noqa: BLE001
+        # A late Ctrl+C, or a daemon that has gone away, must not turn a clean
+        # stop back into a traceback (F22). The warning is a courtesy.
+        left = []
+    notice = shutdown_notice(len(left), len({d.lab_hash for d in left}))
+    if notice:
+        print(f"\nWarning: {notice}", flush=True)
+
+    # The process is exiting and has nothing left to interrupt. A duplicated
+    # Ctrl+C from the Windows console can still arrive this late, during
+    # interpreter shutdown, where nothing catches it and Python prints
+    # "Exception ignored in atexit callback … KeyboardInterrupt" after
+    # "stopped" — found in the user's transcript of test step 0.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     return 0

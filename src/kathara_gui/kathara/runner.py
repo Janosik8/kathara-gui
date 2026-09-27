@@ -195,6 +195,59 @@ def _containers(lab_hash: str) -> dict[str, _Container]:
     return found
 
 
+@dataclass(frozen=True)
+class DeployedDevice:
+    """A Kathará device of the current user, in any lab."""
+
+    lab_hash: str
+    name: str
+    #: Docker's word for it: "running", "exited", …
+    status: str
+
+
+def running_everywhere() -> list[DeployedDevice]:
+    """Every Kathará device of the current user, in every lab, running or not.
+
+    Not only this application's lab: the point is to say what is left behind
+    when the application stops, and what "Stop every lab" will clear. Exited
+    containers count, because they still hold their names. Another user's labs
+    are never included — Kathará filters by user unless asked not to.
+
+    No daemon means nothing is deployed, as in :func:`status`.
+    """
+    try:
+        containers = Kathara.get_instance().get_machines_api_objects()
+    except Exception:  # noqa: BLE001 - no daemon means nothing is deployed
+        return []
+    found = []
+    for container in containers:
+        labels = getattr(container, "labels", {}) or {}
+        name = labels.get("name")
+        if name:
+            found.append(
+                DeployedDevice(
+                    lab_hash=labels.get("lab_hash", ""),
+                    name=name,
+                    status=getattr(container, "status", "unknown"),
+                )
+            )
+    return found
+
+
+def wipe() -> str | None:
+    """Stop every lab of the current user — ``kathara wipe`` — and say why not if it fails.
+
+    Deliberately captures nothing: this is the way out when labs have been left
+    behind, including ones this application never opened. Other users' labs
+    are untouched (``all_users=False``).
+    """
+    try:
+        Kathara.get_instance().wipe(all_users=False)
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return f"Could not stop every lab: {_reason(exc)}"
+    return None
+
+
 def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
     """Write the lab to ``lab_dir`` and hand it to Kathará's parser.
 

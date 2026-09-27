@@ -238,6 +238,41 @@ def verify(
     )
 
 
+class EverythingResponse(BaseModel):
+    """Every Kathará lab of the current user, not only the one being edited."""
+
+    devices: int
+    labs: int
+    message: str | None = None
+
+
+def _everything(message: str | None = None) -> EverythingResponse:
+    devices = runner.running_everywhere()
+    return EverythingResponse(
+        devices=len(devices), labs=len({d.lab_hash for d in devices}), message=message
+    )
+
+
+@router.get("/everything", response_model=EverythingResponse)
+def everything() -> EverythingResponse:
+    """How many devices, in how many labs, "Stop every lab" would stop."""
+    return _everything()
+
+
+@router.post("/wipe", response_model=EverythingResponse)
+def wipe(session: Session = Depends(get_session)) -> EverythingResponse:
+    """Stop every lab of the current user, capturing nothing — ``kathara wipe``.
+
+    The one way out when labs have been left running, and on a machine without
+    the Kathará command-line tool, the only practical one.
+    """
+    message = runner.wipe()
+    if message is None:
+        # Whatever this session had deployed is gone with everything else.
+        session.mark_deployed(None)
+    return _everything(message)
+
+
 class FeaturesResponse(BaseModel):
     subnet_calculator: bool
     addressing_validation: bool

@@ -52,6 +52,8 @@ const {
   scenarios,
   captureState,
   arrange,
+  labEverything,
+  wipeLabs,
 } = vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
@@ -151,6 +153,8 @@ const {
     })),
     exportProject: vi.fn(async () => new Blob(["PK"], { type: "application/zip" })),
     scenarios: vi.fn(async (): Promise<ScenarioSummary[]> => []),
+    labEverything: vi.fn(async () => ({ devices: 0, labs: 0, message: null as string | null })),
+    wipeLabs: vi.fn(async () => ({ devices: 0, labs: 0, message: null as string | null })),
     arrange: vi.fn(async (topology: Topology) => ({
       positions: Object.fromEntries(
         topology.nodes.map((n, i) => [n.name, { x: i * 260, y: 0 }]),
@@ -206,6 +210,8 @@ vi.mock("./api/client", () => ({
     scenarios,
     captureState,
     arrange,
+    labEverything,
+    wipeLabs,
   },
   initialiseToken: vi.fn(),
 }));
@@ -239,6 +245,8 @@ beforeEach(() => {
   });
   deploy.mockReset().mockResolvedValue(idleStatus);
   undeploy.mockReset().mockResolvedValue(idleStatus);
+  labEverything.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
+  wipeLabs.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
   verify.mockReset().mockResolvedValue({
     checks: [],
     passed: 0,
@@ -2382,6 +2390,127 @@ describe("a deployed lab locks the design", () => {
 
   it("passes the accessibility audit while locked", async () => {
     await deployed();
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("stopping every lab at once", () => {
+  // Requested in the first Windows run (test step 0.6): labs outlive the
+  // application, and there was no way to clear them all without Kathará's
+  // command-line tool. `kathara wipe`, capturing nothing — but asked first,
+  // because UX-07 says a destructive action states what it will do.
+
+  const running: StatusResponse = {
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    exited: [],
+    drift: [],
+    deployed: true,
+    lab_dir: "/workspace/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+  const idle: StatusResponse = { ...running, devices: [], running: [], deployed: false };
+
+  beforeEach(() => {
+    vi.mocked(api.labStatus).mockReset().mockResolvedValue(idle);
+  });
+
+  it("has nothing to stop when nothing is deployed", async () => {
+    await renderApp();
+    expect(
+      await screen.findByText(/No Kathará labs are deployed on this computer/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop every lab" })).toBeDisabled();
+  });
+
+  it("counts labs not opened here, and is available while the design is locked", async () => {
+    labEverything.mockResolvedValue({ devices: 5, labs: 2, message: null });
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+
+    expect(await screen.findByText(/5 devices in 2 labs deployed/)).toBeInTheDocument();
+    // A lab action, not an edit: the lock does not reach it.
+    expect(screen.getByRole("button", { name: "Stop every lab" })).toBeEnabled();
+  });
+
+  it("says what will stop before stopping anything", async () => {
+    labEverything.mockResolvedValue({ devices: 5, labs: 2, message: null });
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Stop every lab" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/5 devices in 2 labs/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Nothing is captured/)).toBeInTheDocument();
+    // No capture or save option, as requested.
+    expect(within(dialog).queryByRole("button", { name: /capture/i })).toBeNull();
+    expect(wipeLabs).not.toHaveBeenCalled();
+  });
+
+  it("cancelling stops nothing", async () => {
+    labEverything.mockResolvedValue({ devices: 5, labs: 2, message: null });
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Stop every lab" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(wipeLabs).not.toHaveBeenCalled();
+  });
+
+  it("stops everything and unlocks the design", async () => {
+    labEverything.mockResolvedValue({ devices: 5, labs: 2, message: null });
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+
+    await user.click(screen.getByRole("button", { name: "Stop every lab" }));
+    await user.click(await screen.findByRole("button", { name: "Stop everything" }));
+
+    await waitFor(() => expect(wipeLabs).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Stopped every lab: 5 devices/),
+    );
+    expect(screen.getByText(/No Kathará labs are deployed/)).toBeInTheDocument();
+  });
+
+  it("a failed wipe says why and leaves the lock alone", async () => {
+    labEverything.mockResolvedValue({ devices: 3, labs: 1, message: null });
+    wipeLabs.mockResolvedValue({
+      devices: 3,
+      labs: 1,
+      message: "Could not stop every lab: Docker went away",
+    });
+    deploy.mockResolvedValue(running);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+
+    await user.click(screen.getByRole("button", { name: "Stop every lab" }));
+    await user.click(await screen.findByRole("button", { name: "Stop everything" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Docker went away/),
+    );
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+  });
+
+  it("passes the accessibility audit with the question open", async () => {
+    labEverything.mockResolvedValue({ devices: 2, labs: 1, message: null });
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Stop every lab" }));
+    await screen.findByRole("alertdialog");
+
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);
   });

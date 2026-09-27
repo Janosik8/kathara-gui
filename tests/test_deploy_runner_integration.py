@@ -406,3 +406,29 @@ def _hash(topology: Topology) -> str:
     from Kathara.utils import generate_urlsafe_hash
 
     return generate_urlsafe_hash(topology.name)
+
+
+def test_wipe_stops_every_lab_at_once(tmp_path: Path) -> None:
+    """ "Stop every lab": two unrelated labs, one call, nothing left.
+
+    A real wipe stops *every* lab of the current user, so this refuses to run
+    when anything else is deployed — it must never take the developer's own
+    labs down with the test's.
+    """
+    if runner.running_everywhere():
+        pytest.skip("other Kathará labs are deployed; a wipe would stop them too")
+
+    first = two_routers(matching_subnets=True)
+    second = first.model_copy(update={"name": "kgui-runner-integration-second"})
+    try:
+        runner.deploy(first, tmp_path / "first", confirm=True)
+        runner.deploy(second, tmp_path / "second", confirm=True)
+        deployed = runner.running_everywhere()
+        assert len({d.lab_hash for d in deployed}) == 2
+        assert len(deployed) == 4
+
+        assert runner.wipe() is None
+        assert runner.running_everywhere() == []
+    finally:
+        runner.undeploy(first, tmp_path / "first")
+        runner.undeploy(second, tmp_path / "second")

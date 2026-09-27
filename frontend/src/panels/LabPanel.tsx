@@ -17,9 +17,17 @@ import type {
   DeviceStatus,
   DiagnosticsResponse,
   EnvironmentCheck,
+  EverythingResponse,
   LinkCheck,
   StatusResponse,
 } from "../api/client";
+
+/** "5 devices in 2 labs", in words. */
+function describeEverything({ devices, labs }: EverythingResponse): string {
+  const what = devices === 1 ? "1 device" : `${devices} devices`;
+  const where = labs === 1 ? "1 lab" : `${labs} labs`;
+  return `${what} in ${where}`;
+}
 
 interface Props {
   status: StatusResponse | null;
@@ -44,6 +52,10 @@ interface Props {
   conflicts: Conflicts | null;
   /** Routed to the app's live region, so a copy is confirmed audibly too. */
   onAnnounce?: (message: string) => void;
+  /** Every Kathará lab of this user, not only this one. Null until known. */
+  everything?: EverythingResponse | null;
+  /** Stop every lab, capturing nothing: `kathara wipe`. */
+  onWipe?: () => void;
 }
 
 const DEVICE_STATE: Record<string, { glyph: string; label: string }> = {
@@ -111,8 +123,11 @@ export function LabPanel({
   onCancelDeploy,
   conflicts,
   onAnnounce,
+  everything,
+  onWipe,
 }: Props) {
   const [confirmingStop, setConfirmingStop] = useState(false);
+  const [confirmingWipe, setConfirmingWipe] = useState(false);
   const [shellDevice, setShellDevice] = useState<string | null>(null);
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
@@ -464,6 +479,68 @@ export function LabPanel({
             </ul>
           )}
         </>
+      )}
+
+      {onWipe && (
+        // Deliberately apart from this lab's own buttons: it reaches beyond
+        // the lab being edited, to labs this application never opened, and
+        // must not be mistaken for Stop. Available while the design is locked,
+        // because it is a lab action, not an edit.
+        <div className="lab__everything">
+          <h3 className="panel__heading">All labs</h3>
+          <p className="field__hint">
+            {everything && everything.devices > 0
+              ? `${describeEverything(everything)} deployed on this computer, ` +
+                "counting labs not opened here. They keep running after this " +
+                "application stops."
+              : "No Kathará labs are deployed on this computer."}
+          </p>
+
+          {confirmingWipe && everything && (
+            <div className="confirm" role="alertdialog" aria-labelledby="wipe-heading">
+              <h3 className="confirm__heading" id="wipe-heading">
+                Stop every Kathará lab?
+              </h3>
+              <p>
+                This stops {describeEverything(everything)}, including labs not opened
+                here. Nothing is captured: anything configured inside them is lost.
+              </p>
+              <div className="lab__actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmingWipe(false);
+                    onWipe();
+                  }}
+                  disabled={busy !== null}
+                >
+                  Stop everything
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmingWipe(false);
+                    onAnnounce?.("Nothing was stopped.");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => setConfirmingWipe(true)}
+              disabled={
+                busy !== null || confirmingWipe || !everything || everything.devices === 0
+              }
+            >
+              {busy === "wipe" ? "Stopping every lab…" : "Stop every lab"}
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );

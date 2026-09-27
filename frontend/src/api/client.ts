@@ -258,6 +258,13 @@ export interface DiagnosticsResponse {
   message: string | null;
 }
 
+/** Every Kathará lab of the current user, not only the one being edited. */
+export interface EverythingResponse {
+  devices: number;
+  labs: number;
+  message: string | null;
+}
+
 export interface FeaturesResponse {
   subnet_calculator: boolean;
   addressing_validation: boolean;
@@ -344,6 +351,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ topology }),
     }),
+
+  /** How many devices, in how many labs, "Stop every lab" would stop. */
+  labEverything: () => request<EverythingResponse>("/api/lab/everything"),
+
+  /** Stop every lab of the current user, capturing nothing: `kathara wipe`. */
+  wipeLabs: () => request<EverythingResponse>("/api/lab/wipe", { method: "POST" }),
 
   verify: (topology: Topology) =>
     request<DiagnosticsResponse>("/api/lab/verify", {

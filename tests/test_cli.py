@@ -9,6 +9,16 @@ import pytest
 from kathara_gui import cli
 
 
+@pytest.fixture(autouse=True)
+def _restore_ctrl_c() -> Any:
+    """main() ignores SIGINT on its way out; don't let that outlive a test."""
+    import signal
+
+    previous = signal.getsignal(signal.SIGINT)
+    yield
+    signal.signal(signal.SIGINT, previous)
+
+
 def test_ctrl_c_stops_quietly(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
     """Found on Windows: stopping looked like a crash.
 
@@ -24,12 +34,86 @@ def test_ctrl_c_stops_quietly(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> N
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli.uvicorn, "run", interrupted)
+    monkeypatch.setattr(cli.runner, "running_everywhere", lambda: [])
 
     assert cli.main(["--no-browser", "--port", "8199"]) == 0
-    assert "Kathara GUI stopped." in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Kathara GUI stopped." in out
+    assert "still deployed" not in out
     # The app has no startup or shutdown hooks, and the lifespan task is the
     # thing that was cancelled mid-shutdown.
     assert calls["lifespan"] == "off"
+
+
+# -- labs left behind at exit -------------------------------------------
+
+
+def _interrupt(app: Any, **kwargs: Any) -> None:
+    raise KeyboardInterrupt
+
+
+def test_stopping_with_a_lab_deployed_says_it_is_still_running(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """Requested in the Windows test run (step 0.6).
+
+    Containers outlive the application on purpose (D9), but someone pressing
+    Ctrl+C cannot see that and would assume the lab stopped with it.
+    """
+    from kathara_gui.kathara.runner import DeployedDevice
+
+    left = [
+        DeployedDevice("labA", "r1", "running"),
+        DeployedDevice("labA", "r2", "running"),
+        DeployedDevice("labB", "pc1", "exited"),
+    ]
+    monkeypatch.setattr(cli.uvicorn, "run", _interrupt)
+    monkeypatch.setattr(cli.runner, "running_everywhere", lambda: left)
+
+    assert cli.main(["--no-browser", "--port", "8199"]) == 0
+    out = capsys.readouterr().out
+    assert "3 devices in 2 labs are still deployed" in out
+    assert "Stop every lab" in out
+
+
+def test_a_failing_check_at_exit_still_stops_cleanly(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """A late second Ctrl+C, or Docker gone away, must not bring a traceback back."""
+
+    def broken() -> list[Any]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.uvicorn, "run", _interrupt)
+    monkeypatch.setattr(cli.runner, "running_everywhere", broken)
+
+    assert cli.main(["--no-browser", "--port", "8199"]) == 0
+    assert "Kathara GUI stopped." in capsys.readouterr().out
+
+
+def test_a_ctrl_c_arriving_after_exit_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The duplicated Windows Ctrl+C can land during interpreter shutdown.
+
+    Found in the user's transcript: "Kathara GUI stopped.", then "Exception
+    ignored in atexit callback … KeyboardInterrupt". The last thing main()
+    does is stop listening for it. Recorded rather than applied, so the test
+    process itself keeps responding to Ctrl+C.
+    """
+    installed: list[Any] = []
+    monkeypatch.setattr(cli.uvicorn, "run", _interrupt)
+    monkeypatch.setattr(cli.runner, "running_everywhere", lambda: [])
+    monkeypatch.setattr(cli.signal, "signal", lambda sig, handler: installed.append((sig, handler)))
+
+    assert cli.main(["--no-browser", "--port", "8199"]) == 0
+    assert installed[-1] == (cli.signal.SIGINT, cli.signal.SIG_IGN)
+
+
+def test_the_notice_counts_in_words() -> None:
+    assert cli.shutdown_notice(0, 0) is None
+    one = cli.shutdown_notice(1, 1)
+    assert one is not None and one.startswith("1 device in 1 lab is still deployed")
+    many = cli.shutdown_notice(5, 2)
+    assert many is not None and many.startswith("5 devices in 2 labs are still deployed")
 
 
 # -- is the served interface the one in the source? --------------------

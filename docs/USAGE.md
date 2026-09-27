@@ -160,6 +160,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Keep what changed inside the containers | **Scenario** → **Capture running state**. |
 | Open a shell on a device | **Laboratory** → choose the device → **Copy command**, then paste it into any terminal. |
 | Stop the lab | **Laboratory** → **Stop**, then choose whether to capture first or discard. |
+| Stop every lab on this computer | **Laboratory** → **All labs** → **Stop every lab**. Captures nothing; see *Stopping everything* in §4. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
 
@@ -501,6 +502,27 @@ in your topology, another lab is probably using the name, and the warning says s
 
 `kathara list` shows everything running; `kathara wipe` removes it all.
 
+### Stopping everything
+
+**A lab keeps running when the application stops.** That's deliberate: restart the
+application and the page comes back to the running lab, locked. When you stop it with
+Ctrl+C while something is deployed, it tells you:
+
+```
+Kathara GUI stopped.
+
+Warning: 6 devices in 2 labs are still deployed. Kathará containers do not stop with this
+application; they keep running until they are stopped.
+```
+
+**Stop every lab**, at the bottom of the Laboratory panel under *All labs*, stops every
+Kathará lab of your user on this computer, including labs this application never opened.
+It's the same as `kathara wipe`, and needs no Kathará command-line tool. The panel says
+how many devices in how many labs are deployed, and the button asks once before acting.
+It **captures nothing**: anything configured inside those containers is lost, so capture
+the lab you care about first if you need it. Other users' labs on the same machine are
+never touched. It works while the design is locked, and unlocks it.
+
 ### Getting a shell on a running device
 
 Deploying writes the lab to `./kathara-labs/<name>`, next to wherever you started
@@ -684,7 +706,9 @@ application now just prints "Kathara GUI stopped."
 only** ("Use Windows Containers" must be off), and the drive holding your labs shared in
 Docker settings. The Kathará CLI works in PowerShell, not `cmd`.
 
-**Containers left running** — `kathara wipe` removes all of them.
+**Containers left running** — **Stop every lab** in the Laboratory panel removes all of
+them, or `kathara wipe` if you have the Kathará command-line tool. They're left running on
+purpose when the application stops, and it says so as it exits.
 
 **The disk filled up, and now nothing works even with space free** — found on the Windows
 machine (F18). When the disk holding Docker Desktop's data fills, Docker's storage goes
