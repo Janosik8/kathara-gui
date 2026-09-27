@@ -11,7 +11,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import App, { placeNew } from "./App";
 import { api } from "./api/client";
 // Type-only, so it is erased at runtime and does not clash with vi.mock.
 import type {
@@ -57,9 +57,11 @@ const {
 } = vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    location: readonly (string | number)[];
+    constructor(message: string, status: number, location: readonly (string | number)[] = []) {
       super(message);
       this.status = status;
+      this.location = location;
     }
   }
   const blank = () => ({ name: "untitled", nodes: [], collision_domains: [] });
@@ -2545,5 +2547,115 @@ describe("a failed request is shown, not only announced", () => {
     // And the message can be dismissed.
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(document.querySelector(".app__error")).toBeNull();
+  });
+});
+
+describe("where a new device goes", () => {
+  // Test step 1A.2: add r1-r4, delete one, add another, and the new device
+  // landed on top of an existing one. The slot was chosen by device count.
+
+  const at = (x: number, y: number) => ({ position: { x, y } });
+
+  it("starts at the first slot", () => {
+    expect(placeNew([])).toEqual({ x: 0, y: 0 });
+  });
+
+  it("fills the gap a deleted device left, instead of stacking", () => {
+    // r1, r3 and r4 remain; r2's slot (180, 0) is free. By count, the new
+    // device went to slot 3, on top of r4.
+    const remaining = [at(0, 0), at(360, 0), at(540, 0)];
+    expect(placeNew(remaining)).toEqual({ x: 180, y: 0 });
+  });
+
+  it("never lands on a device, wherever the devices have been dragged", () => {
+    const moved = [at(10, 5), at(175, 20), at(350, -10), at(560, 30), at(0, 150)];
+    const spot = placeNew(moved);
+    for (const device of moved) {
+      const overlaps =
+        Math.abs(device.position.x - spot.x) < 90 && Math.abs(device.position.y - spot.y) < 70;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it("adding after a delete in the editor does not stack two devices", async () => {
+    const user = await renderApp();
+    for (let i = 0; i < 4; i++) await addRouter(user);
+    await user.click(row("r2"));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await addRouter(user);
+
+    const positions = useTopologyStore
+      .getState()
+      .topology.nodes.map((n) => `${n.position.x},${n.position.y}`);
+    expect(new Set(positions).size).toBe(positions.length);
+  });
+});
+
+describe("an address the server cannot read", () => {
+  // Test step 1A.12: "abc" typed as an address. The server refuses the whole
+  // topology (422), and the panel went on saying "No addressing problems
+  // found", which was false.
+
+  it("is reported as an addressing error naming the device and interface", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+
+    checkAddressing.mockRejectedValue(
+      new MockApiError("'abc' is not a valid address in CIDR form", 422, [
+        "body",
+        "nodes",
+        0,
+        "interfaces",
+        0,
+        "ip",
+      ]),
+    );
+    await user.click(row("r1"));
+    const field = screen.getByLabelText("Address for eth0");
+    await user.clear(field);
+    await user.type(field, "abc{Enter}");
+
+    expect(
+      await screen.findByText(/r1 eth0: 'abc' is not a valid address in CIDR form/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No addressing problems found/)).toBeNull();
+  });
+
+  it("names the interface in the banner when Save is refused for it", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+
+    saveProject.mockRejectedValueOnce(
+      new MockApiError("'abc' is not a valid address in CIDR form", 422, [
+        "body",
+        "topology",
+        "nodes",
+        1,
+        "interfaces",
+        0,
+        "ip",
+      ]),
+    );
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]!);
+
+    await waitFor(() =>
+      expect(document.querySelector(".app__error")).toHaveTextContent(
+        /r2 eth0: 'abc' is not a valid address/,
+      ),
+    );
+  });
+
+  it("says when the check itself could not run, rather than claiming all is well", async () => {
+    const user = await renderApp();
+    checkAddressing.mockRejectedValue(new MockApiError("Internal Server Error", 500));
+    await addRouter(user);
+
+    expect(
+      await screen.findByText(/Could not check the addressing: Internal Server Error/),
+    ).toBeInTheDocument();
   });
 });

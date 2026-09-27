@@ -36,6 +36,13 @@ import { type Placement, computePlacements, domainPosition } from "./layout";
 // every node and lose their measurements.
 const NODE_TYPES = { device: DeviceNode };
 
+/**
+ * How far, in pixels, the pointer may move between press and release and the
+ * press still count as a click. d3-drag's own convention is a few pixels;
+ * React Flow's default of 0 swallowed clicks with ordinary hand movement.
+ */
+export const NODE_CLICK_DISTANCE = 5;
+
 interface Props {
   topology: Topology;
   selected: string[];
@@ -289,7 +296,14 @@ function CanvasInner({
           onSelect(null, false);
           onSelectLink?.(null);
         }}
-        nodesDraggable={!locked}
+        // Two defaults made clicking on a device unreliable (test step 1A.5,
+        // "I often have to click a router 2 or 3 times"). React Flow hands
+        // nodeClickDistance to d3-drag, where it defaults to 0: a single pixel
+        // of hand movement between press and release turns the click into a
+        // drag and swallows it. A few pixels is what any pointer needs. And in
+        // connect mode a press can only mean "this end", so nothing drags.
+        nodesDraggable={!locked && !connectMode}
+        nodeClickDistance={NODE_CLICK_DISTANCE}
         snapToGrid
         snapGrid={[16, 16]}
         fitView

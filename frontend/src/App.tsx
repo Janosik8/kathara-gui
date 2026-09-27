@@ -36,10 +36,27 @@ import {
   suggestCollisionDomain,
 } from "./types";
 
-/** Lay new devices out on a loose grid rather than stacking them at the origin. */
-function placeNew(count: number) {
+/**
+ * Where a new device goes: the first slot of a loose grid that nothing occupies.
+ *
+ * It used to be slot number *device count*. After a deletion that slot is
+ * usually taken — add r1–r4, delete one, add another, and it landed on top of
+ * an existing device (test step 1A.2). A slot counts as taken when any device
+ * sits within half a cell of it, so devices the user has dragged elsewhere
+ * free their old slot, and one dragged near a slot claims it.
+ */
+export function placeNew(nodes: readonly { position: { x: number; y: number } }[]) {
   const COLUMNS = 4;
-  return { x: (count % COLUMNS) * 180, y: Math.floor(count / COLUMNS) * 140 };
+  const WIDTH = 180;
+  const HEIGHT = 140;
+  for (let slot = 0; ; slot++) {
+    const x = (slot % COLUMNS) * WIDTH;
+    const y = Math.floor(slot / COLUMNS) * HEIGHT;
+    const taken = nodes.some(
+      (n) => Math.abs(n.position.x - x) < WIDTH / 2 && Math.abs(n.position.y - y) < HEIGHT / 2,
+    );
+    if (!taken) return { x, y };
+  }
 }
 
 /** True when the keystroke belongs to whatever the user is typing into. */
@@ -69,7 +86,35 @@ function isTreeItem(target: EventTarget | null): boolean {
  * region already announces it as an alert.
  */
 function fail(err: unknown): void {
-  useTopologyStore.setState({ error: err instanceof ApiError ? err.message : String(err) });
+  useTopologyStore.setState({ error: describeFailure(err) });
+}
+
+/**
+ * A failure in words, naming the device and interface when the server points
+ * at one: "r1 eth1: 'abc' is not a valid address in CIDR form".
+ *
+ * The server's validation message cannot name them — the model checks one
+ * address at a time and does not know whose it is — but its location does,
+ * and the topology that was sent is the one in the editor.
+ */
+export function describeFailure(err: unknown): string {
+  if (!(err instanceof ApiError)) return String(err);
+  const where = whereInTopology(err.location, useTopologyStore.getState().topology);
+  return where ? `${where}: ${err.message}` : err.message;
+}
+
+/** "r1 eth1" for a location such as [..., "nodes", 0, "interfaces", 1, "ip"]. */
+export function whereInTopology(
+  location: readonly (string | number)[],
+  topology: Topology,
+): string | null {
+  const n = location.indexOf("nodes");
+  if (n < 0) return null;
+  const node = topology.nodes[Number(location[n + 1])];
+  if (!node) return null;
+  const i = location.indexOf("interfaces", n);
+  const iface = i < 0 ? undefined : node.interfaces[Number(location[i + 1])];
+  return iface ? `${node.name} eth${iface.number}` : node.name;
 }
 
 /** Said whenever an edit is refused because the lab is deployed. */
@@ -449,7 +494,28 @@ export default function App() {
         .catch((err) => {
           if (cancelled) return;
           // 403 means the instructor withdrew it for this scenario.
-          if (err instanceof ApiError && err.status === 403) setCanValidate(false);
+          if (err instanceof ApiError && err.status === 403) {
+            setCanValidate(false);
+            return;
+          }
+          // Never leave the previous answer standing. Test step 1A.12 typed
+          // "abc" as an address: the server refused the whole topology (422),
+          // this was ignored, and the panel went on saying "No addressing
+          // problems found". The refusal *is* the addressing problem.
+          const invalid = err instanceof ApiError && err.status === 422;
+          const where = err instanceof ApiError ? whereInTopology(err.location, topology) : null;
+          setIssues([
+            {
+              severity: "error",
+              code: invalid ? "invalid_input" : "check_failed",
+              message: invalid
+                ? describeFailure(err)
+                : `Could not check the addressing: ${describeFailure(err)}`,
+              collision_domain: null,
+              devices: where ? [where.split(" ")[0]!] : [],
+            },
+          ]);
+          setCounts({ errors: 1, warnings: 0 });
         })
         .finally(() => {
           if (!cancelled) setChecking(false);
@@ -572,7 +638,7 @@ export default function App() {
       const name = suggestName(topology, kind);
       edit({
         type: "addNode",
-        node: newNode(name, kind, placeNew(topology.nodes.length)),
+        node: newNode(name, kind, placeNew(topology.nodes)),
       });
       setSelected([name]);
     },

@@ -34,6 +34,12 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * Where in the request a validation error (422) points, as FastAPI reports
+     * it — e.g. ["body", "nodes", 0, "interfaces", 1, "ip"]. Lets the caller
+     * name the device and interface, which the message alone does not.
+     */
+    readonly location: readonly (string | number)[] = [],
   ) {
     super(message);
   }
@@ -52,7 +58,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new ApiError(await readError(response), response.status);
+    throw await readError(response);
   }
   return (await response.json()) as T;
 }
@@ -75,24 +81,27 @@ async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> 
   });
 
   if (!response.ok) {
-    throw new ApiError(await readError(response), response.status);
+    throw await readError(response);
   }
   return await response.blob();
 }
 
-async function readError(response: Response): Promise<string> {
+async function readError(response: Response): Promise<ApiError> {
+  const fallback = response.statusText || `Request failed (${response.status})`;
   try {
     const body = await response.json();
     const detail = body?.detail;
-    if (typeof detail === "string") return detail;
+    if (typeof detail === "string") return new ApiError(detail, response.status);
     // FastAPI validation errors arrive as a list of per-field objects.
     if (Array.isArray(detail) && detail.length > 0) {
-      return String(detail[0]?.msg ?? "").replace(/^Value error, /, "") || response.statusText;
+      const message = String(detail[0]?.msg ?? "").replace(/^Value error, /, "") || fallback;
+      const location = Array.isArray(detail[0]?.loc) ? detail[0].loc : [];
+      return new ApiError(message, response.status, location);
     }
   } catch {
     // Fall through to the status text.
   }
-  return response.statusText || `Request failed (${response.status})`;
+  return new ApiError(fallback, response.status);
 }
 
 export type IssueSeverity = "error" | "warning";

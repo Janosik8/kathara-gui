@@ -1,0 +1,72 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260927133509
+Username: DESKTOP-05KGM4O\Janek
+RunAs User: DESKTOP-05KGM4O\Janek
+Configuration Name: 
+Machine: DESKTOP-05KGM4O (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+Process ID: 18960
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is ./docs/test-transcript_3_shell2.txt
+PS C:\Users\Janek\Desktop\kathara-gui> (Get-Content -Raw lab.conf).Contains("`r")
+Get-Content : Cannot find path 'C:\Users\Janek\Desktop\kathara-gui\lab.conf' because it does not exist.
+At line:1 char:2
++ (Get-Content -Raw lab.conf).Contains("`r")
++  ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\Users\Janek\...ra-gui\lab.conf:String) [Get-Content], ItemNotFoundExce
+ption
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+Get-Content : Cannot find path 'C:\Users\Janek\Desktop\kathara-gui\lab.conf' because it does not exist.
+At line:1 char:2
++ (Get-Content -Raw lab.conf).Contains("`r")
++  ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\Users\Janek\...ra-gui\lab.conf:String) [Get-Content], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+
+You cannot call a method on a null-valued expression.
+At line:1 char:1
++ (Get-Content -Raw lab.conf).Contains("`r")
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+You cannot call a method on a null-valued expression.
+At line:1 char:1
++ (Get-Content -Raw lab.conf).Contains("`r")
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+PS C:\Users\Janek\Desktop\kathara-gui> cd 'C:\Temp\kgui test\base-exam\'
+PS C:\Temp\kgui test\base-exam> (Get-Content -Raw lab.conf).Contains("`r")
+False
+PS C:\Temp\kgui test\base-exam> dir 
+
+
+    Directory: C:\Temp\kgui test\base-exam
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        27.09.2026     13:47                r1
+d-----        27.09.2026     13:47                r2
+d-----        27.09.2026     13:47                r3
+d-----        27.09.2026     13:47                r4
+-a----        27.09.2026     13:47            171 kgui.json
+-a----        27.09.2026     13:47            781 lab.conf
+-a----        27.09.2026     13:47            257 r1.startup
+-a----        27.09.2026     13:47            257 r2.startup
+-a----        27.09.2026     13:47            258 r3.startup
+-a----        27.09.2026     13:47            257 r4.startup
+
+
+PS C:\Temp\kgui test\base-exam> (Get-Content -Raw r1.startup).Contains("`r")
+False
