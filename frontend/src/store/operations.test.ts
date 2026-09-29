@@ -121,6 +121,46 @@ describe("disconnect", () => {
       /has no eth3/,
     );
   });
+
+  it("renumbers the interfaces above it, keeping their addresses", () => {
+    const prepared = applyAll(base(), [
+      { type: "connect", node: "r1", collisionDomain: "A" },
+      { type: "connect", node: "r1", collisionDomain: "B" },
+      { type: "updateInterface", node: "r1", number: 1, changes: { ip: "10.0.1.1/24" } },
+    ]);
+    const next = apply(prepared, { type: "disconnect", node: "r1", number: 0 });
+    expect(next.nodes[0]!.interfaces).toEqual([
+      { number: 0, collision_domain: "B", ip: "10.0.1.1/24" },
+    ]);
+  });
+});
+
+describe("removeLink and interface numbering", () => {
+  // Test step 1B.3: r2 linked to r1 (eth0) and r3 (eth1); deleting the r1–r2
+  // link left r2 with eth1 alone, and Kathará refused the whole deploy with
+  // "Interface `0` missing on device `r2`".
+  it("leaves no gap on a device that keeps other links", () => {
+    const three: Topology = {
+      ...base(),
+      nodes: [...base().nodes, newNode("r3", "router", at(200, 0))],
+    };
+    const next = applyAll(three, [
+      { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
+      { type: "link", a: "r2", b: "r3", collisionDomain: "B" },
+      { type: "removeLink", collisionDomain: "A" },
+    ]);
+    const r2 = next.nodes.find((n) => n.name === "r2")!;
+    expect(r2.interfaces.map((i) => [i.number, i.collision_domain])).toEqual([[0, "B"]]);
+  });
+
+  it("leaves devices the link did not touch as they were", () => {
+    const prepared = applyAll(base(), [
+      { type: "link", a: "r1", b: "r2", collisionDomain: "A" },
+      { type: "connect", node: "r1", collisionDomain: "C" },
+    ]);
+    const next = apply(prepared, { type: "removeLink", collisionDomain: "C" });
+    expect(next.nodes[1]).toBe(prepared.nodes[1]);
+  });
 });
 
 describe("renameNode", () => {

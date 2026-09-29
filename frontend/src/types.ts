@@ -131,6 +131,19 @@ export function suggestCollisionDomain(topology: Topology): string {
   }
 }
 
+/**
+ * The device with its interfaces renumbered 0, 1, 2… in order.
+ *
+ * Kathará refuses to deploy a device with a gap — eth1 and no eth0 fails with
+ * "Interface `0` missing" — and removing a link is what leaves one. Each
+ * interface keeps its domain and address; only its number moves down.
+ */
+export function compactInterfaces(node: Node): Node {
+  const ordered = [...node.interfaces].sort((a, b) => a.number - b.number);
+  if (ordered.every((iface, index) => iface.number === index)) return node;
+  return { ...node, interfaces: ordered.map((iface, number) => ({ ...iface, number })) };
+}
+
 /** Lowest unused interface index, so numbering stays gap-free. */
 export function nextInterfaceNumber(node: Node): number {
   const used = new Set(node.interfaces.map((i) => i.number));

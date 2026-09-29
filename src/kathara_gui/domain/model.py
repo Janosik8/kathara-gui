@@ -142,6 +142,24 @@ class Node(BaseModel):
     def interface(self, number: int) -> Interface | None:
         return next((i for i in self.interfaces if i.number == number), None)
 
+    def compacted(self) -> tuple[Node, list[tuple[int, int]]]:
+        """This device with its interfaces renumbered 0, 1, 2… in order.
+
+        Kathará refuses a device whose interfaces have a gap — eth1 with no
+        eth0 fails the whole deploy with ``NonSequentialMachineInterfaceError``
+        — and a gap is what removing a link leaves behind. Each interface keeps
+        its domain and address; only its number moves down. Returns the
+        renumbered device and every ``(old, new)`` pair that changed.
+        """
+        ordered = sorted(self.interfaces, key=lambda i: i.number)
+        moves = [(iface.number, new) for new, iface in enumerate(ordered) if iface.number != new]
+        if not moves:
+            return self, []
+        interfaces = [
+            iface.model_copy(update={"number": new}) for new, iface in enumerate(ordered)
+        ]
+        return self.model_copy(update={"interfaces": interfaces}), moves
+
 
 class CollisionDomain(BaseModel):
     """A shared medium. In Kathara this is the link itself, not a device."""
@@ -211,6 +229,26 @@ class Topology(BaseModel):
             for iface in sorted(node.interfaces, key=lambda i: i.number)
             if iface.collision_domain == collision_domain
         ]
+
+    def compacted(self) -> tuple[Topology, list[str]]:
+        """This topology with every device's interfaces numbered without gaps.
+
+        Returns the result and one sentence per renumbered interface, so a
+        caller that opened a lab from disk can say what moved.
+        """
+        nodes: list[Node] = []
+        notes: list[str] = []
+        for node in self.nodes:
+            fixed, moves = node.compacted()
+            nodes.append(fixed)
+            notes.extend(
+                f"{node.name} eth{old} is now eth{new}: Kathará needs interfaces "
+                "numbered from eth0 without gaps."
+                for old, new in moves
+            )
+        if not notes:
+            return self, []
+        return self.model_copy(update={"nodes": nodes}), notes
 
     # -- mutation ------------------------------------------------------
 

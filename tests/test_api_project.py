@@ -652,3 +652,33 @@ def test_exporting_a_copy_exports_the_copy(client: TestClient) -> None:
 
 def test_a_scenario_never_saved_is_placed_by_its_name(client: TestClient) -> None:
     assert Path(save(client, TRIANGLE)["folder"]).name == "ospf-triangle"
+
+
+def test_opening_a_lab_with_an_interface_gap_renumbers_it(client: TestClient) -> None:
+    """Test step 1B.3: a scenario saved with r2 on eth1 alone failed to deploy.
+
+    The address is read back from r2.startup, which names the *old* interface,
+    so it must survive the renumbering rather than be lost with it.
+    """
+    gap = {
+        "name": "gap",
+        "nodes": [
+            {
+                "name": "r2",
+                "kind": "router",
+                "interfaces": [
+                    {"number": 1, "collision_domain": "B", "ip": "10.0.1.2/24"},
+                    {"number": 3, "collision_domain": "D", "ip": "10.0.3.2/24"},
+                ],
+            }
+        ],
+    }
+    name = save(client, gap)["name"]
+    body = client.post("/api/project/open", json={"folder": name}).json()
+
+    r2 = body["topology"]["nodes"][0]
+    assert [(i["number"], i["collision_domain"], i["ip"]) for i in r2["interfaces"]] == [
+        (0, "B", "10.0.1.2/24"),
+        (1, "D", "10.0.3.2/24"),
+    ]
+    assert any("r2 eth1 is now eth0" in w for w in body["warnings"])

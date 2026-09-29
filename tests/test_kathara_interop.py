@@ -286,3 +286,22 @@ def test_an_unset_image_still_produces_no_image_line(tmp_path: Path) -> None:
     )
     lab_conf = (write_lab(topo, tmp_path / "lab") / "lab.conf").read_text()
     assert "[image]" not in lab_conf
+
+
+def test_a_gap_in_interface_numbers_is_what_kathara_refuses(tmp_path: Path) -> None:
+    """Test step 1B.3: "Interface `0` missing on device `r2`".
+
+    Pins the constraint the renumbering exists for, so that if Kathará ever
+    relaxes it the renumbering can be reconsidered rather than kept by habit.
+    """
+    from Kathara.exceptions import NonSequentialMachineInterfaceError
+
+    gap = Topology(
+        nodes=[Node(name="r2", interfaces=[Interface(number=1, collision_domain="B")])]
+    )
+    with pytest.raises(NonSequentialMachineInterfaceError):
+        LabParser.parse(str(write_lab(gap, tmp_path / "gap")))
+
+    fixed, _ = gap.compacted()
+    lab = LabParser.parse(str(write_lab(fixed, tmp_path / "fixed")))
+    assert list(lab.machines["r2"].interfaces) == [0]

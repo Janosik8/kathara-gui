@@ -294,6 +294,12 @@ def load(folder: Path) -> Scenario:
 
     topology = recover_device_configuration(topology, folder)
 
+    # After recovery, not before: the .startup files name interfaces by their
+    # old numbers, so the addresses must be attached before the numbers move.
+    # A gap here is a lab saved before removing a link renumbered the rest,
+    # and Kathará would refuse to deploy it.
+    topology, renumbered = topology.compacted()
+
     # A lab from elsewhere carries no coordinates, so every device would land
     # on the same spot and the diagram would be unreadable until dragged apart
     # by hand. Only ever applied when there is no layout to lose.
@@ -314,7 +320,7 @@ def load(folder: Path) -> Scenario:
         topology=topology,
         features=features,
         folder=folder,
-        warnings=result.warnings,
+        warnings=[*result.warnings, *renumbered],
         foreign=foreign,
     )
 

@@ -104,8 +104,11 @@ async def import_labconf(
         # topology, e.g. two devices whose names differ only by case.
         raise HTTPException(status_code=422, detail=_first_error(exc)) from exc
 
-    session.replace(result.topology)
-    return ImportResponse(topology=result.topology, warnings=result.warnings)
+    # A bare lab.conf has no .startup files to read addresses from, so it can
+    # be renumbered straight away; see scenario.load for the folder case.
+    topology, renumbered = result.topology.compacted()
+    session.replace(topology)
+    return ImportResponse(topology=topology, warnings=[*result.warnings, *renumbered])
 
 
 @router.get("/export", response_model=ExportResponse)

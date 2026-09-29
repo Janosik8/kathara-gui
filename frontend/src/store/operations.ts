@@ -19,6 +19,7 @@ import {
   type Node,
   type Position,
   type Topology,
+  compactInterfaces,
   nextInterfaceNumber,
 } from "../types";
 
@@ -178,12 +179,14 @@ export function apply(topology: Topology, op: Operation): Topology {
         throw new OperationError(`Nothing is connected to ${op.collisionDomain}.`);
       }
 
-      const nodes = topology.nodes.map((node) => ({
-        ...node,
-        interfaces: node.interfaces.filter(
+      const nodes = topology.nodes.map((node) => {
+        const interfaces = node.interfaces.filter(
           (iface) => iface.collision_domain !== op.collisionDomain,
-        ),
-      }));
+        );
+        return interfaces.length === node.interfaces.length
+          ? node
+          : compactInterfaces({ ...node, interfaces });
+      });
       // The domain goes too: unlike a single disconnect, deleting the link is
       // an unambiguous statement that this segment is no longer wanted, so
       // keeping its planned subnet would only clutter the addressing panel.
@@ -202,7 +205,7 @@ export function apply(topology: Topology, op: Operation): Topology {
         if (interfaces.length === node.interfaces.length) {
           throw new OperationError(`${op.node} has no eth${op.number}.`);
         }
-        return { ...node, interfaces };
+        return compactInterfaces({ ...node, interfaces });
       });
 
     case "updateInterface":

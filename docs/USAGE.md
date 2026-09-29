@@ -214,6 +214,12 @@ link terminates at the interface it actually uses, so you can see which port it 
 matters: wiring `eth0` but configuring `eth1` is a common mistake, and a diagram that hides
 the port cannot help you find it.
 
+Interfaces are always numbered from `eth0` without gaps, because Kathará refuses to deploy a
+device that has `eth1` but no `eth0`. Deleting a link or disconnecting an interface therefore
+moves the ones above it down: a device's `eth1` becomes `eth0`, keeping its link and its
+address. A lab saved with a gap is renumbered the same way when opened, and the panel lists
+each interface that moved.
+
 An interface sits on the face pointing at whatever it is connected to, and moves as you drag
 devices around. Two interfaces on the same face go to opposite corners, ordered so their
 links do not cross.
