@@ -179,6 +179,26 @@ body {
 .app__actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Save as and Open, under the header. In the flow rather than floating, so
+   it reflows at 200% zoom instead of covering the canvas. */
+.scenario-drawer {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  padding: 10px 16px;
+  font-size: 0.88rem;
+}
+
+.scenario-drawer__body {
+  max-width: 40rem;
+  margin-left: auto;
+}
+
+.scenario-drawer .state-list {
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 button {
@@ -1227,6 +1247,12 @@ select {
 .confirm__warning {
   border-left: 4px solid var(--danger);
   padding-left: 8px;
+  color: var(--fg);
+}
+
+/* A selected shared segment, the same way: a heavier, solid border, not only a colour. */
+.react-flow__node.collision-domain--selected {
+  border: 3px solid var(--accent);
   color: var(--fg);
 }
 

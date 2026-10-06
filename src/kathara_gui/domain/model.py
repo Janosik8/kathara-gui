@@ -166,6 +166,13 @@ class CollisionDomain(BaseModel):
 
     name: str
     subnet: str | None = Field(default=None, description="Planned subnet, e.g. 10.0.0.0/24")
+    position: Position | None = Field(
+        default=None,
+        description=(
+            "Where a segment shared by three or more devices is drawn, once the user has "
+            "moved it. None means between its members, following them as they move."
+        ),
+    )
 
     @field_validator("subnet")
     @classmethod

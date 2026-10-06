@@ -114,6 +114,25 @@ export function domainPosition(points: Point[], domain?: string): Point {
 }
 
 /**
+ * Where a collision domain's own node is drawn: where the user put it, if they
+ * moved it, and otherwise between its members.
+ *
+ * The fallback alone made the node follow its devices around and snap back
+ * after being dragged (test step 1D.1), because there was nowhere to keep a
+ * position of its own.
+ */
+export function segmentPosition(topology: Topology, collisionDomain: string): Point {
+  const stored = topology.collision_domains.find((cd) => cd.name === collisionDomain)?.position;
+  if (stored) return stored;
+  return domainPosition(
+    topology.nodes
+      .filter((node) => node.interfaces.some((i) => i.collision_domain === collisionDomain))
+      .map((node) => node.position),
+    collisionDomain,
+  );
+}
+
+/**
  * Where an interface should point: at whatever its link actually reaches.
  *
  * Which is not the same as "at its peers". A segment shared by three or more
@@ -133,10 +152,7 @@ function targetFor(topology: Topology, device: string, collisionDomain: string):
 
   // Otherwise the link ends at the segment's own node — including a stub,
   // whose node sits offset from this very device.
-  return domainPosition(
-    members.map((node) => node.position),
-    collisionDomain,
-  );
+  return segmentPosition(topology, collisionDomain);
 }
 
 /**

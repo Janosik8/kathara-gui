@@ -30,7 +30,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PendingEnd, Topology } from "../types";
 import { DeviceNode } from "./DeviceNode";
-import { type Placement, computePlacements, domainPosition } from "./layout";
+import { type Placement, computePlacements, domainPosition, segmentPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
@@ -48,6 +48,8 @@ interface Props {
   selected: string[];
   onSelect: (name: string | null, additive: boolean) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
+  /** A shared segment's node was dragged to a new place. */
+  onMoveDomain?: (name: string, position: { x: number; y: number }) => void;
   /** The first end of a link being drawn in connect mode, if any. */
   pending?: PendingEnd | null;
   /**
@@ -139,6 +141,7 @@ function CanvasInner({
   pending,
   onSelect,
   onMove,
+  onMoveDomain,
   onSelectCollisionDomain,
   onSelectLink,
   selectedLink,
@@ -202,15 +205,17 @@ function CanvasInner({
       const hubId = `cd:${cd.name}`;
       flowNodes.push({
         id: hubId,
-        position: domainPosition(
-          members.map((m) => m.node.position),
-          cd.name,
-        ),
+        position: segmentPosition(topology, cd.name),
+        // Selected as the link it stands for, so Delete removes the whole
+        // segment (test step 1D.2: clicking it used to do nothing).
+        selected: cd.name === selectedLink,
         data: {
           label: `${cd.name}${cd.subnet ? `\n${cd.subnet}` : ""}`,
           collisionDomain: cd.name,
         },
-        className: `collision-domain${cd.name === pendingDomain ? " collision-domain--pending" : ""}`,
+        className: `collision-domain${cd.name === pendingDomain ? " collision-domain--pending" : ""}${
+          cd.name === selectedLink ? " collision-domain--selected" : ""
+        }`,
       });
       for (const member of members) {
         flowEdges.push({
@@ -264,11 +269,12 @@ function CanvasInner({
         // Commit only when the drag ends: recording every intermediate frame
         // would flood the operation log and make undo useless.
         if (change.type === "position" && change.dragging === false && change.position) {
-          if (!change.id.startsWith("cd:")) onMove(change.id, change.position);
+          if (change.id.startsWith("cd:")) onMoveDomain?.(change.id.slice(3), change.position);
+          else onMove(change.id, change.position);
         }
       }
     },
-    [onMove],
+    [onMove, onMoveDomain],
   );
 
   return (
@@ -280,8 +286,11 @@ function CanvasInner({
         onNodesChange={onNodesChange}
         onNodeClick={(event, node) => {
           const domain = node.data?.collisionDomain;
-          if (typeof domain === "string") onSelectCollisionDomain?.(domain);
-          else onSelect(node.id, event.ctrlKey || event.metaKey);
+          if (typeof domain !== "string") onSelect(node.id, event.ctrlKey || event.metaKey);
+          // The same rule as a link: in connect mode it is an end to join,
+          // otherwise it is selected so it can be deleted.
+          else if (connectMode) onSelectCollisionDomain?.(domain);
+          else onSelectLink?.(domain);
         }}
         onEdgeClick={(_, edge) => {
           const domain = edge.data?.collisionDomain;

@@ -79,6 +79,11 @@ export interface Node {
 export interface CollisionDomain {
   name: string;
   subnet?: string | null;
+  /**
+   * Where a segment shared by three or more devices is drawn, once moved by
+   * hand. Absent means between its members, following them as they move.
+   */
+  position?: Position | null;
 }
 
 export interface Topology {

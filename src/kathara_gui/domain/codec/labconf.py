@@ -10,7 +10,7 @@ state travels in a small, greppable comment block::
 
     # kgui:v1
     # kgui:node r1 pos=120,340 kind=router daemons=zebra,ospfd
-    # kgui:cd A subnet=10.0.0.0/24
+    # kgui:cd A subnet=10.0.0.0/24 pos=300,120
     # kgui:iface r1:0 ip=10.0.0.1/24
 
     r1[0]="A"
@@ -193,11 +193,11 @@ def parse(text: str) -> ParseResult:
 
         position = Position()
         if "pos" in hints:
-            try:
-                x_text, _, y_text = hints["pos"].partition(",")
-                position = Position(x=float(x_text), y=float(y_text))
-            except ValueError:
+            parsed = _parse_position(hints["pos"])
+            if parsed is None:
                 warnings.append(f"Device {name!r}: could not read position {hints['pos']!r}.")
+            else:
+                position = parsed
 
         daemons = [d for d in hints.get("daemons", "").split(",") if d]
         kind = hints.get("kind", "router")
@@ -224,13 +224,31 @@ def parse(text: str) -> ParseResult:
 
     topology = Topology(**meta, nodes=nodes)
 
-    # Register every collision domain in use, carrying any planned subnet.
+    # Register every collision domain in use, carrying any planned subnet and
+    # where its shared-segment node was moved to.
     for cd_name in topology.referenced_collision_domains():
+        cd_hints = kgui_cds.get(cd_name, {})
+        cd_position = None
+        if "pos" in cd_hints:
+            cd_position = _parse_position(cd_hints["pos"])
+            if cd_position is None:
+                warnings.append(
+                    f"Collision domain {cd_name!r}: could not read position {cd_hints['pos']!r}."
+                )
         topology.collision_domains.append(
-            CollisionDomain(name=cd_name, subnet=kgui_cds.get(cd_name, {}).get("subnet"))
+            CollisionDomain(name=cd_name, subnet=cd_hints.get("subnet"), position=cd_position)
         )
 
     return ParseResult(topology=topology, warnings=warnings)
+
+
+def _parse_position(text: str) -> Position | None:
+    """``"120,340"`` as a :class:`Position`, or None when it is not one."""
+    x_text, _, y_text = text.partition(",")
+    try:
+        return Position(x=float(x_text), y=float(y_text))
+    except ValueError:
+        return None
 
 
 # ------------------------------------------------------------ serializing
@@ -300,8 +318,15 @@ def _render_kgui_block(topology: Topology) -> list[str]:
         records.append(f"# {MARKER}:node {node.name} {' '.join(parts)}")
 
     for cd in topology.collision_domains:
+        cd_parts = []
         if cd.subnet:
-            records.append(f"# {MARKER}:cd {cd.name} subnet={cd.subnet}")
+            cd_parts.append(f"subnet={cd.subnet}")
+        if cd.position is not None:
+            cd_parts.append(
+                f"pos={_format_number(cd.position.x)},{_format_number(cd.position.y)}"
+            )
+        if cd_parts:
+            records.append(f"# {MARKER}:cd {cd.name} {' '.join(cd_parts)}")
 
     for node in topology.nodes:
         for iface in sorted(node.interfaces, key=lambda i: i.number):

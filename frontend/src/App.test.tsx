@@ -224,6 +224,8 @@ beforeEach(() => {
   checkAddressing.mockClear();
   checkAddressing.mockResolvedValue({ issues: [], errors: 0, warnings: 0 });
   allocateAddressing.mockClear();
+  // Cleared so a test can count saves; until Ctrl+S, none needed to.
+  saveProject.mockClear();
 
   // mockClear leaves implementations in place, so a test that stubs a
   // failure would leak it into every test after it. Re-establish the
@@ -1480,6 +1482,61 @@ describe("the scenario as a folder", () => {
     await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
     // Saving is not reloading: the edit is still undoable.
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+  });
+
+  it("saves on Ctrl+S, as the Save button does", async () => {
+    // Bug 22.
+    const user = await renderApp();
+    await addRouter(user);
+    await user.keyboard("{Control>}s{/Control}");
+
+    await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  });
+
+  it("includes a half-typed address when Ctrl+S is pressed inside its field", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+    await user.click(row("r1"));
+    await user.type(await screen.findByLabelText("Address for eth0"), "10.0.0.1/24");
+    await user.keyboard("{Control>}s{/Control}");
+
+    await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(1));
+    const sent = saveProject.mock.calls[0]![0];
+    expect(sent.nodes.find((n) => n.name === "r1")?.interfaces[0]?.ip).toBe("10.0.0.1/24");
+  });
+
+  it("does not try to save an empty scenario on Ctrl+S", async () => {
+    const user = await renderApp();
+    await user.keyboard("{Control>}s{/Control}");
+    expect(saveProject).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Nothing to save yet/)).toBeInTheDocument();
+  });
+
+  it("keeps Save, Save as and Open together in the top bar", async () => {
+    // The tester's notes: "save, save as and open buttons should be at the top bar".
+    await renderApp();
+    const header = screen.getByRole("group", { name: "Topology actions" });
+    for (const name of ["Save", "Save as…", "Open…"]) {
+      expect(within(header).getByRole("button", { name })).toBeInTheDocument();
+    }
+    // And only there, so the page does not offer each of them twice.
+    expect(screen.getAllByRole("button", { name: "Open…" })).toHaveLength(1);
+  });
+
+  it("closes Save as with Escape and returns focus to its button", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    const button = screen.getByRole("button", { name: "Save as…" });
+    await user.click(button);
+    expect(screen.getByLabelText("Save as")).toHaveFocus();
+    expect(button).toHaveAttribute("aria-expanded", "true");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByLabelText("Save as")).toBeNull();
+    expect(button).toHaveFocus();
   });
 
   it("saves under a chosen name", async () => {

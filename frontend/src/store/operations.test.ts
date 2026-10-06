@@ -135,6 +135,39 @@ describe("disconnect", () => {
   });
 });
 
+describe("moving a shared segment", () => {
+  const shared = () =>
+    applyAll(base(), [
+      { type: "connect", node: "r1", collisionDomain: "S" },
+      { type: "connect", node: "r2", collisionDomain: "S" },
+    ]);
+
+  it("records where it was put, as one undoable edit", () => {
+    // Test step 1D.1: a dragged segment snapped back, having nowhere to be kept.
+    const next = apply(shared(), { type: "moveDomain", name: "S", position: at(320, 160) });
+    expect(next.collision_domains[0]).toEqual({ name: "S", position: at(320, 160) });
+    expect(label({ type: "moveDomain", name: "S", position: at(0, 0) })).toBe("Moved S");
+  });
+
+  it("does not move when its devices do", () => {
+    const pinned = apply(shared(), { type: "moveDomain", name: "S", position: at(320, 160) });
+    const next = apply(pinned, { type: "moveNode", name: "r1", position: at(-500, 0) });
+    expect(next.collision_domains[0]!.position).toEqual(at(320, 160));
+  });
+
+  it("goes back between its devices when the layout is tidied", () => {
+    const pinned = apply(shared(), { type: "moveDomain", name: "S", position: at(320, 160) });
+    const next = apply(pinned, { type: "moveNodes", positions: {}, releaseDomains: true });
+    expect(next.collision_domains[0]!.position).toBeNull();
+  });
+
+  it("rejects a segment that is not there", () => {
+    expect(() =>
+      apply(base(), { type: "moveDomain", name: "Z", position: at(0, 0) }),
+    ).toThrow(OperationError);
+  });
+});
+
 describe("removeLink and interface numbering", () => {
   // Test step 1B.3: r2 linked to r1 (eth0) and r3 (eth1); deleting the r1–r2
   // link left r2 with eth1 alone, and Kathará refused the whole deploy with

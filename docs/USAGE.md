@@ -144,7 +144,8 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Tidy up | Select 2+ devices → **Arrange** → align. Distribute needs 3+. |
 | Disconnect an interface | **Details** → Interfaces → Disconnect ethN. |
 | Delete a device | Select it, then the **Delete** button or the Delete key. |
-| Delete a link | Click the link on the canvas — it thickens — then Delete. Both ends are detached and the collision domain goes with them. |
+| Delete a link | Click the link on the canvas — it thickens — then Delete. Both ends are detached and the collision domain goes with them. A segment shared by three or more devices is deleted the same way: click its oval node, then Delete. |
+| Move a shared segment | Drag its oval node. It stays where you put it, also when its devices move, and is saved with the scenario. **Tidy layout** puts it back between its devices. |
 | Detach one end only | **Details** → Interfaces → Disconnect ethN, or Delete on an interface row in the tree. The far device stays attached. |
 | Undo / redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or the toolbar. |
 | Pin a subnet to a collision domain | Left panel → **Collision domains** → type the network for that domain, e.g. `192.168.1.0/24`, then Enter. |
@@ -152,8 +153,9 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
 | Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
 | Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. |
-| Save | **Save** writes the scenario to the folder it was opened from, or, the first time, to a folder named after it: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name, and the copy takes that name too. |
-| Open, export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
+| Save | **Save** in the top bar, or Ctrl/Cmd+S, writes the scenario to the folder it was opened from, or, the first time, to a folder named after it: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name, and the copy takes that name too. |
+| Open | **Open…** in the top bar lists the scenarios in your workspace. |
+| Export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
 | Verify links | **Laboratory** → **Verify links**: pings across every link. |
 | See what changed inside the containers | **Laboratory** → **Check for changes**. |
@@ -226,7 +228,9 @@ links do not cross.
 
 A collision domain with exactly two devices is drawn as a plain link. With three or more it
 gets a node of its own, because a Kathará collision domain is a shared medium rather than a
-cable, and drawing a shared segment as a single line would misrepresent it.
+cable, and drawing a shared segment as a single line would misrepresent it. That node sits
+between its devices until you drag it somewhere; from then on it stays put. Click it and
+press Delete to remove the whole segment, as you would a link.
 
 ### Keyboard
 
@@ -247,6 +251,7 @@ report anything that is not.
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + A` | Select every device. Ignored while typing, where it selects the field's text. |
 | `Ctrl/Cmd + Z` | Undo. Add `Shift` to redo. |
+| `Ctrl/Cmd + S` | Save, as the **Save** button does. Works inside a field too, and saves what you were typing there. |
 | `←` `→` on a panel divider | Widen or narrow that panel. `Home` and `End` reach its limits. |
 
 The first `Tab` on a fresh page reveals a **Skip to topology** link.
@@ -294,13 +299,13 @@ device kinds ride in `# kgui:` comments that Kathará ignores — so the folder 
 document, and **Export is a plain zip of it**. Anyone can unzip and read the startup
 scripts; anyone with Kathará can `cd` in and `kathara lstart`.
 
-The **Scenario** panel holds all of it:
+The first three are in the top bar, the rest in the **Scenario** panel on the right:
 
 | Control | What it does |
 |---|---|
-| **Save** | Writes the folder into your workspace. Also on the header bar. |
-| **Save as…** | The same, under a folder name you choose. |
-| **Open…** | Lists the scenarios in your workspace; pick one to open it. |
+| **Save** | Writes the folder into your workspace. Ctrl/Cmd+S does the same. |
+| **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
+| **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. |
 | **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
 | **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. |
 | **Capture running state** | Copies what the devices are actually running back into the scenario. |

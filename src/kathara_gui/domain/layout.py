@@ -262,9 +262,10 @@ def arrange(topology: Topology) -> dict[str, Position]:
     """Positions for every device in ``topology``.
 
     Returns device positions only. Collision-domain nodes are laid out too,
-    because they occupy space in the drawing, but the canvas derives their
-    coordinates from the devices around them and the model has nowhere to
-    store them.
+    because they occupy space in the drawing, but the canvas draws a segment
+    between the devices around it. A segment can be given a place of its own
+    by dragging it; tidying releases it back to that default, so the layout
+    computed here is the one drawn.
     """
     if not topology.nodes:
         return {}

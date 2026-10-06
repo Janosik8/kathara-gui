@@ -1,5 +1,8 @@
 /**
- * The scenario as a folder: saving it, opening one, sharing it, capturing state.
+ * The scenario as a folder: where it is saved, sharing it, capturing state.
+ *
+ * Save, Save as and Open are in the header (see `ScenarioDrawer`); this panel
+ * says where the scenario lives and holds what moves it off the machine.
  *
  * One Save, one Open, one Export, one Import. An earlier version offered
  * `.kgui` and `lab.conf` as separate pairs, which asked the user to understand
@@ -10,8 +13,8 @@
  * wording says where the file goes rather than naming the mechanism.
  */
 
-import { useEffect, useRef, useState } from "react";
-import type { CaptureResponse, ScenarioSummary } from "../api/client";
+import { useRef } from "react";
+import type { CaptureResponse } from "../api/client";
 
 interface Props {
   /** Null until the scenario has a folder on disk. */
@@ -27,17 +30,12 @@ interface Props {
    * describes, so both wait until it is stopped.
    */
   locked?: boolean;
-  scenarios: ScenarioSummary[];
   capture: CaptureResponse | null;
   /** Lines of an imported lab.conf that could not be understood. */
   importWarnings: string[];
-  onSave: () => void;
-  onSaveAs: (name: string) => void;
   onExport: () => void;
-  onOpen: (folder: string) => void;
   onImport: (file: File) => void;
   onCapture: () => void;
-  onRefreshScenarios: () => void;
 }
 
 function lastSegment(path: string): string {
@@ -52,32 +50,13 @@ export function ScenarioPanel({
   deviceCount,
   anyRunning,
   locked = false,
-  scenarios,
   capture,
   importWarnings,
-  onSave,
-  onSaveAs,
   onExport,
-  onOpen,
   onImport,
   onCapture,
-  onRefreshScenarios,
 }: Props) {
-  const [opening, setOpening] = useState(false);
-  const [namingAs, setNamingAs] = useState(false);
-  const [newName, setNewName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
-  const nameInput = useRef<HTMLInputElement>(null);
-
-  // The list is only correct at the moment it is fetched, so it is refreshed
-  // when the chooser opens rather than left to go stale in the background.
-  useEffect(() => {
-    if (opening) onRefreshScenarios();
-  }, [opening, onRefreshScenarios]);
-
-  useEffect(() => {
-    if (namingAs) nameInput.current?.focus();
-  }, [namingAs]);
 
   const empty = deviceCount === 0;
 
@@ -98,108 +77,6 @@ export function ScenarioPanel({
         )}
       </p>
 
-      <div className="lab__actions">
-        <button type="button" onClick={onSave} disabled={busy !== null || empty}>
-          {busy === "save" ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setNewName("");
-            setNamingAs(true);
-          }}
-          disabled={busy !== null || empty}
-        >
-          Save as…
-        </button>
-        <button type="button" onClick={() => setOpening((o) => !o)}
-          disabled={busy !== null || locked}
-        >
-          {opening ? "Cancel" : "Open…"}
-        </button>
-      </div>
-
-      {namingAs && (
-        <div className="confirm">
-          <label className="field" htmlFor="scenario-save-as">
-            <span className="field__label">Save as</span>
-            <input
-              id="scenario-save-as"
-              ref={nameInput}
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newName.trim()) {
-                  onSaveAs(newName.trim());
-                  setNamingAs(false);
-                }
-                if (e.key === "Escape") setNamingAs(false);
-              }}
-            />
-          </label>
-          <p className="field__hint">
-            A folder of that name in the workspace.
-          </p>
-          <div className="lab__actions">
-            <button
-              type="button"
-              onClick={() => {
-                onSaveAs(newName.trim());
-                setNamingAs(false);
-              }}
-              disabled={!newName.trim()}
-            >
-              {/* Not "Save": the header and the panel already offer one, and
-                  three identically named controls read alike in a list. */}
-              Save scenario
-            </button>
-            <button type="button" onClick={() => setNamingAs(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {opening && (
-        <div className="confirm">
-          <h3 className="confirm__heading">Open a scenario</h3>
-          {scenarios.length === 0 ? (
-            <p className="field__hint">
-              No scenarios in the workspace yet. Use <strong>Import</strong> below to open
-              one from elsewhere.
-            </p>
-          ) : (
-            <ul className="state-list" aria-label="Scenarios in the workspace">
-              {scenarios.map((entry) => (
-                <li key={entry.folder} className="state">
-                  <button
-                    type="button"
-                    className="scenario__open"
-                    onClick={() => {
-                      onOpen(entry.folder);
-                      setOpening(false);
-                    }}
-                    disabled={busy !== null}
-                  >
-                    <span className="state__name">{entry.name}</span>
-                    <span className="state__detail">
-                      {entry.folder} · {entry.devices} device
-                      {entry.devices === 1 ? "" : "s"}
-                      {entry.foreign && " · imported"}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {dirty && (
-            <p className="confirm__warning">
-              <strong>Warning:</strong> the current scenario has unsaved changes, and opening
-              another replaces it.
-            </p>
-          )}
-        </div>
-      )}
 
       <h3 className="panel__heading">Share</h3>
       <p className="field__hint">

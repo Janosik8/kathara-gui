@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
 import {
@@ -23,6 +23,7 @@ import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
 import { LabTitle } from "./panels/LabTitle";
 import { PanelResizer } from "./panels/PanelResizer";
+import { type ScenarioDialog, ScenarioDrawer } from "./panels/ScenarioDrawer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
@@ -200,6 +201,7 @@ export default function App() {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [capture, setCapture] = useState<CaptureResponse | null>(null);
   const [scenarioBusy, setScenarioBusy] = useState<string | null>(null);
+  const [scenarioDialog, setScenarioDialog] = useState<ScenarioDialog | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   // Panel widths, in pixels. Kept here rather than in CSS because the user
@@ -684,11 +686,19 @@ export default function App() {
           return node && (node.position.x !== p.x || node.position.y !== p.y);
         }),
       );
-      if (Object.keys(moved).length === 0) {
+      // The layout places devices and assumes each shared segment sits between
+      // its members, so a segment moved by hand goes back there too.
+      const pinned = topology.collision_domains.some((cd) => cd.position);
+      if (Object.keys(moved).length === 0 && !pinned) {
         setStatus("The layout is already tidy.");
         return;
       }
-      edit({ type: "moveNodes", positions: moved, label: "Tidied the layout" });
+      edit({
+        type: "moveNodes",
+        positions: moved,
+        label: "Tidied the layout",
+        releaseDomains: true,
+      });
     } catch (err) {
       fail(err);
     } finally {
@@ -712,8 +722,10 @@ export default function App() {
       // Kathará knows a running lab by its name — would clash with the
       // original when both were deployed (test step 1B.1).
       const newName = name?.trim();
-      let subject = topology;
-      if (newName && newName !== topology.name) {
+      // Read from the store, not the render's closure: Ctrl+S pressed inside
+      // a field commits that field first, and the save must include it.
+      let subject = useTopologyStore.getState().topology;
+      if (newName && newName !== subject.name) {
         if (locked) {
           fail(
             "Stop the lab before saving it under a new name: the name is how Kathará " +
@@ -774,6 +786,31 @@ export default function App() {
       .then(setScenarios)
       .catch((err) => fail(err));
   }, []);
+
+  // Save as and Open, from the header. Focus goes back to the button that
+  // opened the strip when it closes, so a keyboard user is not dropped at
+  // the top of the page.
+  const saveAsButton = useRef<HTMLButtonElement>(null);
+  const openButton = useRef<HTMLButtonElement>(null);
+
+  const closeDialog = useCallback(() => {
+    (scenarioDialog === "saveAs" ? saveAsButton : openButton).current?.focus();
+    setScenarioDialog(null);
+  }, [scenarioDialog]);
+
+  const toggleDialog = useCallback(
+    (dialog: ScenarioDialog) => {
+      if (scenarioDialog === dialog) {
+        closeDialog();
+        return;
+      }
+      // The list is only correct at the moment it is fetched, so it is
+      // refreshed when the chooser opens rather than left to go stale.
+      if (dialog === "open") refreshScenarios();
+      setScenarioDialog(dialog);
+    },
+    [scenarioDialog, closeDialog, refreshScenarios],
+  );
 
   /** Adopt an opened scenario: its topology, its folder, and its exam toggles. */
   const adopt = useCallback(
@@ -868,6 +905,21 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       const typing = isTextEntry(event.target);
 
+      // Ctrl+S saves, as in every editor (bug 22), and works from inside a
+      // field too, where the browser would otherwise offer to save the page.
+      // Blurring first commits a half-typed address, so it is saved as well.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (event.repeat || scenarioBusy !== null) return;
+        if (useTopologyStore.getState().topology.nodes.length === 0) {
+          setStatus("Nothing to save yet: add a device first.");
+          return;
+        }
+        if (typing && event.target instanceof HTMLElement) event.target.blur();
+        void save();
+        return;
+      }
+
       // Escape works everywhere except mid-edit, where the field uses it to
       // abandon the edit.
       if (event.key === "Escape" && connectMode && !typing) {
@@ -925,6 +977,8 @@ export default function App() {
     leaveConnectMode,
     toggleConnectMode,
     canConnect,
+    save,
+    scenarioBusy,
   ]);
 
   return (
@@ -987,8 +1041,39 @@ export default function App() {
           >
             {scenarioBusy === "save" ? "Saving…" : "Save"}
           </button>
+          <button
+            type="button"
+            ref={saveAsButton}
+            aria-expanded={scenarioDialog === "saveAs"}
+            onClick={() => toggleDialog("saveAs")}
+            disabled={scenarioBusy !== null || topology.nodes.length === 0}
+          >
+            Save as…
+          </button>
+          <button
+            type="button"
+            ref={openButton}
+            aria-expanded={scenarioDialog === "open"}
+            onClick={() => toggleDialog("open")}
+            // Opening would swap the design out from under a running lab.
+            disabled={scenarioBusy !== null || locked}
+          >
+            Open…
+          </button>
         </div>
       </header>
+
+      {scenarioDialog && (
+        <ScenarioDrawer
+          dialog={scenarioDialog}
+          dirty={dirty}
+          busy={scenarioBusy}
+          scenarios={scenarios}
+          onSaveAs={(name) => void save(name)}
+          onOpen={openScenario}
+          onClose={closeDialog}
+        />
+      )}
 
       <div className="app__body">
         <aside
@@ -1053,6 +1138,7 @@ export default function App() {
             onSelect={activate}
             onSelectCollisionDomain={activateDomain}
             onMove={(name, position) => edit({ type: "moveNode", name, position })}
+            onMoveDomain={(name, position) => edit({ type: "moveDomain", name, position })}
             onSelectLink={(domain) => {
               // Exactly one thing is selected at a time, so Delete is never
               // ambiguous about what it will remove.
@@ -1110,16 +1196,11 @@ export default function App() {
             deviceCount={topology.nodes.length}
             anyRunning={(labStatus?.running.length ?? 0) > 0}
             locked={locked}
-            scenarios={scenarios}
             capture={capture}
             importWarnings={importWarnings}
-            onSave={() => save()}
-            onSaveAs={(name) => save(name)}
             onExport={exportScenario}
-            onOpen={openScenario}
             onImport={importScenario}
             onCapture={captureState}
-            onRefreshScenarios={refreshScenarios}
           />
 
           <LabPanel

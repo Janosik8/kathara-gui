@@ -187,3 +187,29 @@ def test_cpus_formatting_avoids_pointless_churn(cpus: float, expected: str) -> N
 
 def test_empty_topology_serializes_without_error() -> None:
     assert serialize(Topology(name="empty")) .strip() == 'LAB_NAME="empty"'
+
+
+def test_a_moved_shared_segment_keeps_its_place() -> None:
+    """Test step 1D.1: a shared segment dragged by hand snapped back.
+
+    Its position travels with the subnet in the same comment record, and a
+    segment never moved writes none, so it keeps following its members.
+    """
+    topo = _positioned()
+    topo = parse(serialize(topo)).topology
+    topo.collision_domain("A").position = Position(x=310, y=-45.5)
+
+    text = serialize(topo)
+    assert "# kgui:cd A pos=310,-45.5" in text
+    reread = parse(text).topology
+    assert reread.collision_domain("A").position == Position(x=310, y=-45.5)
+    assert all(
+        cd.position is None for cd in reread.collision_domains if cd.name != "A"
+    )
+
+
+def test_an_unreadable_segment_position_is_reported_not_fatal() -> None:
+    text = serialize(_positioned()) + "# kgui:cd A pos=left,up\n"
+    result = parse(text)
+    assert result.topology.collision_domain("A").position is None
+    assert any("could not read position" in w for w in result.warnings)

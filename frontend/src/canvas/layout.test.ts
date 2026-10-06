@@ -8,7 +8,13 @@
 import { Position } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import type { Node, Topology } from "../types";
-import { computePlacements, domainPosition, STUB_DISTANCE, preferredSide } from "./layout";
+import {
+  computePlacements,
+  domainPosition,
+  STUB_DISTANCE,
+  preferredSide,
+  segmentPosition,
+} from "./layout";
 
 function device(name: string, x: number, y: number, domains: string[]): Node {
   return {
@@ -241,6 +247,35 @@ describe("domainPosition", () => {
     const near = domainPosition([at(0, 0)], "A");
     const far = domainPosition([at(500, 0)], "A");
     expect(far.x - near.x).toBe(500);
+  });
+});
+
+describe("segmentPosition", () => {
+  const at = (x: number, y: number) => ({ x, y });
+  const shared = (position?: { x: number; y: number }): Topology => ({
+    name: "lab",
+    nodes: ["a", "b", "c"].map((name, i) => ({
+      name,
+      kind: "pc" as const,
+      position: at(i * 300, 0),
+      interfaces: [{ number: 0, collision_domain: "S" }],
+      daemons: [],
+      bridged: false,
+      extra_options: {},
+    })),
+    collision_domains: [{ name: "S", position }],
+  });
+
+  it("stays where it was put while its devices move", () => {
+    // Test step 1D.1: it followed the devices and snapped back after a drag.
+    const pinned = shared(at(900, 400));
+    expect(segmentPosition(pinned, "S")).toEqual(at(900, 400));
+    pinned.nodes[0]!.position = at(-600, 200);
+    expect(segmentPosition(pinned, "S")).toEqual(at(900, 400));
+  });
+
+  it("sits between its devices until it is moved", () => {
+    expect(segmentPosition(shared(), "S")).toEqual(at(300, 0));
   });
 });
 

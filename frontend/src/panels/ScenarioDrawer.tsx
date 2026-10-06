@@ -1,0 +1,144 @@
+/**
+ * Save as and Open, opened from the header.
+ *
+ * They used to live in the Scenario panel on the right, while Save sat in the
+ * header: three actions on one document, in two places. Asked for in the
+ * tester's notes — "save, save as and open buttons should be at the top bar".
+ *
+ * Shown as a strip directly under the header rather than a floating popover,
+ * so it takes part in the page's flow: at 200% zoom it reflows like
+ * everything else instead of covering the canvas (ACC-05).
+ */
+
+import { useEffect, useRef, useState } from "react";
+import type { ScenarioSummary } from "../api/client";
+
+export type ScenarioDialog = "saveAs" | "open";
+
+interface Props {
+  dialog: ScenarioDialog;
+  dirty: boolean;
+  busy: string | null;
+  scenarios: ScenarioSummary[];
+  onSaveAs: (name: string) => void;
+  onOpen: (folder: string) => void;
+  onClose: () => void;
+}
+
+export function ScenarioDrawer({
+  dialog,
+  dirty,
+  busy,
+  scenarios,
+  onSaveAs,
+  onOpen,
+  onClose,
+}: Props) {
+  const [newName, setNewName] = useState("");
+  const nameInput = useRef<HTMLInputElement>(null);
+  const openHeading = useRef<HTMLHeadingElement>(null);
+
+  // Focus follows the button that opened it, so a keyboard or screen-reader
+  // user lands in the form rather than having to find it.
+  useEffect(() => {
+    if (dialog === "saveAs") {
+      setNewName("");
+      nameInput.current?.focus();
+    } else {
+      openHeading.current?.focus();
+    }
+  }, [dialog]);
+
+  const submit = () => {
+    const name = newName.trim();
+    if (!name) return;
+    onSaveAs(name);
+    onClose();
+  };
+
+  return (
+    <div
+      className="scenario-drawer"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      {dialog === "saveAs" ? (
+        <div className="scenario-drawer__body">
+          <label className="field" htmlFor="scenario-save-as">
+            <span className="field__label">Save as</span>
+            <input
+              id="scenario-save-as"
+              ref={nameInput}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+            />
+          </label>
+          <p className="field__hint">A folder of that name in the workspace.</p>
+          <div className="lab__actions">
+            <button type="button" onClick={submit} disabled={!newName.trim()}>
+              {/* Not "Save": the header already offers one, and two
+                  identically named controls read alike in a list. */}
+              Save scenario
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={openHeading} tabIndex={-1}>
+            Open a scenario
+          </h2>
+          {scenarios.length === 0 ? (
+            <p className="field__hint">
+              No scenarios in the workspace yet. Use <strong>Import</strong> in the Scenario
+              panel to open one from elsewhere.
+            </p>
+          ) : (
+            <ul className="state-list" aria-label="Scenarios in the workspace">
+              {scenarios.map((entry) => (
+                <li key={entry.folder} className="state">
+                  <button
+                    type="button"
+                    className="scenario__open"
+                    onClick={() => {
+                      onOpen(entry.folder);
+                      onClose();
+                    }}
+                    disabled={busy !== null}
+                  >
+                    <span className="state__name">{entry.name}</span>
+                    <span className="state__detail">
+                      {entry.folder} · {entry.devices} device
+                      {entry.devices === 1 ? "" : "s"}
+                      {entry.foreign && " · imported"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {dirty && (
+            <p className="confirm__warning">
+              <strong>Warning:</strong> the current scenario has unsaved changes, and opening
+              another replaces it.
+            </p>
+          )}
+          <div className="lab__actions">
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

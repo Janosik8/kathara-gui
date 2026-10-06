@@ -29,7 +29,17 @@ export type Operation =
   | { type: "moveNode"; name: string; position: Position }
   // Aligning a selection moves many devices at once; as one operation it is
   // also one undo step.
-  | { type: "moveNodes"; positions: Record<string, Position>; label?: string }
+  | {
+      type: "moveNodes";
+      positions: Record<string, Position>;
+      label?: string;
+      /** Also return every moved shared segment to its place between its members. */
+      releaseDomains?: boolean;
+    }
+  // A shared segment dragged by hand. Without a position of its own it was
+  // drawn between its members, so it followed them, and a drag of it was
+  // thrown away on the next render (test step 1D.1).
+  | { type: "moveDomain"; name: string; position: Position }
   | { type: "renameNode"; from: string; to: string }
   | { type: "updateNode"; name: string; changes: Partial<Omit<Node, "name">> }
   | { type: "connect"; node: string; collisionDomain: string; number?: number }
@@ -122,6 +132,21 @@ export function apply(topology: Topology, op: Operation): Topology {
         ...topology,
         nodes: topology.nodes.map((node) =>
           op.positions[node.name] ? { ...node, position: op.positions[node.name]! } : node,
+        ),
+        collision_domains: op.releaseDomains
+          ? topology.collision_domains.map((cd) => ({ ...cd, position: null }))
+          : topology.collision_domains,
+      };
+    }
+
+    case "moveDomain": {
+      if (!topology.collision_domains.some((cd) => cd.name === op.name)) {
+        throw new OperationError(`No collision domain named "${op.name}".`);
+      }
+      return {
+        ...topology,
+        collision_domains: topology.collision_domains.map((cd) =>
+          cd.name === op.name ? { ...cd, position: op.position } : cd,
         ),
       };
     }
@@ -260,6 +285,8 @@ export function describe(op: Operation): string {
       const count = Object.keys(op.positions).length;
       return op.label ?? `Moved ${count} ${count === 1 ? "device" : "devices"}`;
     }
+    case "moveDomain":
+      return `Moved ${op.name}`;
     case "renameNode":
       return `Renamed ${op.from} to ${op.to}`;
     case "updateNode":
