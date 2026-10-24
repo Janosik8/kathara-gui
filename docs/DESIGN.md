@@ -259,6 +259,39 @@ Python test asserting the palette's contrast ratios. That second one exists beca
 cannot evaluate colour contrast under jsdom** — it needs a real canvas — so a clean automated
 run is not a contrast pass. Manual screen reader testing remains necessary and is planned.
 
+### A fourth layer: a scripted manual run, and what it found
+
+The three automated layers cannot see what a person sees: whether a click lands, whether a
+dragged node stays put, whether a message reaches the screen. So the application is also run
+by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It has 128 steps in
+eleven sections, one per capability of the specification, and each step states its expected
+result before it is run. The tester ticks a step or writes down, in their own words, what
+happened instead.
+
+It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 of
+the 128 steps had passed: sections 0–2 and the first half of section 3. Every defect it
+reported is traced in three places. The tester's words go on the step's `Notes:` line or in
+`bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
+retested by hand, and the result is noted under the original report.
+
+The striking result is how much the automated suite missed. Every finding from F20 to F27,
+eight in all, came from this run, and in each case every test passed beforehand:
+
+- **Platform behaviour no test could reproduce.** The documented commands did not run in a
+  PowerShell with the default execution policy (F21, F22), and the "open a shell" command
+  failed on Windows (F20).
+- **Failures that were handled but never shown on screen** (F23, and the unflagged address
+  in F24).
+- **Pointer behaviour that jsdom does not model.** A single pixel of hand movement turned a
+  click into a drag (F24). A dragged segment node snapped back (F27).
+- **Kathará's own constraints, which the editor did not enforce.** Kathará refuses gaps in
+  interface numbering (F26), and Save wrote into another scenario's folder (F25).
+
+Where a defect could be pinned down by a test once it was understood, a test was added: F26
+is now checked against Kathará's own parser. Where it could not, the fix was confirmed by
+hand: F24's clicks and F27's drag. That is the stated reason the manual layer exists rather
+than an omission in the automated ones.
+
 ## 7. Scope, and what was left out
 
 Capability 7 and the AI assistant are deliberately unimplemented. The supervisor judged the
