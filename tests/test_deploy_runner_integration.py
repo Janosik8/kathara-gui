@@ -412,6 +412,34 @@ def test_the_exited_container_still_blocks_a_fresh_deploy(tmp_path: Path) -> Non
         runner.undeploy(topology, lab)
 
 
+def test_a_lab_left_entirely_exited_is_redeployed_without_asking(tmp_path: Path) -> None:
+    """After a Docker restart every container has exited (test 3E.3, F36).
+
+    Nothing runs in them to capture, so Deploy clears them and starts the lab
+    rather than asking about devices the user cannot reach anyway.
+    """
+    import docker
+
+    topology = two_routers(matching_subnets=True)
+    lab = tmp_path / "restarted"
+
+    try:
+        runner.deploy(topology, lab)
+        client = docker.from_env()
+        for container in client.containers.list():
+            if container.name.endswith(_hash(topology)):
+                container.stop(timeout=5)
+        assert runner.status(topology, lab).exited == ["r1", "r2"]
+
+        recovered = runner.deploy(topology, lab)
+
+        assert recovered.needs_confirmation is False
+        assert sorted(recovered.running) == ["r1", "r2"]
+        assert recovered.message == "Removed 2 devices left stopped by an earlier run."
+    finally:
+        runner.undeploy(topology, lab)
+
+
 def _hash(topology: Topology) -> str:
     from Kathara.utils import generate_urlsafe_hash
 

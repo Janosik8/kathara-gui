@@ -613,8 +613,9 @@ CRITICAL (APIError) 409 Client Error ... Conflict ("container … is not running
 ```
 
 The Laboratory panel marks those devices **Exited** and says so in plain words. Press
-**Deploy** to bring the lab back — it will ask first, because the stopped containers still
-hold their names and have to be cleared before new ones can take them.
+**Deploy** to bring the lab back. The stopped containers still hold their names, so Deploy
+removes them first, without asking, because there is nothing running in them to capture.
+It asks only if some device of the lab is still running.
 
 Nothing that was changed *inside* a container survives this. Deploy again and reapply, or
 capture the configuration next time before you stop for the day.
@@ -737,6 +738,11 @@ including `?token=…`. It is stored per browser tab, so a new tab needs the URL
 origin than the backend. In dev, use the Vite URL and let the proxy handle `/api`.
 
 **`docker info` fails** — start Docker Desktop and wait for it to report running.
+
+**"Docker is not running" after restarting Docker Desktop** — the application reconnects on
+its own, so there is no need to restart it. Wait until Docker Desktop reports that it is
+running, then try again. Before F36, this case failed as
+`(232, 'WriteFile', 'The pipe is being closed.')`.
 
 **"npm.ps1 cannot be loaded because running scripts is disabled on this system"** —
 PowerShell's default execution policy on Windows. Type `npm.cmd` instead of `npm`, or run

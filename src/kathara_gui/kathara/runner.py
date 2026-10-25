@@ -17,12 +17,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
 from Kathara.utils import generate_urlsafe_hash, is_admin
 
 from kathara_gui.domain.model import Topology
 from kathara_gui.domain.naming import kathara_name_problem
+from kathara_gui.kathara import connection
 from kathara_gui.kathara.readiness import StartupTimeout, wait_for_lab
 from kathara_gui.project.labdir import write_lab
 
@@ -98,6 +98,9 @@ class Conflicts:
     #: Present under this lab name but absent from the topology. A strong hint
     #: that a *different* lab is using the same name.
     unexpected: tuple[str, ...] = ()
+    #: Those of either kind whose container is running. Empty means every one
+    #: has exited — after a Docker restart, say — and holds nothing to lose.
+    running: tuple[str, ...] = ()
 
     @property
     def exists(self) -> bool:
@@ -161,14 +164,16 @@ def find_conflicts(topology: Topology, lab_dir: Path) -> Conflicts:
     ours = {node.name for node in topology.nodes}
 
     try:
-        present = set(_containers(our_hash))
+        containers = _containers(our_hash)
     except Exception:  # noqa: BLE001 - no daemon means nothing is running
         return Conflicts(lab_name=topology.name)
 
+    present = set(containers)
     return Conflicts(
         lab_name=topology.name,
         expected=tuple(sorted(present & ours)),
         unexpected=tuple(sorted(present - ours)),
+        running=tuple(sorted(n for n, c in containers.items() if c.status == "running")),
     )
 
 
@@ -182,7 +187,7 @@ def _containers(lab_hash: str) -> dict[str, _Container]:
     never displayed. The container listing answers the only question actually
     asked, in fifty milliseconds.
     """
-    manager = Kathara.get_instance()
+    manager = connection.manager()
     found: dict[str, _Container] = {}
     for container in manager.get_machines_api_objects(lab_hash=lab_hash):
         labels = getattr(container, "labels", {}) or {}
@@ -217,7 +222,7 @@ def running_everywhere() -> list[DeployedDevice]:
     No daemon means nothing is deployed, as in :func:`status`.
     """
     try:
-        containers = Kathara.get_instance().get_machines_api_objects()
+        containers = connection.manager().get_machines_api_objects()
     except Exception:  # noqa: BLE001 - no daemon means nothing is deployed
         return []
     found = []
@@ -254,7 +259,7 @@ def wipe() -> str | None:
     are untouched (``all_users=False``).
     """
     try:
-        Kathara.get_instance().wipe(all_users=False)
+        connection.manager().wipe(all_users=False)
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         return f"Could not stop every lab: {_reason(exc)}"
     return None
@@ -318,19 +323,32 @@ def deploy(
     if privileged and not is_admin():
         return LabStatus(message=privilege_message(privileged))
 
-    manager = Kathara.get_instance()
+    try:
+        manager = connection.manager()
+    except connection.DockerUnavailable as exc:
+        return LabStatus(message=f"Could not deploy. {exc}")
     notes: list[str] = []
 
     conflicts = find_conflicts(topology, lab_dir)
-    if conflicts.exists and not confirm:
+    if conflicts.exists and conflicts.running and not confirm:
         # Stop and ask. Replacing could be a routine redeploy or could destroy
         # a different lab that happens to share this name; we cannot tell.
         return LabStatus(conflicts=conflicts, lab_dir=str(lab_dir))
 
     if conflicts.exists:
+        # Containers that have all exited — Docker restarted, the machine slept
+        # — are cleared without asking: nothing runs in them to capture, and
+        # they would otherwise block the deploy by holding their names (F36).
         count = len(conflicts.all_devices)
-        notes.append(f"Stopped {count} device{'s' if count != 1 else ''} already running.")
-        undeploy(topology, lab_dir)
+        devices = f"{count} device{'s' if count != 1 else ''}"
+        notes.append(
+            f"Stopped {devices} already running."
+            if conflicts.running
+            else f"Removed {devices} left stopped by an earlier run."
+        )
+        cleared = undeploy(topology, lab_dir)
+        if cleared.message:
+            return LabStatus(message=f"Could not deploy. {cleared.message}")
 
     try:
         lab, directory = _load(topology, lab_dir)
@@ -355,19 +373,33 @@ def deploy(
 
 
 def _reason(exc: Exception) -> str:
-    """Kathará's own wording where it has one, else the exception text."""
+    """Kathará's own wording where it has one, else the exception text.
+
+    Except for an unreachable daemon, whose text is a tuple from the Windows
+    pipe API — ``(2, 'CreateFile', …)`` — in the system's language (F36).
+    """
+    if connection.is_connection_error(exc):
+        return connection.DOCKER_NOT_RUNNING
     text = str(exc).strip()
+    # Kathará's way out names its CLI, which is a separate install on Windows;
+    # the Laboratory panel's button does the same thing (test 3E.3).
+    text = text.replace(WIPE_ADVICE, WIPE_ADVICE.rstrip(".") + ", or press Stop every lab.")
     return text or exc.__class__.__name__
+
+
+#: How Kathará ends "Kathara has been left in an inconsistent state!", raised
+#: when a lab's Docker networks have gone — after a Docker restart, for one.
+WIPE_ADVICE = "Please run `kathara wipe`."
 
 
 def undeploy(topology: Topology, lab_dir: Path) -> LabStatus:
     """Stop everything belonging to this lab."""
-    manager = Kathara.get_instance()
     try:
+        manager = connection.manager()
         lab, _ = _load(topology, lab_dir)
         manager.undeploy_lab(lab=lab)
     except Exception as exc:  # noqa: BLE001 - reported, not raised
-        return LabStatus(message=f"Could not stop the lab cleanly: {exc}")
+        return LabStatus(message=f"Could not stop the lab cleanly: {_reason(exc)}")
     return status(topology, lab_dir)
 
 

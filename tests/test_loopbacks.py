@@ -18,7 +18,7 @@ from kathara_gui.domain.codec.labconf import parse, serialize
 from kathara_gui.domain.codec.startup import parse_loopbacks, render_startup
 from kathara_gui.domain.drift import describe_drift
 from kathara_gui.domain.model import Interface, Node, Topology
-from kathara_gui.kathara import state
+from kathara_gui.kathara import connection, state
 from kathara_gui.kathara.state import frr_loopbacks, parse_ip_addr, parse_ip_addr_loopbacks
 from kathara_gui.project import scenario
 from kathara_gui.project.labdir import write_lab
@@ -170,7 +170,7 @@ def test_a_loopback_frr_holds_is_not_copied_into_the_model(
         def exec(self, device: str, command: list[str], **_: object) -> tuple[bytes, bytes, int]:
             return IP_ADDR.replace("10.255.0.2", "10.255.9.9").encode(), b"", 0
 
-    monkeypatch.setattr(state.Kathara, "get_instance", staticmethod(Manager))
+    monkeypatch.setattr(connection.Kathara, "get_instance", staticmethod(Manager))
     monkeypatch.setattr(state.LabParser, "parse", staticmethod(lambda path: object()))
     topology = Topology(nodes=[router("r1", "10.255.0.1/32")])
 

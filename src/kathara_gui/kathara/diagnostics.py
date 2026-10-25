@@ -21,10 +21,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
 
 from kathara_gui.domain.model import Topology
+from kathara_gui.kathara import connection
 
 __all__ = ["Outcome", "LinkCheck", "DiagnosticsReport", "verify"]
 
@@ -118,7 +118,10 @@ def verify(topology: Topology, lab_dir: Path) -> DiagnosticsReport:
     if not topology.nodes:
         return DiagnosticsReport(message="There is nothing to verify.")
 
-    manager = Kathara.get_instance()
+    try:
+        manager = connection.manager()
+    except connection.DockerUnavailable as exc:
+        return DiagnosticsReport(message=str(exc))
     try:
         lab = LabParser.parse(str(lab_dir))
     except Exception as exc:  # noqa: BLE001

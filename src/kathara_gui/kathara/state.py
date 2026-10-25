@@ -26,11 +26,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
 
 from kathara_gui.domain.model import Topology
 from kathara_gui.fsutil import write_text_lf
+from kathara_gui.kathara import connection
 
 __all__ = [
     "Captured",
@@ -197,10 +197,10 @@ def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str
     if not topology.nodes:
         return {}
 
-    manager = Kathara.get_instance()
     try:
+        manager = connection.manager()
         lab = LabParser.parse(str(lab_dir))
-    except Exception:  # noqa: BLE001 - no lab on disk means nothing is running
+    except Exception:  # noqa: BLE001 - no daemon or no lab on disk: nothing is running
         return {}
 
     found: dict[str, dict[int, str]] = {}
@@ -241,10 +241,10 @@ def recover_addresses(
     if not topology.nodes:
         return topology
 
-    manager = Kathara.get_instance()
     try:
+        manager = connection.manager()
         lab = LabParser.parse(str(lab_dir))
-    except Exception:  # noqa: BLE001 - no lab on disk means nothing is running
+    except Exception:  # noqa: BLE001 - no daemon or no lab on disk: nothing is running
         return topology
 
     nodes = []
@@ -282,7 +282,10 @@ def capture(topology: Topology, lab_dir: Path) -> CaptureReport:
     if not topology.nodes:
         return CaptureReport(message="There is nothing to capture.")
 
-    manager = Kathara.get_instance()
+    try:
+        manager = connection.manager()
+    except connection.DockerUnavailable as exc:
+        return CaptureReport(message=str(exc))
     try:
         lab = LabParser.parse(str(lab_dir))
     except Exception as exc:  # noqa: BLE001

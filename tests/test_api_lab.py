@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kathara_gui.domain.model import Topology
-from kathara_gui.kathara import runner
+from kathara_gui.kathara import connection
 from kathara_gui.main import create_app
 from kathara_gui.project.session import Session, get_session
 
@@ -55,7 +55,7 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 def use(monkeypatch: pytest.MonkeyPatch, manager: FakeManager) -> None:
-    monkeypatch.setattr(runner.Kathara, "get_instance", staticmethod(lambda: manager))
+    monkeypatch.setattr(connection.Kathara, "get_instance", staticmethod(lambda: manager))
 
 
 TWO_LABS = [("labA", "r1", "running"), ("labA", "r2", "running"), ("labB", "pc1", "exited")]
@@ -108,7 +108,7 @@ def test_no_daemon_means_nothing_is_deployed(
     def no_daemon() -> Any:
         raise ConnectionError("no Docker")
 
-    monkeypatch.setattr(runner.Kathara, "get_instance", staticmethod(no_daemon))
+    monkeypatch.setattr(connection.Kathara, "get_instance", staticmethod(no_daemon))
     assert client.get("/api/lab/everything").json()["devices"] == 0
 
 
