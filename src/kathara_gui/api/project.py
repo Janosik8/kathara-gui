@@ -36,11 +36,16 @@ from pydantic import BaseModel, Field
 
 from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.model import Topology
-from kathara_gui.domain.naming import safe_dir_name
 from kathara_gui.features import Features
-from kathara_gui.kathara import state
+from kathara_gui.kathara import runner, state
 from kathara_gui.project import scenario
-from kathara_gui.project.session import Session, get_session
+from kathara_gui.project.session import (
+    Persisted,
+    ScenarioNameError,
+    Session,
+    folder_name,
+    get_session,
+)
 
 router = APIRouter(prefix="/api/project", tags=["project"])
 
@@ -65,13 +70,18 @@ class ProjectState(BaseModel):
 class SaveRequest(BaseModel):
     topology: Topology
     name: str | None = Field(
-        default=None, description="Folder name to save under. Defaults to the scenario's name."
+        default=None,
+        description="Save as: the copy's name, which is also its folder's. "
+        "Defaults to the scenario's own name and folder.",
     )
 
 
 class SaveResponse(BaseModel):
     folder: str
     name: str
+    renamed_from: str | None = Field(
+        default=None, description="The folder's previous name, when saving renamed it."
+    )
 
 
 class ScenarioSummary(BaseModel):
@@ -81,6 +91,8 @@ class ScenarioSummary(BaseModel):
     modified: float
     #: True when the folder has no kgui.json — a lab from somewhere else.
     foreign: bool
+    #: True while any of its lab's containers is running.
+    running: bool = False
 
 
 class OpenRequest(BaseModel):
@@ -133,7 +145,7 @@ def _folder_in_workspace(session: Session, name: str) -> Path:
     harmless. Resolving and re-checking the parent catches what the
     transformation missed, including a symlink pointing out of the workspace.
     """
-    stem = safe_dir_name(Path(name.replace("\\", "/")).name)
+    stem = folder_name(Path(name.replace("\\", "/")).name)
     if not stem:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="That is not a usable name."
@@ -184,34 +196,40 @@ def scenarios(session: Session = Depends(get_session)) -> list[ScenarioSummary]:
             )
         )
 
+    # Asked once for the whole list, not once per scenario.
+    running = runner.running_lab_names([entry.name for entry in found])
+    for entry in found:
+        entry.running = entry.name in running
+
     return sorted(found, key=lambda s: s.modified, reverse=True)
 
 
-def _target_folder(session: Session, name: str | None, topology: Topology) -> Path:
-    """Which folder a save or export writes: a new name, else the folder open.
+def persist(session: Session, topology: Topology, name: str | None = None) -> Persisted:
+    """Write the scenario into the folder named after it (test 3E.2).
 
-    It used to be the new name, else the *lab* name. A copy made with "Save
-    as" kept the original's lab name, so saving it again wrote into the
-    original's folder — test step 1B.1: save as `homework`, reopen it, save,
-    and the edit landed in `base-exam`. The folder the user opened is the
-    document; only a scenario never saved has to be placed by its name.
+    ``name`` is Save as: the copy gets that name, and the original's folder is
+    left alone. Saving under the name the scenario already has is a plain
+    save, not a copy of itself.
     """
-    if name:
-        return _folder_in_workspace(session, name)
-    if session.path is not None:
-        return session.path
-    return _folder_in_workspace(session, topology.name)
+    copy = bool(name) and (session.path is None or name != session.path.name)
+    if name and name != topology.name:
+        topology = topology.model_copy(update={"name": name})
+    try:
+        return session.persist(topology, copy=copy)
+    except ScenarioNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT if exc.taken else status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/save", response_model=SaveResponse)
 def save(request: SaveRequest, session: Session = Depends(get_session)) -> SaveResponse:
     """Write the scenario into its folder in the workspace."""
-    topology = session.replace(request.topology)
-    folder = _target_folder(session, request.name, topology)
-
-    scenario.save(topology, folder, features=session.features)
-    session.mark_saved(folder)
-    return SaveResponse(folder=str(folder), name=folder.name)
+    saved = persist(session, request.topology, request.name)
+    return SaveResponse(
+        folder=str(saved.folder), name=saved.folder.name, renamed_from=saved.renamed_from
+    )
 
 
 @router.post("/export")
@@ -221,9 +239,7 @@ def export(request: SaveRequest, session: Session = Depends(get_session)) -> Res
     Saved first, so what leaves the machine is what the canvas currently shows
     rather than whatever was last written.
     """
-    topology = request.topology
-    folder = _target_folder(session, request.name, topology)
-    scenario.save(topology, folder, features=session.features)
+    folder = persist(session, request.topology, request.name).folder
 
     archive = session.workspace_root / _STAGING / f"{folder.name}.zip"
     scenario.export_zip(folder, archive)

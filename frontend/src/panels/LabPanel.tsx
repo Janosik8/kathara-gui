@@ -46,8 +46,12 @@ interface Props {
   /** Ask the containers whether anything has changed inside them. */
   onCheck: () => void;
   onVerify: () => void;
+  /** Close the link checks (bug 34). */
+  onDismissDiagnostics?: () => void;
   /** Deploy anyway, stopping whatever is already running. */
   onConfirmDeploy: () => void;
+  /** Capture what the containers are running, then redeploy over them. */
+  onCaptureAndRedeploy: () => void;
   onCancelDeploy: () => void;
   /** Set when the server refused to deploy without being asked. */
   conflicts: Conflicts | null;
@@ -120,7 +124,9 @@ export function LabPanel({
   onCaptureAndStop,
   onCheck,
   onVerify,
+  onDismissDiagnostics,
   onConfirmDeploy,
+  onCaptureAndRedeploy,
   onCancelDeploy,
   conflicts,
   onAnnounce,
@@ -135,6 +141,11 @@ export function LabPanel({
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
   const exited = status?.exited ?? [];
+  // A device of a deployed lab with no container at all: removed by hand, in
+  // Docker Desktop or with `docker rm` (bug 35). Not "exited", which still has one.
+  const gone = deployed
+    ? (status?.devices ?? []).filter((d) => d.state === "stopped").map((d) => d.name)
+    : [];
   const drift = status?.drift ?? [];
   // Verification runs commands inside the containers, so it needs live ones —
   // `deployed` is true for a lab whose devices have all exited.
@@ -162,7 +173,44 @@ export function LabPanel({
         </ul>
       )}
 
-      {conflicts && (
+      {conflicts && conflicts.unexpected.length === 0 && conflicts.expected.length > 0 && (
+        // Only this lab's own devices are running: a redeploy (test 3E.1). The
+        // same choice as Stop, because a redeploy stops the containers too, and
+        // what was typed inside them goes with them unless it is captured.
+        <div className="confirm" role="alertdialog" aria-labelledby="confirm-heading">
+          <h3 className="confirm__heading" id="confirm-heading">
+            Redeploy the running lab?
+          </h3>
+          <p>
+            Redeploying stops {conflicts.expected.join(", ")} and starts the lab again.
+            Anything configured inside the containers since the last deploy or capture is
+            lost unless it is captured first.
+          </p>
+          {drift.length > 0 && (
+            <>
+              <p className="field__hint">Changes found so far:</p>
+              <ul>
+                {drift.map((change) => (
+                  <li key={change}>{change}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="lab__actions">
+            <button type="button" onClick={onCaptureAndRedeploy} disabled={busy !== null}>
+              Capture, then redeploy
+            </button>
+            <button type="button" onClick={onConfirmDeploy} disabled={busy !== null}>
+              {busy === "deploy" ? "Deploying…" : "Redeploy and discard container changes"}
+            </button>
+            <button type="button" onClick={onCancelDeploy} disabled={busy !== null}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {conflicts && (conflicts.unexpected.length > 0 || conflicts.expected.length === 0) && (
         // Deliberately blocking: Kathará keys a lab by a hash of its *name*,
         // so "replace" may be a routine redeploy or may destroy a different
         // lab that happens to share the name. Only the user can tell.
@@ -364,6 +412,18 @@ export function LabPanel({
         </p>
       )}
 
+      {gone.length > 0 && (
+        <p className="lab__warning" role="status">
+          <strong>
+            {gone.length === 1 ? "1 device is" : `${gone.length} devices are`} no longer
+            running:
+          </strong>{" "}
+          {gone.join(", ")}. {gone.length === 1 ? "Its container is" : "Their containers are"}{" "}
+          gone, removed outside this application, for example in Docker Desktop. Redeploy
+          to start the whole lab again, or Stop to clear what is left.
+        </p>
+      )}
+
       {status?.lab_dir && (
         <div className="lab__location">
           <h3 className="panel__heading">Lab directory</h3>
@@ -447,7 +507,10 @@ export function LabPanel({
       )}
 
       {canVerify && diagnostics && (
-        <>
+        <div className="dismissible">
+          {onDismissDiagnostics && (
+            <DismissButton label="Close the link checks" onDismiss={onDismissDiagnostics} />
+          )}
           <h3 className="panel__heading">Link checks</h3>
           {drift.length > 0 && (
             // Said beside the results, not only at the top of the panel: this
@@ -489,7 +552,7 @@ export function LabPanel({
               })}
             </ul>
           )}
-        </>
+        </div>
       )}
 
       {onWipe && (

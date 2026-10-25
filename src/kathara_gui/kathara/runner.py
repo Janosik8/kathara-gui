@@ -235,6 +235,17 @@ def running_everywhere() -> list[DeployedDevice]:
     return found
 
 
+def running_lab_names(names: list[str]) -> set[str]:
+    """Which of these lab names have at least one container running.
+
+    Kathará knows a lab by a hash of its name, and since F34 a scenario's name
+    is unique in the workspace, so the hash answers for exactly one scenario.
+    One container listing for all of them, about 50ms, whatever their number.
+    """
+    running = {d.lab_hash for d in running_everywhere() if d.status == "running"}
+    return {name for name in names if generate_urlsafe_hash(name) in running}
+
+
 def wipe() -> str | None:
     """Stop every lab of the current user — ``kathara wipe`` — and say why not if it fails.
 

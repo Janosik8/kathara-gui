@@ -81,7 +81,8 @@ class TestLabDir:
     def test_an_unsaved_lab_lives_in_the_workspace(self, tmp_path: Path) -> None:
         session = Session(workspace_root=tmp_path)
         session.replace(Topology(name="bgp lab"))
-        assert session.lab_dir() == tmp_path / "bgp-lab"
+        # The folder is the name exactly (test 3E.2).
+        assert session.lab_dir() == tmp_path / "bgp lab"
 
     def test_the_folder_follows_the_lab_name(self, tmp_path: Path) -> None:
         session = Session(workspace_root=tmp_path)
@@ -127,12 +128,12 @@ class TestLabDirFollowsTheRequest:
         # The session still holds the default, as it does during a deploy.
         assert session.topology.name == "untitled"
 
-        assert session.lab_dir(Topology(name="bgp exam")) == tmp_path / "bgp-exam"
+        assert session.lab_dir(Topology(name="bgp exam")) == tmp_path / "bgp exam"
 
     def test_the_session_is_used_when_none_is_given(self, tmp_path: Path) -> None:
         session = Session(workspace_root=tmp_path)
         session.replace(Topology(name="ospf lab"))
-        assert session.lab_dir() == tmp_path / "ospf-lab"
+        assert session.lab_dir() == tmp_path / "ospf lab"
 
     def test_an_opened_lab_ignores_the_name_entirely(self, tmp_path: Path) -> None:
         # Once a scenario has a folder of its own, that folder wins whatever

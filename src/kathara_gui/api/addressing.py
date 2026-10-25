@@ -53,6 +53,8 @@ class AllocateResponse(BaseModel):
     assigned_subnets: dict[str, str]
     assigned_addresses: dict[str, str]
     skipped: list[str]
+    #: "device:interface" -> the address it had, outside its domain's subnet.
+    replaced: dict[str, str] = {}
     changed: bool
 
 
@@ -131,5 +133,6 @@ async def allocate(
         assigned_subnets=result.assigned_subnets,
         assigned_addresses=result.assigned_addresses,
         skipped=result.skipped,
+        replaced=result.replaced,
         changed=result.changed,
     )

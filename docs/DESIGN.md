@@ -242,6 +242,24 @@ indistinguishable — so the deploy reports the conflict and changes nothing unt
 A device running under our name but absent from our topology is the signal that another lab
 holds it, and is warned about specifically.
 
+**So a lab has one name, and it is three things at once.** It is the name in the header, the
+scenario's folder, and, through that hash, the containers Kathará runs. Until the tester's
+notes on step 3E.2 these could drift apart. A folder was named by a transformation of the
+lab name (`base exam` became `base-exam`). Renaming a lab in the header left its folder
+where it was. And nothing stopped two folders from holding labs of the same name, which is
+exactly the case the consent prompt above was built to survive. They are now one thing (F34):
+
+- The folder is the lab's name exactly, so the name is restricted to what every filesystem
+  accepts: letters in any script, digits, spaces, dashes and underscores.
+- A name that another scenario in the workspace already has is refused as it is typed.
+- Saving a renamed lab renames its folder, keeping a captured `frr.conf` and anything else
+  inside.
+- Deploying is saving, into that same folder. A lab renamed and deployed without being
+  saved used to run from its old folder under its new name.
+
+The consent prompt remains, for labs started from elsewhere, but inside the workspace the
+clash it guards against can no longer be created.
+
 ## 6. How it is verified
 
 Three layers, because each catches what the others cannot:
@@ -275,7 +293,8 @@ reported is traced in three places. The tester's words go on the step's `Notes:`
 retested by hand, and the result is noted under the original report.
 
 The striking result is how much the automated suite missed. Every finding from F20 to F29,
-ten in all, came from this run, and in each case every test passed beforehand:
+and F32 to F35, fourteen in all, came from this run, and in each case every test passed
+beforehand:
 
 - **Platform behaviour no test could reproduce.** The documented commands did not run in a
   PowerShell with the default execution policy (F21, F22), and the "open a shell" command
@@ -288,6 +307,11 @@ ten in all, came from this run, and in each case every test passed beforehand:
 - **Kathará's own constraints, which the editor did not enforce.** Kathará refuses gaps in
   interface numbering (F26) and uppercase device names (F28), and Save wrote into another
   scenario's folder (F25).
+- **State the tests set up but no user ever reaches that way.** Every test of the lock
+  started from a lab deployed in the same session. None opened another scenario and came
+  back, which is how the tester found a running lab shown as stopped, with no way to stop
+  it (F33). Two labs with one name were tested as a conflict to warn about, never as
+  something that should not be possible to create (F34).
 
 One report is worth singling out. The tester described the read-only lock as returning
 "after a second" on reload, and judged it harmless. The cause was that the design rendered

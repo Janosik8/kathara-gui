@@ -81,6 +81,9 @@ class AllocationResult:
     assigned_addresses: dict[str, str] = field(default_factory=dict)
     #: Collision domains that could not be given a subnet, and why.
     skipped: list[str] = field(default_factory=list)
+    #: Interfaces renumbered because their address was outside the subnet
+    #: planned for their collision domain, mapped to the address they had.
+    replaced: dict[str, str] = field(default_factory=dict)
 
     @property
     def changed(self) -> bool:
@@ -260,6 +263,9 @@ def _check_overlapping_planned_subnets(topology: Topology) -> list[AddressingIss
     lab reuses one subnet on purpose on either side of the tunnel, and calling
     that an error told the student their correct design was wrong. Unlike two
     subnets on one wire, Kathará and the routers run it without complaint.
+
+    The message states the fact and nothing more (bug 32): the tester knows
+    why the subnet is reused, and a paragraph on VPNs and VRFs only buried it.
     """
     issues = []
     planned = [
@@ -274,10 +280,11 @@ def _check_overlapping_planned_subnets(topology: Topology) -> list[AddressingIss
                     AddressingIssue(
                         Severity.WARNING,
                         "overlapping_subnets",
-                        f"Collision domains {name} ({network}) and {other_name} ({other}) "
-                        "have overlapping address space. That is intended when they are "
-                        "kept apart, by a VPN or in different VRFs; otherwise routes to "
-                        "the two will be ambiguous.",
+                        f"Collision domains {name} and {other_name} have the same "
+                        f"subnet, {network}."
+                        if network == other
+                        else f"Collision domains {name} ({network}) and {other_name} "
+                        f"({other}) have overlapping subnets.",
                         name,
                     )
                 )
@@ -410,9 +417,14 @@ def allocate(
     Subnets are carved out of ``pool`` at ``prefix`` length and handed to each
     collision domain in order; hosts are numbered from ``.1`` upwards.
 
-    By default anything already set is left alone, so a partly hand-addressed
-    design can be completed rather than replaced. ``overwrite=True`` starts
-    afresh, which is what "renumber the whole lab" means.
+    By default the plan is kept, so a partly hand-addressed design can be
+    completed rather than replaced: every planned subnet, and every address
+    inside its domain's subnet. An address *outside* the subnet planned for its
+    domain is replaced (bug 33): the plan says where the domain is, and the
+    address contradicts it. A domain with no planned subnet whose members agree
+    on one is kept on that subnet, so a typed address is never renumbered just
+    because the plan was left blank. ``overwrite=True`` starts afresh, which is
+    what "renumber the whole lab" means.
     """
     network = _parse_pool(pool)
     if prefix < network.prefixlen:
@@ -429,6 +441,14 @@ def allocate(
         for cd in working.collision_domains
         if cd.subnet and not overwrite
     }
+    # Subnets the members of an unplanned domain already agree on.
+    planned_names = {cd.name for cd in working.collision_domains if cd.subnet}
+    evident = (
+        {}
+        if overwrite
+        else {d: s for d, s in infer_subnets(working).items() if d not in planned_names}
+    )
+    reserved |= {ipaddress.ip_network(subnet) for subnet in evident.values()}
     available = (net for net in network.subnets(new_prefix=prefix))
 
     for domain in working.referenced_collision_domains():
@@ -441,8 +461,13 @@ def allocate(
             entry = CollisionDomain(name=domain)
             working.collision_domains.append(entry)
 
-        if entry.subnet and not overwrite:
+        planned = bool(entry.subnet) and not overwrite
+        if planned:
             chosen = ipaddress.ip_network(entry.subnet, strict=False)
+        elif domain in evident:
+            chosen = ipaddress.ip_network(evident[domain])
+            entry.subnet = str(chosen)
+            result.assigned_subnets[domain] = str(chosen)
         else:
             chosen = _next_free(available, reserved)
             if chosen is None:
@@ -452,7 +477,7 @@ def allocate(
             entry.subnet = str(chosen)
             result.assigned_subnets[domain] = str(chosen)
 
-        _number_hosts(working, domain, chosen, overwrite, result)
+        _number_hosts(working, domain, chosen, overwrite, planned, result)
 
     return result
 
@@ -470,9 +495,14 @@ def _number_hosts(
     domain: str,
     subnet: IPNetwork,
     overwrite: bool,
+    planned: bool,
     result: AllocationResult,
 ) -> None:
-    """Give every interface on ``domain`` an address inside ``subnet``."""
+    """Give every interface on ``domain`` an address inside ``subnet``.
+
+    ``planned`` means the user stated ``subnet`` for this domain, so an
+    address outside it is replaced rather than kept.
+    """
     taken = set()
     if not overwrite:
         for _, _, address in _members(topology, domain):
@@ -487,7 +517,11 @@ def _number_hosts(
             if iface.collision_domain != domain:
                 continue
             if iface.ip and not overwrite:
-                continue
+                parsed = _parse_interface(iface.ip)
+                inside = parsed is not None and parsed.ip in subnet
+                if inside or not planned:
+                    continue
+                result.replaced[f"{node.name}:{iface.number}"] = iface.ip
 
             address = next((h for h in hosts if h not in taken), None)
             if address is None:

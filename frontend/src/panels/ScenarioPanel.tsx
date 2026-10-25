@@ -25,12 +25,6 @@ interface Props {
   deviceCount: number;
   /** Whether anything is running to capture configuration from. */
   anyRunning: boolean;
-  /**
-   * True while the lab is deployed. Opening or importing would swap the design
-   * out from under a running lab, leaving containers the canvas no longer
-   * describes, so both wait until it is stopped.
-   */
-  locked?: boolean;
   capture: CaptureResponse | null;
   /** Close the capture result. */
   onDismissCapture?: () => void;
@@ -52,7 +46,6 @@ export function ScenarioPanel({
   busy,
   deviceCount,
   anyRunning,
-  locked = false,
   capture,
   onDismissCapture,
   importWarnings,
@@ -97,7 +90,8 @@ export function ScenarioPanel({
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          disabled={busy !== null || locked}
+          // Allowed while a lab runs, like Open: the lab keeps running (3E.2).
+          disabled={busy !== null}
         >
           {busy === "import" ? "Importing…" : "Import…"}
         </button>
@@ -121,10 +115,6 @@ export function ScenarioPanel({
           }}
         />
       </div>
-
-      {locked && (
-        <p className="field__hint">Stop the lab before opening or importing another scenario.</p>
-      )}
 
       {importWarnings.length > 0 && (
         // Import is deliberately forgiving, which makes saying what was not

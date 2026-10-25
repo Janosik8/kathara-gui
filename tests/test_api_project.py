@@ -19,7 +19,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from Kathara.utils import generate_urlsafe_hash
 
+from kathara_gui.kathara import runner
 from kathara_gui.main import create_app
 from kathara_gui.project.session import Session, get_session
 
@@ -58,7 +60,19 @@ def session(workspace: Path) -> Session:
 
 
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
+def running_labs(monkeypatch: pytest.MonkeyPatch) -> set[str]:
+    """Lab names Docker would report running; none unless a test adds one."""
+    names: set[str] = set()
+    monkeypatch.setattr(
+        runner,
+        "running_everywhere",
+        lambda: [runner.DeployedDevice(generate_urlsafe_hash(n), "r1", "running") for n in names],
+    )
+    return names
+
+
+@pytest.fixture
+def client(session: Session, running_labs: set[str]) -> Iterator[TestClient]:
     app = create_app(token=TOKEN)
     app.dependency_overrides[get_session] = lambda: session
     with TestClient(app, headers={"X-KGUI-Token": TOKEN}) as test_client:
@@ -105,8 +119,10 @@ def test_saving_writes_a_scenario_folder(client: TestClient, workspace: Path) ->
     assert (folder / "kgui.json").is_file()
 
 
-def test_the_folder_name_comes_from_the_scenario_name(client: TestClient) -> None:
-    assert save(client)["name"] == "ospf-triangle"
+def test_the_folder_name_is_the_scenario_name_exactly(client: TestClient) -> None:
+    # Test 3E.2: "the folders should be named exactly as the lab name". It
+    # used to be "ospf-triangle".
+    assert save(client)["name"] == "ospf triangle"
 
 
 def test_an_explicit_name_wins(client: TestClient) -> None:
@@ -142,25 +158,24 @@ def test_the_scenario_deploys_from_the_folder_it_was_saved_in(
 
 
 @pytest.mark.parametrize(
-    ("attempt", "lands_as"),
-    [
-        ("../escaped", "escaped"),
-        ("../../../../etc/passwd", "passwd"),
-        ("/etc/passwd", "passwd"),
-        ("nested/inside", "inside"),
-        ("..", "untitled"),
-        ("con", "untitled"),
-        ("   ", "untitled"),
-    ],
+    "attempt",
+    ["../escaped", "../../../../etc/passwd", "/etc/passwd", "nested/inside", "..", "con", "   "],
 )
 def test_a_name_cannot_escape_the_workspace(
-    client: TestClient, workspace: Path, attempt: str, lands_as: str
+    client: TestClient, workspace: Path, tmp_path: Path, attempt: str
 ) -> None:
-    """A scenario name is free text, and an archive may be sent by anyone."""
-    folder = Path(save(client, name=attempt)["folder"])
+    """A scenario name is free text, and a request may be sent by anyone.
 
-    assert folder.parent == workspace.resolve()
-    assert folder.name == lands_as
+    Since the folder is the name exactly (test 3E.2), a name that is no folder
+    name is refused, with the reason, rather than transformed into one.
+    """
+    response = client.post("/api/project/save", json={"topology": TRIANGLE, "name": attempt})
+
+    assert response.status_code == 400
+    assert response.json()["detail"]
+    # Nothing was written anywhere.
+    assert not workspace.exists() or not any(workspace.iterdir())
+    assert sorted(p.name for p in tmp_path.iterdir()) == []
 
 
 def test_an_archive_member_cannot_escape_the_folder(
@@ -204,10 +219,24 @@ def test_listing_reports_the_scenario_inside_the_folder(client: TestClient) -> N
     save(client, name="week-3")
     (entry,) = client.get("/api/project/scenarios").json()
 
+    # Save as names the copy, and the folder is the name.
     assert entry["folder"] == "week-3"
-    assert entry["name"] == "ospf triangle"
+    assert entry["name"] == "week-3"
     assert entry["devices"] == 2
     assert entry["foreign"] is False
+    assert entry["running"] is False
+
+
+def test_listing_says_which_scenarios_have_a_running_lab(
+    client: TestClient, running_labs: set[str]
+) -> None:
+    # Asked for in the retest of F34: a green dot and "running" in Open.
+    save(client, name="week-3")
+    save(client, name="week-4")
+    running_labs.add("week-4")
+
+    listed = {e["name"]: e["running"] for e in client.get("/api/project/scenarios").json()}
+    assert listed == {"week-3": False, "week-4": True}
 
 
 def test_a_directory_that_is_not_a_lab_is_not_listed(
@@ -274,7 +303,7 @@ def test_export_returns_a_zip_named_after_the_scenario(client: TestClient) -> No
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
-    assert 'filename="ospf-triangle.zip"' in response.headers["content-disposition"]
+    assert 'filename="ospf triangle.zip"' in response.headers["content-disposition"]
 
 
 def test_the_export_is_a_plain_zip_anyone_can_read(client: TestClient) -> None:
@@ -537,7 +566,7 @@ def test_state_reports_the_folder_once_saved(client: TestClient) -> None:
     save(client)
     body = client.get("/api/project").json()
 
-    assert body["folder"].endswith("ospf-triangle")
+    assert body["folder"].endswith("ospf triangle")
     assert body["dirty"] is False
 
 
@@ -612,6 +641,12 @@ def test_a_refusal_from_the_file_system_is_a_reason_not_a_bare_500(
 # -- saving goes to the folder that is open -----------------------------
 
 
+def _named(topology: dict, name: str) -> dict:
+    changed = json.loads(json.dumps(topology))
+    changed["name"] = name
+    return changed
+
+
 def _moved(topology: dict, x: int) -> dict:
     changed = json.loads(json.dumps(topology))
     changed["nodes"][0]["position"]["x"] = x
@@ -626,15 +661,15 @@ def test_saving_a_copy_again_writes_the_copy_not_the_original(
     The copy kept the original's lab name, and a plain Save chose its folder
     by lab name. The folder the user opened is the document.
     """
-    save(client, TRIANGLE)  # ospf-triangle
+    save(client, TRIANGLE)  # ospf triangle
     save(client, TRIANGLE, name="homework")
     client.post("/api/project/open", json={"folder": "homework"})
 
-    body = save(client, _moved(TRIANGLE, 999))
+    body = save(client, _named(_moved(TRIANGLE, 999), "homework"))
 
     assert Path(body["folder"]).name == "homework"
     assert "pos=999" in (workspace / "homework" / "lab.conf").read_text()
-    assert "pos=999" not in (workspace / "ospf-triangle" / "lab.conf").read_text()
+    assert "pos=999" not in (workspace / "ospf triangle" / "lab.conf").read_text()
 
 
 def test_exporting_a_copy_exports_the_copy(client: TestClient) -> None:
@@ -642,7 +677,9 @@ def test_exporting_a_copy_exports_the_copy(client: TestClient) -> None:
     save(client, TRIANGLE, name="homework")
     client.post("/api/project/open", json={"folder": "homework"})
 
-    response = client.post("/api/project/export", json={"topology": _moved(TRIANGLE, 777)})
+    response = client.post(
+        "/api/project/export", json={"topology": _named(_moved(TRIANGLE, 777), "homework")}
+    )
 
     assert response.status_code == 200
     assert "homework" in response.headers["content-disposition"]
@@ -651,7 +688,7 @@ def test_exporting_a_copy_exports_the_copy(client: TestClient) -> None:
 
 
 def test_a_scenario_never_saved_is_placed_by_its_name(client: TestClient) -> None:
-    assert Path(save(client, TRIANGLE)["folder"]).name == "ospf-triangle"
+    assert Path(save(client, TRIANGLE)["folder"]).name == "ospf triangle"
 
 
 def test_opening_a_lab_with_an_interface_gap_renumbers_it(client: TestClient) -> None:

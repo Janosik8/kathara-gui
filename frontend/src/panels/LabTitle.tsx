@@ -23,14 +23,21 @@ interface Props {
   /** True while any container of this lab exists — running or exited. */
   deployed: boolean;
   onRename: (name: string) => void;
+  /**
+   * Why a name cannot be used, or null. The name is also the folder's, and
+   * must not be another scenario's (test 3E.2), so a refused draft stays in
+   * the field with the reason rather than being committed or thrown away.
+   */
+  validate?: (name: string) => string | null;
   /** Routed to the app's single live region, so the refusal is heard too. */
   onAnnounce?: (message: string) => void;
 }
 
-export function LabTitle({ name, deployed, onRename, onAnnounce }: Props) {
+export function LabTitle({ name, deployed, onRename, validate, onAnnounce }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const [refused, setRefused] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   // Adopt a rename that came from elsewhere — opening a scenario, or an undo.
@@ -50,32 +57,58 @@ export function LabTitle({ name, deployed, onRename, onAnnounce }: Props) {
 
   const commit = () => {
     const trimmed = draft.trim();
-    if (trimmed && trimmed !== name) onRename(trimmed);
-    else setDraft(name); // an empty name is a slip, not an instruction
+    if (trimmed && trimmed !== name) {
+      const reason = validate?.(trimmed) ?? null;
+      if (reason) {
+        setProblem(reason);
+        return;
+      }
+      onRename(trimmed);
+    } else {
+      setDraft(name); // an empty name is a slip, not an instruction
+    }
+    setProblem(null);
+    setEditing(false);
+  };
+
+  const abandon = () => {
+    setDraft(name);
+    setProblem(null);
     setEditing(false);
   };
 
   if (editing) {
     return (
-      <input
-        ref={input}
-        className="app__lab-name app__lab-name--editing"
-        aria-label="Scenario name"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
-            setDraft(name);
-            setEditing(false);
-          }
-          // The header owns no other shortcuts, but the window does: an
-          // unstopped keystroke here would reach the global handler and, for
-          // instance, delete the selected device while the user types.
-          e.stopPropagation();
-        }}
-      />
+      <>
+        <input
+          ref={input}
+          className="app__lab-name app__lab-name--editing"
+          aria-label="Scenario name"
+          aria-invalid={problem ? true : undefined}
+          aria-describedby={problem ? "lab-name-problem" : undefined}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setProblem(null);
+          }}
+          // Leaving a refused name abandons it: the reason has been given, and
+          // a header field that will not let go would trap the focus.
+          onBlur={() => (problem ? abandon() : commit())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") abandon();
+            // The header owns no other shortcuts, but the window does: an
+            // unstopped keystroke here would reach the global handler and, for
+            // instance, delete the selected device while the user types.
+            e.stopPropagation();
+          }}
+        />
+        {problem && (
+          <span className="app__rename-refused" id="lab-name-problem" role="alert">
+            <strong>Invalid:</strong> {problem}
+          </span>
+        )}
+      </>
     );
   }
 

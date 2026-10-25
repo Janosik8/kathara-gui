@@ -125,6 +125,8 @@ export interface AllocateResponse {
   assigned_subnets: Record<string, string>;
   assigned_addresses: Record<string, string>;
   skipped: string[];
+  /** "device:interface" -> the address it had, outside its domain's subnet (bug 33). */
+  replaced?: Record<string, string>;
   changed: boolean;
 }
 
@@ -213,11 +215,15 @@ export interface ScenarioSummary {
   modified: number;
   /** True when the folder has no kgui.json — a lab from somewhere else. */
   foreign: boolean;
+  /** True while any of its lab's containers is running. */
+  running?: boolean;
 }
 
 export interface SaveResponse {
   folder: string;
   name: string;
+  /** The folder's previous name, when saving renamed it to follow the lab's. */
+  renamed_from?: string | null;
 }
 
 export interface OpenResponse {

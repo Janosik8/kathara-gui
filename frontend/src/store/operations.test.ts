@@ -7,6 +7,8 @@ import {
   applyAll,
   deviceNameProblem,
   describe as label,
+  labNameProblem,
+  suggestLabName,
 } from "./operations";
 
 const at = (x: number, y: number) => ({ x, y });
@@ -423,5 +425,34 @@ describe("removeLink", () => {
     const snapshot = structuredClone(start);
     apply(start, { type: "removeLink", collisionDomain: "A" });
     expect(start).toEqual(snapshot);
+  });
+});
+
+describe("labNameProblem", () => {
+  // Test 3E.2: the name is the folder's, exactly, and is nobody else's.
+  // Mirrors tests/test_lab_names.py.
+  it("accepts letters in any script, digits, spaces, dashes and underscores", () => {
+    for (const name of ["base exam", "ćwiczenie 1", "bgp_lab-2", "Łódź", "A"]) {
+      expect(labNameProblem(name)).toBeNull();
+    }
+  });
+
+  it("refuses what a folder name cannot hold, with the reason", () => {
+    expect(labNameProblem("a/b")).toMatch(/not '\/'/);
+    expect(labNameProblem("v1.2")).toMatch(/not '\.'/);
+    expect(labNameProblem("BGP exam, group A")).toMatch(/Try "BGP exam group A"/);
+    expect(labNameProblem("CON")).toMatch(/reserved by Windows/);
+    expect(labNameProblem(" x")).toMatch(/begin or end with a space/);
+    expect(labNameProblem("")).toMatch(/needs a name/);
+    expect(labNameProblem("x".repeat(49))).toMatch(/at most 48/);
+  });
+
+  it("refuses another scenario's name, whatever its case", () => {
+    expect(labNameProblem("Alpha", ["alpha", "beta"])).toMatch(/already a scenario called "alpha"/);
+    expect(labNameProblem("gamma", ["alpha", "beta"])).toBeNull();
+  });
+
+  it("suggests a name that passes", () => {
+    expect(labNameProblem(suggestLabName("a/b:c"))).toBeNull();
   });
 });

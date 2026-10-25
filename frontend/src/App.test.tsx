@@ -824,6 +824,27 @@ describe("addressing", () => {
     expect(screen.getByRole("treeitem", { name: /r1, router, 0 interfaces/ })).toBeInTheDocument();
   });
 
+  it("says which addresses were replaced for lying outside their domain's subnet", async () => {
+    // Bug 33.
+    const user = await renderApp();
+    await addRouter(user);
+    allocateAddressing.mockResolvedValue({
+      topology: useTopologyStore.getState().topology,
+      assigned_subnets: {},
+      assigned_addresses: { "r1:0": "10.0.0.1/24" },
+      skipped: [],
+      replaced: { "r1:0": "192.168.5.1/24" },
+      changed: true,
+    });
+    await user.click(screen.getByRole("button", { name: "Assign addresses" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        /Replaced an address outside the collision domain's subnet: r1 eth0 \(was 192\.168\.5\.1\/24\)/,
+      ),
+    );
+  });
+
   it("distinguishes assigning from renumbering", async () => {
     const user = await renderApp();
     await addRouter(user);
@@ -1020,6 +1041,28 @@ describe("deploying and verifying", () => {
       await screen.findByRole("button", { name: "Stop and discard container changes" }),
     );
     await waitFor(() => expect(screen.queryByText("All 1 links passed")).toBeNull());
+  });
+
+  it("closes the link checks with their ×", async () => {
+    // Bug 34: the capture result could be closed, the link checks could not.
+    deploy.mockResolvedValue(deployed);
+    verify.mockResolvedValue({
+      checks: [],
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      healthy: true,
+      message: null,
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+    await screen.findByText("All 1 links passed");
+
+    await user.click(screen.getByRole("button", { name: "Close the link checks" }));
+    expect(screen.queryByText("All 1 links passed")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Link checks" })).toBeNull();
   });
 
   it("shows an environment blocker with its remedy, and refuses to deploy", async () => {
@@ -1596,7 +1639,36 @@ describe("the scenario as a folder", () => {
     await user.click(await screen.findByRole("button", { name: "Open…" }));
 
     expect(await screen.findByText("OSPF triangle")).toBeInTheDocument();
-    expect(screen.getByText(/week-3 · 3 devices/)).toBeInTheDocument();
+    expect(screen.getByText(/in week-3 · 3 devices/)).toBeInTheDocument();
+  });
+
+  it("marks the scenarios whose lab is running", async () => {
+    scenarios.mockResolvedValue([
+      { folder: "lab a", name: "lab a", devices: 1, modified: 2, foreign: false, running: true },
+      { folder: "lab b", name: "lab b", devices: 1, modified: 1, foreign: false, running: false },
+    ]);
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
+
+    const list = await screen.findByRole("list", { name: "Scenarios in the workspace" });
+    const [a, b] = within(list).getAllByRole("button");
+    // In the button's name, so a screen reader hears it too, not only a dot.
+    expect(a).toHaveAccessibleName(/^lab a running/);
+    expect(b).not.toHaveAccessibleName(/running/);
+  });
+
+  it("names a scenario once when its folder is its name", async () => {
+    // Test 3E.2 note: the folder is the lab's name now (F34), so the list
+    // said the same words twice.
+    scenarios.mockResolvedValue([
+      { folder: "base exam", name: "base exam", devices: 2, modified: 1, foreign: false },
+    ]);
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
+
+    const list = await screen.findByRole("list", { name: "Scenarios in the workspace" });
+    expect(within(list).getAllByText(/base exam/)).toHaveLength(1);
+    expect(within(list).getByText("2 devices")).toBeInTheDocument();
   });
 
   it("marks a scenario that came from outside", async () => {
@@ -2007,7 +2079,7 @@ describe("confirming before stopping a running lab", () => {
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
 
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
-    expect(screen.getByText(/already running/i)).toBeInTheDocument();
+    expect(screen.getByText(/stops r1 and starts the lab again/)).toBeInTheDocument();
   });
 
   it("does not send confirm on the first attempt", async () => {
@@ -2039,11 +2111,74 @@ describe("confirming before stopping a running lab", () => {
 
     deploy.mockResolvedValue(deployed);
     await user.click(
-      await screen.findByRole("button", { name: "Stop them and deploy" }),
+      await screen.findByRole("button", { name: "Redeploy and discard container changes" }),
     );
 
     expect(deploy).toHaveBeenLastCalledWith(expect.anything(), true);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("a redeploy of this lab warns what is lost, and offers to capture first", async () => {
+    // Test 3E.1.
+    captureState.mockClear();
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Redeploy the running lab?" });
+    expect(within(dialog).getByText(/lost unless it is captured first/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Capture, then redeploy" })).toBeEnabled();
+    expect(captureState).not.toHaveBeenCalled();
+  });
+
+  it("capturing first sends the captured design to the redeploy", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    captureState.mockClear();
+    const before = useTopologyStore.getState().topology;
+    const after = { ...before, nodes: before.nodes.map((n) => ({ ...n, loopbacks: ["1.1.1.1/32"] })) };
+    captureState.mockResolvedValue({
+      captured: [{ device: "r1", path: "r1/etc/frr/frr.conf", lines: 3 }],
+      skipped: [],
+      message: null,
+      folder: "/labs/untitled",
+      topology: after,
+    });
+    deploy.mockResolvedValue(deployed);
+    await user.click(await screen.findByRole("button", { name: "Capture, then redeploy" }));
+
+    await waitFor(() => expect(deploy).toHaveBeenLastCalledWith(expect.anything(), true));
+    expect(captureState).toHaveBeenCalledTimes(1);
+    expect(deploy.mock.lastCall?.[0].nodes[0]?.loopbacks).toEqual(["1.1.1.1/32"]);
+  });
+
+  it("a failed capture redeploys nothing", async () => {
+    deploy.mockResolvedValue(conflicted(["r1"], []));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    captureState.mockClear().mockRejectedValueOnce(new Error("no containers"));
+    await user.click(await screen.findByRole("button", { name: "Capture, then redeploy" }));
+
+    await waitFor(() => expect(captureState).toHaveBeenCalledTimes(1));
+    expect(deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no capture when another lab shares the name", async () => {
+    // Capturing would read somebody else's containers.
+    deploy.mockResolvedValue(conflicted(["r1"], ["alpha"]));
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).queryByRole("button", { name: /Capture/ })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Stop them and deploy" })).toBeEnabled();
   });
 
   it("cancelling changes nothing and says so", async () => {
@@ -2255,6 +2390,76 @@ describe("device images", () => {
   });
 })
 
+describe("one name per lab, and the folder is the name", () => {
+  // Test 3E.2, finding F34.
+  beforeEach(() => {
+    scenarios.mockResolvedValue([
+      { folder: "alpha", name: "alpha", devices: 1, modified: 1, foreign: false },
+    ]);
+  });
+
+  it("the header refuses another scenario's name, with the reason", async () => {
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: /^Scenario name: untitled/ }));
+    const field = screen.getByRole("textbox", { name: "Scenario name" });
+    await user.clear(field);
+    await user.type(field, "Alpha{Enter}");
+
+    expect(await screen.findByText(/already a scenario called "alpha"/)).toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(useTopologyStore.getState().topology.name).toBe("untitled");
+  });
+
+  it("the header refuses a name no folder can have", async () => {
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: /^Scenario name: untitled/ }));
+    const field = screen.getByRole("textbox", { name: "Scenario name" });
+    await user.clear(field);
+    await user.type(field, "exam: part 1{Enter}");
+
+    expect(await screen.findByText(/not ':'/)).toBeInTheDocument();
+    expect(useTopologyStore.getState().topology.name).toBe("untitled");
+  });
+
+  it("the header accepts a free name with spaces and Polish letters", async () => {
+    const user = await renderApp();
+    await user.click(await screen.findByRole("button", { name: /^Scenario name: untitled/ }));
+    const field = screen.getByRole("textbox", { name: "Scenario name" });
+    await user.clear(field);
+    await user.type(field, "ćwiczenie 3{Enter}");
+    expect(useTopologyStore.getState().topology.name).toBe("ćwiczenie 3");
+  });
+
+  it("Save as refuses a name another scenario has", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Save as…" }));
+    await user.type(screen.getByLabelText("Save as"), "alpha");
+
+    expect(await screen.findByText(/already a scenario called "alpha"/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save scenario" })).toBeDisabled();
+  });
+
+  it("a deploy saves, so the scenario is no longer unsaved", async () => {
+    deploy.mockResolvedValue({
+      devices: [{ name: "r1", state: "running" }],
+      running: ["r1"],
+      exited: [],
+      drift: [],
+      deployed: true,
+      lab_dir: "/workspace/untitled",
+      message: null,
+      needs_confirmation: false,
+      conflicts: null,
+    });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => expect(useTopologyStore.getState().dirty).toBe(false));
+  });
+});
+
 describe("a deployed lab locks the design", () => {
   // D9. Two sources of truth that can both change drift in both directions at
   // once. While the lab runs, only the containers may move on: capture brings
@@ -2325,8 +2530,33 @@ describe("a deployed lab locks the design", () => {
     expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Open/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Import/ })).toBeDisabled();
+  });
+
+  it("still lets another scenario be opened, and the lab keeps running", async () => {
+    // Test 3E.2 note: opening another lab while one runs should not be
+    // blocked. The containers stay; reopening finds them (F33).
+    const user = await deployed();
+    expect(screen.getByRole("button", { name: "Open…" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "New…" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Import/ })).toBeEnabled();
+
+    scenarios.mockResolvedValue([
+      { folder: "week-3", name: "OSPF triangle", devices: 3, modified: 1, foreign: false },
+    ]);
+    await user.click(screen.getByRole("button", { name: "Open…" }));
+    expect(await screen.findByText(/keeps running\. Open its scenario again/)).toBeInTheDocument();
+
+    vi.mocked(api.labStatus).mockResolvedValue({
+      ...running,
+      deployed: false,
+      running: [],
+      devices: [],
+    });
+    await user.click(await screen.findByText("OSPF triangle"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled(),
+    );
+    expect(undeploy).not.toHaveBeenCalled();
   });
 
   it("still lets a device be selected and its settings read", async () => {
@@ -2477,6 +2707,45 @@ describe("a deployed lab locks the design", () => {
     expect(screen.getByText(/differs from the canvas in 1 place/)).toBeInTheDocument();
   });
 
+  it("says so when a container was removed outside the application", async () => {
+    // Bug 35: a router deleted in Docker Desktop came back as "No changes found".
+    const user = await deployed();
+    vi.mocked(api.labStatus).mockResolvedValue({
+      ...running,
+      devices: [
+        { name: "r1", state: "running" },
+        { name: "r2", state: "stopped" },
+      ],
+    });
+    await user.click(screen.getByRole("button", { name: "Check for changes" }));
+
+    // Two live regions now: the app's notice and the panel's warning.
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("status").some((region) =>
+          region.textContent?.includes("r2 is no longer running: the container is gone."),
+        ),
+      ).toBe(true),
+    );
+    expect(screen.queryByText(/No changes found/)).toBeNull();
+    expect(screen.getByText(/1 device is no longer running/)).toBeInTheDocument();
+  });
+
+  it("says so when every container was removed", async () => {
+    const user = await deployed();
+    vi.mocked(api.labStatus).mockResolvedValue({
+      ...running,
+      deployed: false,
+      running: [],
+      devices: [{ name: "r1", state: "stopped" }],
+    });
+    await user.click(screen.getByRole("button", { name: "Check for changes" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/The lab is no longer running/),
+    );
+  });
+
   it("a capture clears the differences it has just adopted", async () => {
     // Bug 20: capturing reported itself as a mismatch.
     const user = await deployed();
@@ -2530,6 +2799,85 @@ describe("a deployed lab locks the design", () => {
     answer({ ...running, deployed: false });
     await waitFor(() => expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled());
     expect(screen.queryByText("Checking whether the lab is running…")).not.toBeInTheDocument();
+  });
+
+  it("opening a scenario whose lab is running comes up locked, with Stop", async () => {
+    // Test 3E.2: deploy A, open B, reopen A. A was shown as editable and
+    // stopped, so it could be neither stopped nor captured.
+    vi.mocked(api.labStatus).mockReset().mockResolvedValue({
+      ...running,
+      deployed: false,
+      running: [],
+      devices: [],
+    });
+    openProject.mockResolvedValue({
+      topology: { ...captured("10.0.0.1/24").topology, name: "lab a" },
+      features: {
+        subnet_calculator: true,
+        addressing_validation: true,
+        infrastructure_verification: true,
+      },
+      folder: "/workspace/lab a",
+      warnings: [],
+      foreign: false,
+    });
+    scenarios.mockResolvedValue([
+      { folder: "lab a", name: "lab a", devices: 1, modified: 1, foreign: false },
+    ]);
+    const user = await renderApp();
+    vi.mocked(api.labStatus).mockResolvedValue(running);
+
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
+    await user.click(await screen.findByText("lab a"));
+
+    expect(await screen.findByText("Lab running — design is read-only")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  });
+
+  it("does not lock a scenario with a late answer about the one opened before it", async () => {
+    // Open is allowed while a lab runs, so a second scenario can be opened
+    // while the first is still being asked about.
+    vi.mocked(api.labStatus).mockReset().mockResolvedValue({
+      ...running,
+      deployed: false,
+      running: [],
+      devices: [],
+    });
+    openProject.mockResolvedValue({
+      topology: { ...captured("10.0.0.1/24").topology, name: "lab a" },
+      features: {
+        subnet_calculator: true,
+        addressing_validation: true,
+        infrastructure_verification: true,
+      },
+      folder: "/workspace/lab a",
+      warnings: [],
+      foreign: false,
+    });
+    scenarios.mockResolvedValue([
+      { folder: "lab a", name: "lab a", devices: 1, modified: 1, foreign: false },
+    ]);
+    const user = await renderApp();
+
+    let answerA: (status: StatusResponse) => void = () => {};
+    vi.mocked(api.labStatus).mockImplementationOnce(
+      () => new Promise((resolve) => (answerA = resolve)),
+    );
+    const openLabA = async () => {
+      await user.click(await screen.findByRole("button", { name: "Open…" }));
+      const list = await screen.findByRole("list", { name: "Scenarios in the workspace" });
+      await user.click(within(list).getByText("lab a"));
+    };
+    await openLabA();
+    await openLabA();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled(),
+    );
+
+    answerA(running);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText("Lab running — design is read-only")).toBeNull();
   });
 
   it("announces edits again once the lab is stopped", async () => {

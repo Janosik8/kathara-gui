@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from kathara_gui.domain.drift import describe_drift, describe_live_drift
 from kathara_gui.domain.model import Topology
 from kathara_gui.kathara import diagnostics, probe, runner, state
-from kathara_gui.project.session import Session, get_session
+from kathara_gui.project.session import ScenarioNameError, Session, get_session
 
 router = APIRouter(prefix="/api/lab", tags=["lab"])
 
@@ -180,11 +180,15 @@ def lab_status(
 def deploy(
     request: DeployRequest, session: Session = Depends(get_session)
 ) -> StatusResponse:
-    # The session decides where the lab lives, so deploy and verify always
-    # agree on the directory Kathará keys the lab by.
-    result = runner.deploy(
-        request.topology, session.lab_dir(request.topology), confirm=request.confirm
-    )
+    # Deploying writes the lab to disk, so it is a save, into the same folder
+    # Save would use (test 3E.2): a lab renamed and deployed without saving
+    # runs from a folder with its new name, not its old one.
+    try:
+        folder = session.persist(request.topology).folder
+    except ScenarioNameError as exc:
+        return _status_response(runner.LabStatus(message=f"Could not deploy. {exc}"))
+
+    result = runner.deploy(request.topology, folder, confirm=request.confirm)
 
     if result.needs_confirmation:
         # Nothing was changed, so the session must not be updated either.
@@ -268,8 +272,8 @@ def wipe(session: Session = Depends(get_session)) -> EverythingResponse:
     """
     message = runner.wipe()
     if message is None:
-        # Whatever this session had deployed is gone with everything else.
-        session.mark_deployed(None)
+        # Every lab this session had deployed is gone with everything else.
+        session.forget_deployed()
     return _everything(message)
 
 

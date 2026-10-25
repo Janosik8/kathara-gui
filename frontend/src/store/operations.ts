@@ -109,6 +109,65 @@ export function deviceNameProblem(name: string): string | null {
   );
 }
 
+const RESERVED_WINDOWS_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  ...Array.from({ length: 9 }, (_, i) => `com${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
+]);
+
+const labCharOk = (c: string) => /[\p{L}\p{N} _-]/u.test(c);
+
+/** The nearest acceptable lab name: "BGP exam, group A" → "BGP exam group A". */
+export function suggestLabName(name: string): string {
+  const cleaned = [...name]
+    .map((c) => (labCharOk(c) ? c : " "))
+    .join("")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 48)
+    .trim();
+  if (!cleaned) return "untitled";
+  return RESERVED_WINDOWS_NAMES.has(cleaned.toLowerCase()) ? `${cleaned}1` : cleaned;
+}
+
+/**
+ * Why this cannot be a lab's name, or null (test 3E.2). The name is also its
+ * folder's name, exactly, and no two scenarios may share one: Kathará knows a
+ * running lab by its name, so two folders with one name are one lab to it.
+ * Mirrors `lab_name_problem` in `domain/naming.py`; `taken` is the other
+ * scenarios' names, compared case-insensitively as Windows and macOS do.
+ */
+export function labNameProblem(name: string, taken: string[] = []): string | null {
+  if (!name.trim()) return "A lab needs a name.";
+  if (name.length > 48) {
+    return (
+      "A lab name can be at most 48 characters, because it is also the folder's name " +
+      "and Windows limits the length of a path."
+    );
+  }
+  if (name !== name.trim()) return "A lab name cannot begin or end with a space.";
+  const bad = [...new Set([...name].filter((c) => !labCharOk(c)))].sort();
+  if (bad.length > 0) {
+    return (
+      "A lab name is also its folder's name, so it can hold only letters, digits, " +
+      `spaces, dashes and underscores, not ${bad.map((c) => `'${c}'`).join(" ")}. ` +
+      `Try "${suggestLabName(name)}".`
+    );
+  }
+  if (RESERVED_WINDOWS_NAMES.has(name.toLowerCase())) {
+    return `"${name}" is reserved by Windows and cannot name a folder. Try "${name}1".`;
+  }
+  const clash = taken.find((other) => other.toLowerCase() === name.toLowerCase());
+  if (clash !== undefined) {
+    return `There is already a scenario called "${clash}". Choose another name.`;
+  }
+  return null;
+}
+
 export function apply(topology: Topology, op: Operation): Topology {
   switch (op.type) {
     case "addNode": {

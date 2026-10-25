@@ -24,6 +24,9 @@
   /* Recoverable trouble, distinct from --danger: a lab whose containers have
      exited is not broken, it just needs deploying again. 6.0:1 on a panel. */
   --warning: #8a4f00;
+  /* A scenario whose lab is running, in the Open list. Green because that is
+     what "running" looks like everywhere else; always beside the word. */
+  --running: #1a7f37;
   /* The selected device's controls, and the laboratory controls, get surfaces
      of their own.
 
@@ -70,6 +73,7 @@
     --accent-fg: #0a0f16;
     --danger: #ff9098;
     --warning: #f0b429; /* lightened to keep contrast on a dark ground */
+    --running: #4ac26b;
     --bg-panel-devices: #2a2140;
     --bg-panel-lab: #302616;
     --device: #c9a7f5;
@@ -203,6 +207,29 @@ body {
   background: var(--bg-raised);
   padding: 10px 16px;
   font-size: 0.88rem;
+}
+
+/* The dot is decoration; the word beside it is the status (ACC-03). */
+.scenario__running {
+  color: var(--running);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.scenario__running::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.3em;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 0.05em;
+}
+@media (forced-colors: active) {
+  .scenario__running::before {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }
 
 .scenario-drawer__body {

@@ -27,7 +27,7 @@ import { type ScenarioDialog, ScenarioDrawer } from "./panels/ScenarioDrawer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
-import type { Operation } from "./store/operations";
+import { labNameProblem, type Operation } from "./store/operations";
 import { useTopologyStore } from "./store/topology";
 import {
   type DeviceKind,
@@ -122,6 +122,39 @@ export function whereInTopology(
 const LOCKED_NOTICE = "The lab is running, so the design is read-only. Stop the lab to edit it.";
 const CHECKING_NOTICE =
   "Checking whether this lab is running. The design can be edited once that is known.";
+
+/**
+ * What Check for changes found, in one sentence or two.
+ *
+ * It used to report address changes only, so a container removed in Docker
+ * Desktop came back as "No changes found" (bug 35). The device list did
+ * change, one glyph in it, but nothing said so.
+ */
+function describeCheck(result: StatusResponse, wasDeployed: boolean): string {
+  const parts: string[] = [];
+  if (wasDeployed && !result.deployed) {
+    parts.push("The lab is no longer running: its containers are gone.");
+  }
+  const gone = result.deployed
+    ? result.devices.filter((d) => d.state === "stopped").map((d) => d.name)
+    : [];
+  if (gone.length > 0) {
+    parts.push(
+      `${gone.join(", ")} ${gone.length === 1 ? "is" : "are"} no longer running: ` +
+        `the container${gone.length === 1 ? " is" : "s are"} gone.`,
+    );
+  }
+  if (result.exited.length > 0) {
+    parts.push(`${result.exited.join(", ")} ${result.exited.length === 1 ? "has" : "have"} exited.`);
+  }
+  const changes = result.drift.length;
+  if (changes > 0) {
+    parts.push(`Found ${changes} change${changes === 1 ? "" : "s"} inside the containers.`);
+  } else if (parts.length === 0) {
+    parts.push("No changes found inside the containers.");
+  }
+  return parts.join(" ");
+}
 
 /** Narrower than this and the panel's own controls stop fitting. */
 const PANEL_MIN = 208;
@@ -279,24 +312,44 @@ export default function App() {
     redo();
   }, [locked, lockNotice, redo]);
 
+  /**
+   * Ask Docker whether this lab is running, with the design locked until it
+   * answers. The containers outlive both the tab and the scenario being open:
+   * a page reloaded while its lab runs, and a scenario reopened while its lab
+   * runs (test 3E.2), must both come back locked, with Stop and Capture.
+   *
+   * Only the latest check counts. Another scenario can be opened while one is
+   * still being asked about, and a late answer for the first must not lock
+   * the second.
+   */
+  const statusCheck = useRef(0);
+  const checkRunning = useCallback(async (subject: Topology) => {
+    const ticket = ++statusCheck.current;
+    if (subject.nodes.length === 0) {
+      setCheckingLab(false);
+      return;
+    }
+    setCheckingLab(true);
+    try {
+      const result = await api.labStatus(subject);
+      if (ticket === statusCheck.current && result.deployed) setLabStatus(result);
+    } catch {
+      // No daemon, or no answer: treat as not deployed, as the probe will.
+    } finally {
+      if (ticket === statusCheck.current) setCheckingLab(false);
+    }
+  }, []);
+
   useEffect(() => {
     api
       .read()
       .then(async (state) => {
         load(state.topology);
-        // A page reloaded while its lab runs must come back locked, not
-        // editable: the containers outlive the tab.
-        if (state.topology.nodes.length === 0) return;
-        try {
-          const result = await api.labStatus(state.topology);
-          if (result.deployed) setLabStatus(result);
-        } catch {
-          // No daemon, or no answer: treat as not deployed, as the probe will.
-        }
+        await checkRunning(state.topology);
       })
       .catch((err) => fail(err))
       .finally(() => setCheckingLab(false));
-  }, [load]);
+  }, [load, checkRunning]);
 
   // Drop devices that an edit or an undo removed, so neither an alignment nor a
   // half-finished link can refer to something that is gone.
@@ -451,19 +504,14 @@ export default function App() {
     try {
       const result = await api.labStatus(topology);
       setLabStatus(result);
-      setNotice(
-        result.drift.length === 0
-          ? "No changes found inside the containers."
-          : `Found ${result.drift.length} change${result.drift.length === 1 ? "" : "s"} ` +
-              "inside the containers.",
-      );
+      setNotice(describeCheck(result, labStatus?.deployed ?? false));
     } catch (err) {
       fail(err);
     } finally {
       setLabBusy(null);
       refreshEverything();
     }
-  }, [topology, refreshEverything]);
+  }, [topology, labStatus, refreshEverything]);
 
   /**
    * Stop every lab of this user — `kathara wipe` — capturing nothing.
@@ -564,11 +612,18 @@ export default function App() {
         const result = await api.allocateAddressing({ topology, overwrite, pool, prefix });
         // One operation, so the whole allocation undoes in one step.
         edit({ type: "replaceTopology", topology: result.topology });
+        const replaced = Object.entries(result.replaced ?? {}).map(
+          ([where, was]) => `${where.replace(":", " eth")} (was ${was})`,
+        );
         setNotice(
-          result.changed
+          (result.changed
             ? `Assigned ${Object.keys(result.assigned_addresses).length} addresses across ` +
               `${Object.keys(result.assigned_subnets).length} collision domains.`
-            : "Everything already has an address.",
+            : "Everything already has an address.") +
+            (replaced.length > 0
+              ? ` Replaced ${replaced.length === 1 ? "an address" : "addresses"} outside ` +
+                `the collision domain's subnet: ${replaced.join(", ")}.`
+              : ""),
         );
         if (result.skipped.length > 0) {
           setNotice(`Could not address: ${result.skipped.join(", ")}. The subnet is too small.`);
@@ -624,10 +679,22 @@ export default function App() {
               ? await api.deploy(subject, confirm)
               : await api.undeploy(subject);
 
+          // Deploying is saving (test 3E.2): the server wrote the scenario
+          // into the folder named after it, renaming the folder if the lab
+          // was renamed, before it started anything.
+          if (action === "deploy" && result.lab_dir) {
+            setFolder(result.lab_dir);
+            markSaved();
+          }
+
           if (result.needs_confirmation) {
             // Nothing was changed, so the last known status still holds.
             setConflicts(result.conflicts);
-            setNotice("Something is already running under this lab name.");
+            setNotice(
+              result.conflicts && result.conflicts.unexpected.length === 0
+                ? "This lab is already running. Redeploying replaces it."
+                : "Something is already running under this lab name.",
+            );
             return;
           }
 
@@ -658,7 +725,7 @@ export default function App() {
         if (action !== "verify") refreshEverything();
       }
     },
-    [topology, leaveConnectMode, refreshEverything],
+    [topology, leaveConnectMode, refreshEverything, markSaved],
   );
 
   const addDevice = useCallback(
@@ -768,7 +835,11 @@ export default function App() {
         const result = await api.saveProject(subject, name);
         setFolder(result.folder);
         markSaved();
-        setStatus(`Saved in ${result.name}`);
+        setStatus(
+          result.renamed_from
+            ? `Saved in ${result.name} (folder renamed from ${result.renamed_from})`
+            : `Saved in ${result.name}`,
+        );
       } catch (err) {
         fail(err);
       } finally {
@@ -812,6 +883,16 @@ export default function App() {
       .then(setScenarios)
       .catch((err) => fail(err));
   }, []);
+
+  // Known before a rename is typed, so the header can refuse a name another
+  // scenario has as it is entered rather than at the next save (test 3E.2).
+  useEffect(() => refreshScenarios(), [folder, refreshScenarios]);
+
+  /** Every scenario's name but the open one's own. */
+  const ownFolder = folder?.split(/[\\/]/).pop() ?? null;
+  const otherScenarioNames = scenarios
+    .filter((entry) => entry.folder !== ownFolder)
+    .flatMap((entry) => [entry.folder, entry.name]);
 
   // Save as and Open, from the header. Focus goes back to the button that
   // opened the strip when it closes, so a keyboard user is not dropped at
@@ -861,8 +942,9 @@ export default function App() {
           ? `Opened ${result.topology.name}, imported from outside this application.`
           : `Opened ${result.topology.name}.`,
       );
+      void checkRunning(result.topology);
     },
-    [load],
+    [load, checkRunning],
   );
 
   const openScenario = useCallback(
@@ -888,6 +970,9 @@ export default function App() {
     setScenarioBusy("new");
     try {
       const state = await api.reset();
+      // An empty scenario never runs, and a check still pending was for the last one.
+      statusCheck.current++;
+      setCheckingLab(false);
       load(state.topology);
       setFolder(null);
       setImportWarnings([]);
@@ -956,6 +1041,18 @@ export default function App() {
     const captured = await captureState();
     if (captured === null) return;
     await runLabAction("undeploy", false, captured);
+  }, [captureState, runLabAction]);
+
+  /**
+   * Keep what the containers hold, then redeploy over them (test 3E.1). The
+   * capture writes each router's frr.conf into the folder the redeploy reads,
+   * so the configuration typed inside the containers comes back up with it.
+   */
+  const captureAndRedeploy = useCallback(async () => {
+    setConflicts(null);
+    const captured = await captureState();
+    if (captured === null) return;
+    await runLabAction("deploy", true, captured);
   }, [captureState, runLabAction]);
 
   useEffect(() => {
@@ -1059,6 +1156,7 @@ export default function App() {
             name={topology.name}
             deployed={labStatus?.deployed ?? false}
             onRename={(name) => edit({ type: "setLabMetadata", changes: { name } })}
+            validate={(name) => labNameProblem(name, otherScenarioNames)}
             onAnnounce={setStatus}
           />
           {checkingLab && !running && (
@@ -1104,8 +1202,8 @@ export default function App() {
             ref={newButton}
             aria-expanded={scenarioDialog === "new"}
             onClick={() => toggleDialog("new")}
-            // Like Open: it would swap the design out from under a running lab.
-            disabled={scenarioBusy !== null || locked}
+            // Allowed while a lab runs, like Open: the lab keeps running.
+            disabled={scenarioBusy !== null}
           >
             New…
           </button>
@@ -1130,8 +1228,9 @@ export default function App() {
             ref={openButton}
             aria-expanded={scenarioDialog === "open"}
             onClick={() => toggleDialog("open")}
-            // Opening would swap the design out from under a running lab.
-            disabled={scenarioBusy !== null || locked}
+            // Allowed while a lab runs (test 3E.2). The lab keeps running,
+            // and reopening its scenario finds it and locks it again (F33).
+            disabled={scenarioBusy !== null}
           >
             Open…
           </button>
@@ -1144,7 +1243,9 @@ export default function App() {
           dirty={dirty}
           busy={scenarioBusy}
           scenarios={scenarios}
+          runningLab={running ? topology.name : null}
           onSaveAs={(name) => void save(name)}
+          validateName={(name) => labNameProblem(name, otherScenarioNames)}
           onOpen={openScenario}
           onNew={() => void newScenario()}
           onClose={closeDialog}
@@ -1272,7 +1373,6 @@ export default function App() {
             busy={scenarioBusy}
             deviceCount={topology.nodes.length}
             anyRunning={(labStatus?.running.length ?? 0) > 0}
-            locked={locked}
             capture={capture}
             onDismissCapture={() => setCapture(null)}
             importWarnings={importWarnings}
@@ -1296,8 +1396,10 @@ export default function App() {
             everything={everything}
             onWipe={wipeLabs}
             onVerify={() => runLabAction("verify")}
+            onDismissDiagnostics={() => setDiagnostics(null)}
             conflicts={conflicts}
             onConfirmDeploy={() => runLabAction("deploy", true)}
+            onCaptureAndRedeploy={captureAndRedeploy}
             onCancelDeploy={() => {
               setConflicts(null);
               setNotice("Deployment cancelled. Nothing was changed.");

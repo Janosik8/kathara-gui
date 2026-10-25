@@ -130,7 +130,8 @@ def test_overlap_is_a_warning_because_a_vpn_lab_means_it() -> None:
     ]
     issues = [i for i in validate(topo) if i.code == "overlapping_subnets"]
     assert [i.severity for i in issues] == [Severity.WARNING]
-    assert "VPN" in issues[0].message
+    # Bug 32: the fact, and nothing else.
+    assert issues[0].message == "Collision domains A and B have the same subnet, 10.9.0.0/24."
     # Nor is the same host address on two separate domains a duplicate.
     assert not [i for i in validate(topo) if i.severity is Severity.ERROR]
 
@@ -230,6 +231,39 @@ def test_allocation_preserves_hand_written_addresses() -> None:
     assert result.topology.nodes[0].interfaces[0].ip == "172.16.9.1/24"
     # The gap is filled without colliding with what was already there.
     assert result.topology.nodes[1].interfaces[0].ip == "172.16.9.2/24"
+
+
+def test_an_address_outside_the_planned_subnet_is_replaced() -> None:
+    """Bug 33: the subnet typed for the domain wins over an address that contradicts it."""
+    topo = topology(
+        ("r1", [(0, "A", "192.168.5.1/24")]),
+        ("r2", [(0, "A", "10.0.0.7/24")]),
+    )
+    topo.collision_domains = [CollisionDomain(name="A", subnet="10.0.0.0/24")]
+    result = allocate(topo)
+
+    assert result.topology.nodes[0].interfaces[0].ip == "10.0.0.1/24"
+    assert result.topology.nodes[1].interfaces[0].ip == "10.0.0.7/24"  # inside: kept
+    assert result.replaced == {"r1:0": "192.168.5.1/24"}
+    assert [i for i in validate(result.topology) if i.severity is Severity.ERROR] == []
+
+
+def test_a_typed_address_is_kept_when_its_domain_has_no_planned_subnet() -> None:
+    # No plan to contradict, so the members' own subnet is the plan, and the
+    # new member joins it instead of a subnet from the pool.
+    topo = topology(("r1", [(0, "A", "172.16.9.1/24")]), ("r2", [(0, "A", None)]))
+    result = allocate(topo)
+
+    assert result.topology.nodes[0].interfaces[0].ip == "172.16.9.1/24"
+    assert result.topology.nodes[1].interfaces[0].ip == "172.16.9.2/24"
+    assert result.assigned_subnets == {"A": "172.16.9.0/24"}
+    assert result.replaced == {}
+
+
+def test_a_subnet_already_in_use_is_not_handed_to_another_domain() -> None:
+    topo = topology(("r1", [(0, "A", "10.0.0.1/24")]), ("r2", [(0, "B", None)]))
+    result = allocate(topo)
+    assert result.assigned_subnets == {"A": "10.0.0.0/24", "B": "10.0.1.0/24"}
 
 
 def test_allocation_does_not_reuse_a_manually_reserved_subnet() -> None:

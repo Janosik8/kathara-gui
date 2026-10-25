@@ -111,6 +111,8 @@ TEXT_PAIRS = [
     ("accent text", "--accent", "--bg"),
     ("error text on a panel", "--danger", "--bg-panel"),
     ("warning text on a panel", "--warning", "--bg-panel"),
+    # "running" beside a scenario in the Open list, which sits on a raised surface.
+    ("running text on a raised surface", "--running", "--bg-raised"),
     # The header turns loud when the canvas has drifted from the running lab.
     # Loud is no use if it stops the title being readable.
     ("the title on a drifted header", "--fg", "--bg-header-drift"),

@@ -101,10 +101,11 @@ export function AddressingPanel({
             Renumber all
           </button>
           <p className="addressing__hint">
-            <strong>Assign addresses</strong> keeps every subnet and address you typed, in
-            the Collision domains panel or on a device, and fills in only what is still
-            missing, from the pool. <strong>Renumber all</strong> discards them and numbers
-            everything afresh from the pool.
+            <strong>Assign addresses</strong> keeps every subnet you typed in the Collision
+            domains panel, and every address that lies inside its domain&apos;s subnet. An
+            address outside that subnet is replaced, and the rest is filled in from the
+            pool. <strong>Renumber all</strong> discards them and numbers everything afresh
+            from the pool.
           </p>
         </div>
       ) : (

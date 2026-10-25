@@ -152,16 +152,17 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Undo / redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or the toolbar. |
 | Pin a subnet to a collision domain | Left panel → **Collision domains** → type the network for that domain, e.g. `192.168.1.0/24`, then Enter. |
 | Let a domain be allocated | Leave its subnet field blank. |
-| Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
+| Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses inside them; replaces an address outside its domain's pinned subnet, and says which. |
 | Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
 | Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. The pool must be a network: `192.168.0.0/8` is refused, naming both readings (`192.0.0.0/8`, or `192.168.0.0/16`). |
-| Save | **Save** in the top bar, or Ctrl/Cmd+S, writes the scenario to the folder it was opened from, or, the first time, to a folder named after it: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name, and the copy takes that name too. |
-| Open | **Open…** in the top bar lists the scenarios in your workspace. |
+| Save | **Save** in the top bar, or Ctrl/Cmd+S, writes the scenario to its folder in the workspace: `lab.conf`, the `.startup` files and the device folders. **The folder is named exactly as the lab**, so after a rename in the header, Save renames the folder too, keeping what is in it, and says "folder renamed from …". **Save as…** writes a copy under a new name, and the copy takes that name too. **Deploy saves as well.** |
+| Rename the lab | Click its name in the header. A lab name can hold letters (any language), digits, spaces, `-` and `_`, up to 48 characters, because it is also the folder's name. A name another scenario already has is refused as you type it: Kathará knows a running lab by its name, so two labs with one name would stop each other. Not while the lab runs. |
+| Open | **Open…** in the top bar lists the scenarios in your workspace. A scenario whose lab is still running opens read-only, with **Stop** and **Capture** available, as after a reload. |
 | Start a new scenario | **New…** in the top bar. An empty canvas with no folder; the scenario that was open stays in its own. Warns first if there are unsaved changes. |
 | Export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
-| Verify links | **Laboratory** → **Verify links**: pings across every link. |
-| See what changed inside the containers | **Laboratory** → **Check for changes**. |
+| Verify links | **Laboratory** → **Verify links**: pings across every link. Close the results with their **×**. |
+| See what changed inside the containers | **Laboratory** → **Check for changes**. It asks Docker which devices are running, exited or gone, and compares every interface's address inside the containers with what was deployed or last captured. It does not compare routing configuration typed in `vtysh`; **Capture** reads that. A device whose container was removed outside the application (Docker Desktop, `docker rm`) is named, with a warning in the panel: Redeploy to start it again, or Stop. Nothing polls in the background (NFR-11), so the device states shown are as of the last deploy, capture or check. |
 | Keep what changed inside the containers | **Scenario** → **Capture running state**. |
 | Open a shell on a device | **Laboratory** → choose the device → **Copy command**, then paste it into any terminal. |
 | Stop the lab | **Laboratory** → **Stop**, then choose whether to capture first or discard. |
@@ -279,16 +280,21 @@ allocated subnets: {'A': '10.0.0.0/24', 'B': '10.0.1.0/24'}
   r3  eth1  192.168.1.2/24   (domain C)
 ```
 
-**Assign** preserves pinned subnets and any address you typed yourself. **Renumber all**
-replaces both — that is what "all" means, so pin again afterwards if you need to.
+**Assign** preserves pinned subnets, and any address you typed yourself that lies inside its
+domain's pinned subnet. An address *outside* the pinned subnet is replaced, because the pin
+says where that domain is; the status line names each one and the address it had. A domain
+with nothing pinned whose devices already agree on a subnet keeps that subnet, and new
+devices on it are numbered inside it. **Renumber all** replaces everything — that is what
+"all" means, so pin again afterwards if you need to.
 
 A subnet field rejects a host address (`192.168.1.1/24`) and suggests the network instead,
 because the model requires a network and an invalid value would otherwise be rejected on
 every later request.
 
-**Two collision domains with overlapping subnets** are a *warning*, not an error. Usually it
-is a slip, but a VPN or VRF lab reuses one subnet on purpose on either side, and Kathará runs
-it without complaint. The same goes for one loopback address on two devices: wrong for a
+**Two collision domains with overlapping subnets** are a *warning*, not an error, and it
+only states the fact: "Collision domains A and B have the same subnet, 10.9.0.0/24." Usually
+it is a slip, but a VPN or VRF lab reuses one subnet on purpose on either side, and Kathará
+runs it without complaint. The same goes for one loopback address on two devices: wrong for a
 router ID, deliberate for anycast.
 
 ### Saving, sharing and reopening a scenario
@@ -315,7 +321,7 @@ The first four are in the top bar, the rest in the **Scenario** panel on the rig
 | **New…** | Starts an empty scenario that is not saved anywhere yet. The next Save writes it to a folder of its own name, so it cannot overwrite the one that was open. |
 | **Save** | Writes the folder into your workspace. Ctrl/Cmd+S does the same. |
 | **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
-| **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. |
+| **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. Each is listed by its lab name, which is also its folder; a folder that differs (one from before folders took the lab's name) is shown after it. A scenario whose lab is running has a green dot and the word **running** beside its name. Allowed while a lab runs, which keeps running. |
 | **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
 | **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. |
 | **Capture running state** | Copies what the devices are actually running back into the scenario. The result stays listed until you close it with its **×**. |
@@ -358,8 +364,10 @@ on the same spot. See below.
 
 Once a lab is deployed the header turns red and says **Lab running — design is
 read-only**, and every editing control is disabled: adding, deleting, linking, moving, the
-inspector, addressing, arranging, undo, New, Open and Import. You can still select devices
-and read their settings, on the canvas and in the tree. Anything that tries to edit anyway
+inspector, addressing, arranging and undo. You can still select devices and read their
+settings, on the canvas and in the tree. **New**, **Open** and **Import** stay available:
+the lab keeps running in the background, and opening its scenario again brings it back
+read-only, with Stop and Capture. Anything that tries to edit anyway
 is refused and says why in the status line: a keyboard shortcut, a press on a disabled
 button, or dragging a device, which stays where it is.
 
@@ -516,7 +524,12 @@ Invoke-RestMethod -Method Post -Headers $h -ContentType "application/json" `
 
 Pressing **Deploy** while a lab is already running **replaces** it: the old containers are
 stopped and new ones started from the current design. The button says **Redeploy** to make
-that clear, and anything changed inside a container is lost — export first if you need it.
+that clear, and it asks first, offering three choices:
+
+- **Capture, then redeploy** keeps what was configured inside the containers. It is
+  captured into the scenario, and the new containers start with it.
+- **Redeploy and discard container changes** starts again from the scenario on disk.
+- **Cancel** changes nothing.
 
 The working loop is: stop (capturing if you want to keep what you configured), edit,
 deploy, look again. The design can't be edited while the lab runs; see *While the lab is
@@ -529,7 +542,9 @@ to Kathará — deploying one stops the other.
 Because of that, deploying when something is already running under the same lab name asks
 first, listing what will be stopped. If a device is running under your lab name that is not
 in your topology, another lab is probably using the name, and the warning says so.
-**Renaming your lab is the reliable fix**: distinct names get distinct containers.
+**Renaming your lab is the reliable fix**: distinct names get distinct containers. Inside the
+workspace this can no longer happen, because two scenarios cannot share a name. It can still
+happen with a lab started from elsewhere, for example with `kathara lstart`.
 
 `kathara list` shows everything running; `kathara wipe` removes it all.
 
@@ -639,7 +654,7 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/lab/verify` | ping across every direct link |
 | POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
 | GET | `/api/project` | scenario name, folder, feature toggles |
-| GET | `/api/project/scenarios` | scenario folders in the workspace |
+| GET | `/api/project/scenarios` | scenario folders in the workspace, each with `running` when its lab has a running container |
 | POST | `/api/project/save` | write the scenario folder into the workspace |
 | POST | `/api/project/export` | the scenario folder as a zip, for download |
 | POST | `/api/project/open` | open a scenario folder from the workspace |

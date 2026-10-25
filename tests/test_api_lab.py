@@ -74,6 +74,7 @@ def test_wipe_stops_everything_of_this_user_only(
 ) -> None:
     manager = FakeManager(TWO_LABS)
     use(monkeypatch, manager)
+    session.replace(Topology(name="mine"))
     session.mark_deployed(Topology(name="mine"))
 
     body = client.post("/api/lab/wipe").json()
@@ -89,6 +90,7 @@ def test_a_failed_wipe_says_so_and_forgets_nothing(
     client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     use(monkeypatch, FakeManager(TWO_LABS, fail=True))
+    session.replace(Topology(name="mine"))
     session.mark_deployed(Topology(name="mine"))
 
     response = client.post("/api/lab/wipe")

@@ -26,6 +26,8 @@ __all__ = [
     "check_unique_names",
     "kathara_name_problem",
     "suggest_kathara_name",
+    "lab_name_problem",
+    "suggest_lab_name",
     "safe_dir_name",
     "RESERVED_WINDOWS_NAMES",
 ]
@@ -110,6 +112,56 @@ def suggest_kathara_name(name: str) -> str:
     """The nearest name Kathará accepts: ``R1`` → ``r1``, ``edge-1`` → ``edge_1``."""
     cleaned = re.sub(r"[^a-z0-9_]", "_", name.strip().lower())[:30]
     return cleaned or "r1"
+
+
+# A lab's name is also its folder's name, unchanged (test 3E.2): letters in
+# any script, digits, spaces, dashes and underscores. Nothing a filesystem on
+# Windows, macOS or Linux treats specially, and nothing a shell needs escaping
+# beyond the quotes a space already asks for.
+
+
+def _lab_char_ok(c: str) -> bool:
+    return c.isalnum() or c in " _-"
+
+
+def lab_name_problem(name: str) -> str | None:
+    """Why ``name`` cannot be a lab's name, and so its folder's, or None.
+
+    Not enforced by the model, for the same reason as F28: a lab written
+    elsewhere, named ``BGP exam, group A``, must still open so that it can be
+    renamed. It is checked where the name becomes a folder: rename, Save and
+    Deploy.
+    """
+    if not name.strip():
+        return "A lab needs a name."
+    if len(name) > MAX_NAME_LENGTH:
+        return (
+            f"A lab name can be at most {MAX_NAME_LENGTH} characters, because it is also "
+            "the folder's name and Windows limits the length of a path."
+        )
+    if name != name.strip():
+        return "A lab name cannot begin or end with a space."
+    bad = sorted({c for c in name if not _lab_char_ok(c)})
+    if bad:
+        return (
+            f"A lab name is also its folder's name, so it can hold only letters, digits, "
+            f"spaces, dashes and underscores, not {' '.join(repr(c) for c in bad)}. "
+            f"Try {suggest_lab_name(name)!r}."
+        )
+    if name.lower() in RESERVED_WINDOWS_NAMES:
+        return f"{name!r} is reserved by Windows and cannot name a folder. Try {name}1."
+    return None
+
+
+def suggest_lab_name(name: str) -> str:
+    """The nearest acceptable lab name: ``BGP exam, group A`` → ``BGP exam group A``."""
+    cleaned = "".join(c if _lab_char_ok(c) else " " for c in name)
+    cleaned = " ".join(cleaned.split())[:MAX_NAME_LENGTH].strip()
+    if not cleaned:
+        return "untitled"
+    if cleaned.lower() in RESERVED_WINDOWS_NAMES:
+        return cleaned + "1"
+    return cleaned
 
 
 def check_unique_names(names: Iterable[str]) -> None:
