@@ -559,7 +559,9 @@ export function LabPanel({
         // Deliberately apart from this lab's own buttons: it reaches beyond
         // the lab being edited, to labs this application never opened, and
         // must not be mistaken for Stop. Available while the design is locked,
-        // because it is a lab action, not an edit.
+        // because it is a lab action, not an edit — and when nothing is
+        // detected, because Kathará can be left inconsistent with no container
+        // to show for it, and its own advice is then `kathara wipe` (F36).
         <div className="lab__everything">
           <h3 className="panel__heading">All labs</h3>
           <p className="field__hint">
@@ -567,18 +569,27 @@ export function LabPanel({
               ? `${describeEverything(everything)} deployed on this computer, ` +
                 "counting labs not opened here. They keep running after this " +
                 "application stops."
-              : "No Kathará labs are deployed on this computer."}
+              : "No Kathará labs are deployed on this computer. Stop every lab still " +
+                "clears anything Kathará has left behind, as `kathara wipe` does."}
           </p>
 
-          {confirmingWipe && everything && (
+          {confirmingWipe && (
             <div className="confirm" role="alertdialog" aria-labelledby="wipe-heading">
               <h3 className="confirm__heading" id="wipe-heading">
                 Stop every Kathará lab?
               </h3>
-              <p>
-                This stops {describeEverything(everything)}, including labs not opened
-                here. Nothing is captured: anything configured inside them is lost.
-              </p>
+              {everything && everything.devices > 0 ? (
+                <p>
+                  This stops {describeEverything(everything)}, including labs not opened
+                  here. Nothing is captured: anything configured inside them is lost.
+                </p>
+              ) : (
+                <p>
+                  No lab is detected, but Kathará can still hold networks or containers
+                  from an earlier run, after a Docker restart for one. This clears them,
+                  as <code>kathara wipe</code> does.
+                </p>
+              )}
               <div className="lab__actions">
                 <button
                   type="button"
@@ -607,9 +618,7 @@ export function LabPanel({
             <button
               type="button"
               onClick={() => setConfirmingWipe(true)}
-              disabled={
-                busy !== null || confirmingWipe || !everything || everything.devices === 0
-              }
+              disabled={busy !== null || confirmingWipe}
             >
               {busy === "wipe" ? "Stopping every lab…" : "Stop every lab"}
             </button>

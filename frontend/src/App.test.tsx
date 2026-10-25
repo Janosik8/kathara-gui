@@ -2928,12 +2928,23 @@ describe("stopping every lab at once", () => {
     vi.mocked(api.labStatus).mockReset().mockResolvedValue(idle);
   });
 
-  it("has nothing to stop when nothing is deployed", async () => {
-    await renderApp();
+  it("is available even when nothing is detected", async () => {
+    // Kathará can be left inconsistent with no container to show for it, and
+    // then says to run `kathara wipe` (test 3E.3, F36).
+    const user = await renderApp();
     expect(
       await screen.findByText(/No Kathará labs are deployed on this computer/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop every lab" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Stop every lab" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/No lab is detected/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Stop everything" }));
+
+    await waitFor(() => expect(wipeLabs).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Cleared what Kathará had left/),
+    );
   });
 
   it("counts labs not opened here, and is available while the design is locked", async () => {

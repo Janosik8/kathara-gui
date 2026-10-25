@@ -536,8 +536,10 @@ export default function App() {
       setDiagnostics(null);
       setConflicts(null);
       setNotice(
-        `Stopped every lab: ${before} device${before === 1 ? "" : "s"}. ` +
-          "The design can be edited again.",
+        before > 0
+          ? `Stopped every lab: ${before} device${before === 1 ? "" : "s"}. ` +
+              "The design can be edited again."
+          : "Cleared what Kathará had left behind (kathara wipe).",
       );
     } catch (err) {
       fail(err);

@@ -569,6 +569,11 @@ It **captures nothing**: anything configured inside those containers is lost, so
 the lab you care about first if you need it. Other users' labs on the same machine are
 never touched. It works while the design is locked, and unlocks it.
 
+The button is available even when no lab is detected. Kathará can be left holding networks
+or containers from an earlier run, after a Docker restart for example, and then answers a
+deploy with "Kathara has been left in an inconsistent state! Please run `kathara wipe`".
+Pressed then, it clears that state, just as `kathara wipe` would.
+
 ### Getting a shell on a running device
 
 Deploying writes the lab to `./kathara-labs/<name>`, next to wherever you started

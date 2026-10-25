@@ -198,6 +198,15 @@ no status at all, because the interface then contradicts the error the user is s
 A stopped container is also distinct from an absent one — it still owns its name, so it
 blocks the next deployment and has to be cleared rather than ignored.
 
+A Docker restart breaks more than the lab. This application's own connection to the
+daemon breaks with it, because Kathará keeps one pool of connections for the life of the
+process. On Windows these are named pipes, and a dead pipe raises an error that the HTTP
+library does not recognise as a dropped connection. So every call takes Kathará's manager
+through one function that pings the daemon first, and opens fresh connections when the old
+ones are dead (F36). Without that, a dead connection read as "no daemon, so nothing is
+running": a status check then hid the exited lab, and the next deploy failed with an error
+naming a Windows API call.
+
 **The scenario folder is the document, and the export is a plain zip of it.** An earlier
 design wrapped everything in a bespoke `.kgui` package holding a `topology.json` beside a
 copy of the lab. That was a mistake, and an instructive one: `lab.conf` already round-trips
@@ -240,7 +249,10 @@ hash of its *name*, so two labs called `untitled` in different folders are one l
 From inside a deploy, a routine redeploy and the destruction of an unrelated lab are
 indistinguishable — so the deploy reports the conflict and changes nothing until confirmed.
 A device running under our name but absent from our topology is the signal that another lab
-holds it, and is warned about specifically.
+holds it, and is warned about specifically. The one exception is a lab whose containers
+have *all* exited, as after a Docker restart: Deploy removes them without asking. Nothing
+runs in them, so there is nothing to capture, and asking would offer a choice with only one
+useful answer. If any device is still running, Deploy asks.
 
 **So a lab has one name, and it is three things at once.** It is the name in the header, the
 scenario's folder, and, through that hash, the containers Kathará runs. Until the tester's
