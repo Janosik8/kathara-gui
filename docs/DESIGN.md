@@ -296,6 +296,12 @@ edited (F29). That is exactly what the lock exists to prevent. A tester's own re
 severity is evidence, but it is not the diagnosis, and every report was traced to its
 cause before it was judged.
 
+A question found one more, F31, which no step covers. The tester asked whether Kathará sets
+a loopback address in Linux or in `vtysh`. It can be either, and capture had been built for
+the first only. An address set in `vtysh` was therefore captured into both `frr.conf` and
+`.startup`, and after that removing it in the editor had no effect. Explaining the domain
+to a user turned out to be a way of reviewing the design against it.
+
 Where a defect could be pinned down by a test once it was understood, a test was added: F26
 is now checked against Kathará's own parser. Where it could not, the fix was confirmed by
 hand: F24's clicks and F27's drag. That is the stated reason the manual layer exists rather

@@ -5,6 +5,7 @@
  * on every keystroke.
  */
 
+import { useEffect, useRef, useState } from "react";
 import type { Operation } from "../store/operations";
 import { CommittedInput } from "./CommittedInput";
 import {
@@ -226,45 +227,147 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
         Extra addresses on <code>lo</code>, for a router ID or an address that stays up
         whichever link is down. Usually a /32.
       </p>
-      <ul className="interface-list">
-        {loopbacks.map((address, index) => (
-          <li key={address} className="interface-list__item">
-            <CommittedInput
-              id={`inspector-lo-${index}`}
-              label={`Loopback address ${index + 1}`}
-              value={address}
-              validate={(value) => (value.trim() === "" ? null : validateLoopback(value))}
-              // Emptying the field removes the address.
-              onCommit={(value) =>
-                setLoopbacks(
-                  value.trim() === ""
-                    ? loopbacks.filter((_, i) => i !== index)
-                    : loopbacks.map((a, i) => (i === index ? value.trim() : a)),
-                )
-              }
-            />
-            <button
-              type="button"
-              onClick={() => setLoopbacks(loopbacks.filter((_, i) => i !== index))}
-            >
-              Remove {address}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <CommittedInput
-        // A fresh field after each addition, rather than one still holding
-        // the address just added.
-        key={loopbacks.length}
-        id="inspector-lo-new"
-        label="Add a loopback address"
-        value=""
-        placeholder="e.g. 10.255.0.1/32"
-        validate={(value) => (value.trim() === "" ? null : validateLoopback(value, loopbacks))}
-        onCommit={(value) => {
-          if (value.trim()) setLoopbacks([...loopbacks, value.trim()]);
-        }}
-      />
+      {/* Keyed by device, so empty rows opened on one device do not follow
+          the selection to the next. */}
+      <LoopbackRows key={node.name} loopbacks={loopbacks} onChange={setLoopbacks} />
     </section>
+  );
+}
+
+/**
+ * One field per loopback address, with + to open another and − to remove one.
+ *
+ * There is always at least one row, so the place to type the first address is
+ * visible without first finding a button. Rows opened with + and not yet
+ * filled are local to this component: an empty address is not an address, and
+ * putting one in the model would be refused by the server.
+ */
+function LoopbackRows({
+  loopbacks,
+  onChange,
+}: {
+  loopbacks: string[];
+  onChange: (next: string[]) => void;
+}) {
+  // Ids rather than a count, so removing one empty row removes that row and
+  // not whichever happens to be last, with someone's draft in it.
+  const [pending, setPending] = useState<number[]>([]);
+  const nextId = useRef(0);
+  const [focusId, setFocusId] = useState<string | null>(null);
+
+  // Waits for the field to exist: a filled row reappears as a saved one only
+  // once the new address has come back in the props.
+  useEffect(() => {
+    if (!focusId) return;
+    const field = document.getElementById(focusId);
+    if (field) {
+      field.focus();
+      setFocusId(null);
+    }
+  }, [focusId, loopbacks]);
+
+  const openRow = () => {
+    const id = nextId.current++;
+    setPending((p) => [...p, id]);
+    setFocusId(`inspector-lo-p${id}`);
+  };
+  const closeRow = (id: number) => setPending((p) => p.filter((x) => x !== id));
+
+  // The row that is shown when there is nothing at all, so there is always one.
+  const shown = loopbacks.length === 0 && pending.length === 0 ? [-1] : pending;
+
+  type Row =
+    | { kind: "saved"; index: number; address: string }
+    | { kind: "pending"; id: number };
+  const rows: Row[] = [
+    ...loopbacks.map((address, index) => ({ kind: "saved" as const, index, address })),
+    ...shown.map((id) => ({ kind: "pending" as const, id })),
+  ];
+  const onlyRow = rows.length === 1;
+
+  return (
+    <ul className="loopback-list">
+      {rows.map((row, position) => {
+        const n = position + 1;
+        const fieldId =
+          row.kind === "saved" ? `inspector-lo-${row.index}` : `inspector-lo-p${row.id}`;
+        const empty = row.kind === "pending";
+        return (
+          <li key={fieldId} className="loopback-list__row">
+            {row.kind === "saved" ? (
+              <CommittedInput
+                id={fieldId}
+                label={`Loopback address ${n}`}
+                value={row.address}
+                validate={(value) =>
+                  value.trim() === ""
+                    ? null
+                    : validateLoopback(
+                        value,
+                        loopbacks.filter((_, i) => i !== row.index),
+                      )
+                }
+                // Emptying the field removes the address.
+                onCommit={(value) =>
+                  onChange(
+                    value.trim() === ""
+                      ? loopbacks.filter((_, i) => i !== row.index)
+                      : loopbacks.map((a, i) => (i === row.index ? value.trim() : a)),
+                  )
+                }
+              />
+            ) : (
+              <CommittedInput
+                id={fieldId}
+                label={`Loopback address ${n}`}
+                value=""
+                placeholder="e.g. 10.255.0.1/32"
+                validate={(value) =>
+                  value.trim() === "" ? null : validateLoopback(value, loopbacks)
+                }
+                onCommit={(value) => {
+                  if (!value.trim()) return;
+                  // The row becomes a saved one in the same place. After Enter
+                  // the cursor follows it; after Tab it is left where it went.
+                  if (document.activeElement?.id === fieldId) {
+                    setFocusId(`inspector-lo-${loopbacks.length}`);
+                  }
+                  closeRow(row.id);
+                  onChange([...loopbacks, value.trim()]);
+                }}
+              />
+            )}
+            <div className="loopback-list__actions">
+              <button
+                type="button"
+                className="loopback__button"
+                aria-label={`Remove loopback address ${n}`}
+                title={`Remove loopback address ${n}`}
+                // The last empty row stays: it is where the next address goes.
+                disabled={onlyRow && empty}
+                onClick={() =>
+                  row.kind === "saved"
+                    ? onChange(loopbacks.filter((_, i) => i !== row.index))
+                    : closeRow(row.id)
+                }
+              >
+                −
+              </button>
+              {position === 0 && (
+                <button
+                  type="button"
+                  className="loopback__button"
+                  aria-label="Add another loopback address"
+                  title="Add another loopback address"
+                  onClick={openRow}
+                >
+                  +
+                </button>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

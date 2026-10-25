@@ -38,6 +38,7 @@ __all__ = [
     "capture",
     "live_addresses",
     "parse_ip_addr",
+    "frr_loopbacks",
     "parse_ip_addr_loopbacks",
     "recover_addresses",
 ]
@@ -66,6 +67,9 @@ class CaptureReport:
     #: silence would look like success.
     skipped: list[tuple[str, str]] = field(default_factory=list)
     message: str | None = None
+    #: Loopback addresses each device's FRR configuration holds (F31), which
+    #: a capture leaves in ``frr.conf`` rather than copying into the model.
+    frr_loopbacks: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def any_captured(self) -> bool:
@@ -152,6 +156,35 @@ def parse_ip_addr_loopbacks(output: str) -> list[str]:
 #: As `_IP_ADDR_LINE`, but also matching an alias label such as ``lo:0``.
 _IP_ADDR_LINE_ANY = re.compile(r"^\d+:\s+([\w:]+)\s+inet\s+(\S+)", re.MULTILINE)
 
+_FRR_ADDRESS = re.compile(r"^\s+(?:ip|ipv6)\s+address\s+(\S+)")
+
+
+def frr_loopbacks(config: str) -> list[str]:
+    """Addresses an FRR configuration puts on ``lo`` (``interface lo``, then
+    ``ip address …`` or ``ipv6 address …``).
+
+    Finding F31. A loopback set in ``vtysh`` is seen twice by a capture: in the
+    running configuration, and on ``lo`` in ``ip addr``. Taken into the model
+    as well, it would be written to ``.startup`` too, and removing it in the
+    editor would then change nothing, because FRR would put it back. So an
+    address FRR holds is left to FRR.
+    """
+    found: list[str] = []
+    inside = False
+    for line in config.replace("\r\n", "\n").split("\n"):
+        if not line.strip() or line.strip() == "!" or not line[0].isspace():
+            # A block ends at "!" or at the next top-level line.
+            inside = line.split() == ["interface", "lo"]
+            continue
+        if inside and (match := _FRR_ADDRESS.match(line)):
+            try:
+                address = str(ipaddress.ip_interface(match.group(1)))
+            except ValueError:
+                continue
+            if address not in found:
+                found.append(address)
+    return found
+
 
 def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str]]:
     """Each running device's actual interface addresses, by device name.
@@ -180,7 +213,11 @@ def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str
     return found
 
 
-def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
+def recover_addresses(
+    topology: Topology,
+    lab_dir: Path,
+    frr_owned: dict[str, list[str]] | None = None,
+) -> Topology:
     """Read each running device's live interface addresses into the topology.
 
     This is how a capture works for a PC. A host keeps no routing daemon, so
@@ -193,7 +230,13 @@ def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
     Overwrites addresses that differ, because the running device is the
     authority here: the user changed it there deliberately and asked for it to
     be captured.
+
+    ``frr_owned`` names, per device, the loopbacks FRR's own configuration
+    holds (:func:`frr_loopbacks`). Those are not copied into the model: they
+    are already restored from ``frr.conf``, and a second copy in ``.startup``
+    would outlive any attempt to remove them in the editor (F31).
     """
+    frr_owned = frr_owned or {}
     lab_dir = Path(lab_dir)
     if not topology.nodes:
         return topology
@@ -221,8 +264,9 @@ def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
         ]
         # IPv4 only, as for ethN; an IPv6 loopback in the model is kept rather
         # than dropped for not having been asked about.
+        owned = set(frr_owned.get(node.name, []))
         v6 = [a for a in node.loopbacks if ipaddress.ip_interface(a).version == 6]
-        loopbacks = parse_ip_addr_loopbacks(output) + v6
+        loopbacks = [a for a in parse_ip_addr_loopbacks(output) + v6 if a not in owned]
         nodes.append(node.model_copy(update={"interfaces": interfaces, "loopbacks": loopbacks}))
 
     return topology.model_copy(update={"nodes": nodes})
@@ -263,6 +307,9 @@ def capture(topology: Topology, lab_dir: Path) -> CaptureReport:
         if not config:
             report.skipped.append((node.name, "FRR returned no configuration"))
             continue
+
+        if owned := frr_loopbacks(config):
+            report.frr_loopbacks[node.name] = owned
 
         target = lab_dir / node.name / FRR_CONFIG
         write_text_lf(target, config)

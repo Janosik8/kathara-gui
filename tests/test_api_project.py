@@ -564,7 +564,7 @@ def test_a_capture_becomes_what_the_lab_is_compared_against(
     changed = deployed.model_copy(deep=True)
     changed.nodes[0].interfaces[0].ip = "10.0.0.11/24"
     monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
-    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder: changed)
+    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder, owned=None: changed)
 
     response = client.post("/api/project/capture", json={"topology": TRIANGLE})
     assert response.status_code == 200, response.text
@@ -581,7 +581,7 @@ def test_a_capture_with_nothing_deployed_invents_no_baseline(
 
     save(client)
     monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
-    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder: topology)
+    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder, owned=None: topology)
 
     client.post("/api/project/capture", json={"topology": TRIANGLE})
     assert session.deployed_topology is None

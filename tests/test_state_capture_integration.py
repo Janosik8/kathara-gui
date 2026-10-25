@@ -256,3 +256,31 @@ def test_a_loopback_added_inside_the_container_is_captured_into_the_startup_file
     # The .startup file follows the model, as the capture endpoint does.
     scenario.save(updated, lab_dir)
     assert "ip address add 10.255.0.2/32 dev lo" in (lab_dir / "r1.startup").read_text()
+
+
+def test_a_loopback_set_in_vtysh_is_left_to_frr_and_survives_a_redeploy(
+    with_loopback: Topology, lab_dir: Path
+) -> None:
+    """F31: captured into both frr.conf and .startup, it could not be removed."""
+    shell(
+        lab_dir,
+        ["vtysh", "-c", "configure terminal", "-c", "interface lo"]
+        + ["-c", "ip address 10.255.9.9/32"],
+    )
+
+    report = state.capture(with_loopback, lab_dir)
+    assert report.frr_loopbacks == {"r1": ["10.255.9.9/32"]}
+    updated = state.recover_addresses(with_loopback, lab_dir, report.frr_loopbacks)
+    # The one from the canvas stays the editor's; the one from vtysh is FRR's.
+    assert updated.node("r1").loopbacks == ["10.255.0.1/32"]
+
+    scenario.save(updated, lab_dir)
+    assert "10.255.9.9" not in (lab_dir / "r1.startup").read_text()
+    assert "ip address 10.255.9.9/32" in (lab_dir / "r1" / "etc" / "frr" / "frr.conf").read_text()
+
+    # And it is not lost: FRR puts it back from frr.conf.
+    runner.undeploy(updated, lab_dir)
+    runner.deploy(updated, lab_dir, confirm=True)
+    on_lo = shell(lab_dir, ["ip", "-o", "-4", "addr", "show", "dev", "lo"])
+    assert "10.255.9.9/32" in on_lo
+    assert "10.255.0.1/32" in on_lo

@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { Operation } from "../store/operations";
 import { type Topology, newNode, suggestCollisionDomain } from "../types";
 import { Inspector, validateLoopback } from "./Inspector";
 import { CollisionDomainsPanel, validateSubnet } from "./CollisionDomainsPanel";
@@ -181,37 +183,105 @@ describe("Inspector", () => {
     });
   });
 
-  it("adds a loopback address", async () => {
-    // Bug 28.
-    const user = userEvent.setup();
-    const onDispatch = vi.fn();
-    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
-    await user.type(screen.getByLabelText("Add a loopback address"), "10.255.0.1/32{Enter}");
-    expect(onDispatch).toHaveBeenCalledWith({
-      type: "updateNode",
-      name: "r1",
-      changes: { loopbacks: ["10.255.0.1/32"] },
+  describe("loopback rows", () => {
+    // Bug 28, and the rows asked for after it: + opens a field, − closes one,
+    // and there is always at least one.
+
+    /** The inspector over a topology that follows its own edits. */
+    function Live({ loopbacks = [], spy }: { loopbacks?: string[]; spy: (op: Operation) => void }) {
+      const [topology, setTopology] = useState(() => {
+        const t = linked();
+        t.nodes[0]!.loopbacks = loopbacks;
+        return t;
+      });
+      const onDispatch = (op: Operation) => {
+        spy(op);
+        if (op.type === "updateNode") {
+          setTopology((t) => ({
+            ...t,
+            nodes: t.nodes.map((n) => (n.name === op.name ? { ...n, ...op.changes } : n)),
+          }));
+        }
+      };
+      return <Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />;
+    }
+
+    const field = (n: number) => screen.getByLabelText(`Loopback address ${n}`);
+    const remove = (n: number) =>
+      screen.getByRole("button", { name: `Remove loopback address ${n}` });
+    const add = () => screen.getByRole("button", { name: "Add another loopback address" });
+    const loopbacksSent = (spy: ReturnType<typeof vi.fn>) =>
+      spy.mock.calls.map(([op]) => (op as { changes: { loopbacks: string[] } }).changes.loopbacks);
+
+    it("shows one empty field when there is none, which cannot be removed", () => {
+      render(<Live spy={vi.fn()} />);
+      expect(screen.getAllByLabelText(/^Loopback address \d$/)).toHaveLength(1);
+      expect(field(1)).toHaveValue("");
+      expect(remove(1)).toBeDisabled();
     });
-  });
 
-  it("removes one, and keeps a bad one in the field with a reason", async () => {
-    const user = userEvent.setup();
-    const onDispatch = vi.fn();
-    const topology = linked();
-    topology.nodes[0]!.loopbacks = ["1.1.1.1/32", "2.2.2.2/32"];
-    render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
-
-    await user.click(screen.getByRole("button", { name: "Remove 1.1.1.1/32" }));
-    expect(onDispatch).toHaveBeenLastCalledWith({
-      type: "updateNode",
-      name: "r1",
-      changes: { loopbacks: ["2.2.2.2/32"] },
+    it("adds the first address from that field", async () => {
+      const user = userEvent.setup();
+      const spy = vi.fn();
+      render(<Live spy={spy} />);
+      await user.type(field(1), "10.255.0.1/32{Enter}");
+      expect(loopbacksSent(spy)).toEqual([["10.255.0.1/32"]]);
+      // Still one row, now holding it, with the cursor still in it.
+      expect(field(1)).toHaveValue("10.255.0.1/32");
+      expect(field(1)).toHaveFocus();
     });
 
-    onDispatch.mockClear();
-    await user.type(screen.getByLabelText("Add a loopback address"), "3.3.3.3{Enter}");
-    expect(onDispatch).not.toHaveBeenCalled();
-    expect(screen.getByText("Add a prefix, usually 3.3.3.3/32.")).toBeInTheDocument();
+    it("opens a second field with +, focused, and adds to the list", async () => {
+      const user = userEvent.setup();
+      const spy = vi.fn();
+      render(<Live loopbacks={["1.1.1.1/32"]} spy={spy} />);
+      await user.click(add());
+      expect(field(2)).toHaveFocus();
+      await user.keyboard("2.2.2.2/32{Enter}");
+      expect(loopbacksSent(spy)).toEqual([["1.1.1.1/32", "2.2.2.2/32"]]);
+    });
+
+    it("closes an empty field with − without changing anything", async () => {
+      const user = userEvent.setup();
+      const spy = vi.fn();
+      render(<Live loopbacks={["1.1.1.1/32"]} spy={spy} />);
+      await user.click(add());
+      await user.click(remove(2));
+      expect(screen.queryByLabelText("Loopback address 2")).not.toBeInTheDocument();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("removes a saved address with −, leaving an empty field after the last", async () => {
+      const user = userEvent.setup();
+      const spy = vi.fn();
+      render(<Live loopbacks={["1.1.1.1/32", "2.2.2.2/32"]} spy={spy} />);
+      await user.click(remove(1));
+      await user.click(remove(1));
+      expect(loopbacksSent(spy)).toEqual([["2.2.2.2/32"], []]);
+      expect(field(1)).toHaveValue("");
+      expect(remove(1)).toBeDisabled();
+    });
+
+    it("keeps a bad or repeated address in the field with a reason", async () => {
+      const user = userEvent.setup();
+      const spy = vi.fn();
+      render(<Live loopbacks={["1.1.1.1/32"]} spy={spy} />);
+      await user.click(add());
+      await user.keyboard("3.3.3.3{Enter}");
+      expect(screen.getByText("Add a prefix, usually 3.3.3.3/32.")).toBeInTheDocument();
+      await user.clear(field(2));
+      await user.keyboard("1.1.1.1/32{Enter}");
+      expect(screen.getByText("1.1.1.1/32 is already on lo.")).toBeInTheDocument();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("has no axe violations with several rows", async () => {
+      const user = userEvent.setup();
+      const { container } = render(<Live loopbacks={["1.1.1.1/32"]} spy={vi.fn()} />);
+      await user.click(add());
+      const results = await axeCore.run(container);
+      expect(results.violations.map((v) => v.id)).toEqual([]);
+    });
   });
 
   it("lists interfaces with their collision domain", () => {

@@ -18,7 +18,8 @@ from kathara_gui.domain.codec.labconf import parse, serialize
 from kathara_gui.domain.codec.startup import parse_loopbacks, render_startup
 from kathara_gui.domain.drift import describe_drift
 from kathara_gui.domain.model import Interface, Node, Topology
-from kathara_gui.kathara.state import parse_ip_addr, parse_ip_addr_loopbacks
+from kathara_gui.kathara import state
+from kathara_gui.kathara.state import frr_loopbacks, parse_ip_addr, parse_ip_addr_loopbacks
 from kathara_gui.project import scenario
 from kathara_gui.project.labdir import write_lab
 
@@ -127,3 +128,54 @@ def test_a_changed_loopback_is_drift() -> None:
     deployed = Topology(nodes=[router("r1", "1.1.1.1/32")])
     current = Topology(nodes=[router("r1", "1.1.1.9/32")])
     assert describe_drift(deployed, current) == ["r1 loopback addresses changed to 1.1.1.9/32"]
+
+
+# -- loopbacks set in FRR (F31) ---------------------------------------------
+
+RUNNING_CONFIG = """\
+!
+frr version 8.4
+hostname r1
+!
+interface eth0
+ ip address 10.0.0.1/24
+exit
+!
+interface lo
+ ip address 10.255.9.9/32
+ ip address 10.255.9.10/32
+ ipv6 address 2001:db8::9/128
+exit
+!
+interface lo1
+ ip address 10.9.9.9/32
+exit
+!
+"""
+
+
+def test_the_addresses_frr_puts_on_lo_are_found() -> None:
+    assert frr_loopbacks(RUNNING_CONFIG) == [
+        "10.255.9.9/32",
+        "10.255.9.10/32",
+        "2001:db8::9/128",
+    ]
+    assert frr_loopbacks("!\nhostname r1\n!\n") == []
+
+
+def test_a_loopback_frr_holds_is_not_copied_into_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Manager:
+        def exec(self, device: str, command: list[str], **_: object) -> tuple[bytes, bytes, int]:
+            return IP_ADDR.replace("10.255.0.2", "10.255.9.9").encode(), b"", 0
+
+    monkeypatch.setattr(state.Kathara, "get_instance", staticmethod(Manager))
+    monkeypatch.setattr(state.LabParser, "parse", staticmethod(lambda path: object()))
+    topology = Topology(nodes=[router("r1", "10.255.0.1/32")])
+
+    plain = state.recover_addresses(topology, tmp_path)
+    assert plain.node("r1").loopbacks == ["10.255.0.1/32", "10.255.9.9/32"]
+
+    owned = state.recover_addresses(topology, tmp_path, {"r1": ["10.255.9.9/32"]})
+    assert owned.node("r1").loopbacks == ["10.255.0.1/32"]

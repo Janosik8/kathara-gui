@@ -357,7 +357,7 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
     folder = session.lab_dir(topology)
 
     report = state.capture(topology, folder)
-    updated = state.recover_addresses(topology, folder)
+    updated = state.recover_addresses(topology, folder, report.frr_loopbacks)
     if updated != topology:
         topology = session.replace(updated)
 
@@ -379,7 +379,22 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
             for c in report.captured
         ],
         skipped=report.skipped,
-        message=report.message,
+        message=_with_frr_loopbacks(report.message, report.frr_loopbacks),
         folder=str(folder),
         topology=topology,
     )
+
+
+def _with_frr_loopbacks(message: str | None, owned: dict[str, list[str]]) -> str | None:
+    """Say why a loopback set in vtysh is not in the Loopback rows (F31).
+
+    Without this the capture would look as if it had missed the address.
+    """
+    notes = [
+        f"{device}: {', '.join(addresses)} on lo "
+        f"{'is' if len(addresses) == 1 else 'are'} set in FRR (vtysh), so "
+        f"{'it stays' if len(addresses) == 1 else 'they stay'} in frr.conf; change "
+        f"{'it' if len(addresses) == 1 else 'them'} there."
+        for device, addresses in sorted(owned.items())
+    ]
+    return " ".join([message, *notes] if message else notes) or None

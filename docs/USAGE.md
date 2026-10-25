@@ -139,7 +139,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Rename | Select a device → **Details** → Name → Enter or click away. Kathará accepts only lowercase letters, digits and underscores, up to 30 characters, so `R1` or `edge-1` is refused with a suggestion (`r1`, `edge_1`). A lab opened from elsewhere with such names still opens; Deploy lists each one to rename. |
 | Set an address | Select a device → **Details** → Interfaces → address field, e.g. `10.0.0.1/24`. |
 | Enable routing daemons | **Details** → Routing daemons. Every daemon FRR can start is listed, each with what it is for (`ldpd` is MPLS LDP). Ticking any protocol also ticks `zebra`. **Apply to all routers** gives every router this one's daemons, as one undo step. |
-| Add a loopback address | **Details** → Loopback (lo) → Add a loopback address, e.g. `10.255.0.1/32`. It goes on `lo` in the container and shows under the device's name on the canvas. Empty the field, or press Remove, to take it off. |
+| Add loopback addresses | **Details** → Loopback (lo) → type into the field, e.g. `10.255.0.1/32`, then Enter. Press **+** beside the first row for another field, and **−** on a row to remove that address. There is always one row. Each address goes on `lo` in the container, next to `127.0.0.1/8`, and shows under the device's name on the canvas. |
 | Run a device privileged | **Details** → **Privileged**. Kathará starts it only when the application runs as administrator (Windows: PowerShell opened with *Run as administrator*) or root (macOS, Linux: `sudo`); otherwise Deploy says so and starts nothing. |
 | Change the image | **Details** → Container image. See the warning below before clearing it. |
 | Move a device | Drag on the canvas. Snaps to a 16px grid. |
@@ -436,6 +436,9 @@ Capture writes to two places, because a device keeps its configuration in two:
   daemon to ask. Loopback addresses come back too: one added with
   `ip address add 10.255.0.2/32 dev lo` inside the container ends up in the `.startup`.
   IPv4 only, as for the other interfaces.
+  One set in `vtysh` (`interface lo`, `ip address …`) is different: it is in the captured
+  `frr.conf` already, so it is left there and not added to the Loopback rows, and the
+  capture message says so. Change or remove it in `vtysh`, then capture again.
 
 **A router's hostname comes from its device name.** Rename the device in the editor and
 redeploy; FRR picks the name up from the container.

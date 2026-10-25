@@ -1020,6 +1020,42 @@ select {
   cursor: pointer;
 }
 
+/* One loopback address per row: the field, then − and (on the first row) +. */
+.loopback-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.loopback-list__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.loopback-list__row > .field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.loopback-list__actions {
+  display: flex;
+  gap: 6px;
+  /* Level with the input, not its label, and staying there when an error
+     appears beneath the field. */
+  margin-top: calc(0.82rem * 1.2 + 4px);
+}
+
+/* 28px, above the WCAG 2.2 minimum target size (2.5.8), like .dismiss. */
+.loopback__button {
+  min-width: 32px;
+  min-height: 28px;
+  padding: 6px 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .lab__message {
   font-size: 0.85rem;
   color: var(--fg-muted);
