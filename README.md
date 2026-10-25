@@ -14,8 +14,8 @@ running configuration back out of the containers — without hand-editing `lab.c
 Under development. Phases 0–3 complete — integration spike and CI, domain model and
 `lab.conf` codec, topology editor, and addressing with conflict detection. Phase 6
 (accessibility) has advanced alongside them rather than after: the palette, reflow to 200%
-zoom and keyboard equivalence are built and asserted in tests, leaving the screen-reader
-passes, which need a Windows machine.
+zoom and keyboard equivalence are built and asserted in tests. Screen readers are out of
+scope by decision (D10 in `PLAN.md`).
 
 Phase 4 (deploy, diagnostics, terminal) is in progress: labs deploy, conflicting deployments
 are caught, and links are verified; the in-app terminal is outstanding.

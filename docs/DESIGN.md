@@ -96,6 +96,9 @@ deliverable measured against **EN 301 549** — the instrument Polish law actual
 bodies to, which maps to WCAG 2.1 AA. In a browser engine that is testable: ARIA, screen
 reader support, `axe-core` in CI, the user's own zoom and contrast settings. In Qt or Tkinter
 there is no equivalent audit tooling, and "we followed WCAG" becomes an unverifiable claim.
+The reasoning holds even with screen readers since put out of scope (D10 in `PLAN.md`):
+contrast, reflow, the system's contrast theme and the automated audit still need a browser.
+The resulting claim is partial conformance, stated as such.
 
 A second benefit: users get *their* assistive technology, not whatever a bundled toolkit
 happens to support.
@@ -291,19 +294,24 @@ Three layers, because each catches what the others cannot:
 Accessibility is checked from both ends: `axe-core` for structure, roles and naming, and a
 Python test asserting the palette's contrast ratios. That second one exists because **axe
 cannot evaluate colour contrast under jsdom** — it needs a real canvas — so a clean automated
-run is not a contrast pass. Manual screen reader testing remains necessary and is planned.
+run is not a contrast pass. Manual screen reader testing was planned, and dropped on
+2026-10-25 by the user's decision (D10): screen readers are out of scope. The ARIA structure
+axe checks stays, because it costs nothing and the tree is also the keyboard path, but it is
+not claimed to work with a screen reader. The application makes no sound, so nothing is
+needed for hearing.
 
 ### A fourth layer: a scripted manual run, and what it found
 
 The three automated layers cannot see what a person sees: whether a click lands, whether a
 dragged node stays put, whether a message reaches the screen. So the application is also run
-by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It has 128 steps in
-eleven sections, one per capability of the specification, and each step states its expected
+by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It has 121 steps in
+eleven sections (128 until the seven screen-reader steps were dropped by D10), one per capability of the specification, and each step states its expected
 result before it is run. The tester ticks a step or writes down, in their own words, what
 happened instead.
 
-It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 of
-the 128 steps had passed: sections 0–2 and the first half of section 3. Every defect it
+It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 steps
+had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 81 of 121 had
+passed, through the end of section 5. Every defect it
 reported is traced in three places. The tester's words go on the step's `Notes:` line or in
 `bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.

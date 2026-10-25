@@ -827,6 +827,10 @@ says "Exited"* above.
 > interface has stopped changing. The automated evidence it will rest on is listed below and
 > runs today.
 
+> **Screen readers are out of scope** (D10 in `PLAN.md`, 2026-10-25). There is no
+> VoiceOver or NVDA pass, and the conformance claim is partial. The application makes no
+> sound, so nothing is needed for hearing.
+
 
 Capability 6 is graded, so this is part of the deliverable rather than optional QA.
 
@@ -848,11 +852,6 @@ uv run pytest tests/test_contrast.py    # palette contrast against WCAG 2.1
 Manual:
 
 - **Keyboard only** — unplug the mouse and build a two-device topology.
-- **VoiceOver** (macOS) — Cmd+F5. Navigate the tree; every device and interface should
-  announce its kind, addresses and neighbours.
-- **NVDA** (Windows, free) — the screen reader most desktop users actually use, and it
-  interprets ARIA differently from VoiceOver. Step by step in §6 of
-  [TEST-PROCEDURE-WINDOWS.md](TEST-PROCEDURE-WINDOWS.md).
 - **Zoom to 200%** — layout must not break or overlap.
 - **Dark mode and increased contrast** — both follow the OS setting.
 - **Reduced motion** — animations are suppressed when the OS asks.
