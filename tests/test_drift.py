@@ -190,8 +190,19 @@ class TestLiveDrift:
         """A stopped container reports nothing; that is not a difference."""
         assert describe_live_drift(lab(r1="10.0.0.1/24"), {}) == []
 
-    def test_an_interface_that_was_not_read_is_left_alone(self) -> None:
-        assert describe_live_drift(lab(r1="10.0.0.1/24"), {"r1": {1: "10.9.9.9/24"}}) == []
+    def test_an_address_deleted_inside_a_container_is_reported(self) -> None:
+        """Test 4B.2: a device that answered without eth0 has no address there."""
+        (change,) = describe_live_drift(lab(r1="10.0.0.1/24"), {"r1": {}})
+        assert "no address" in change
+        assert "10.0.0.1/24" in change
+
+    def test_an_address_moved_to_another_interface_is_reported(self) -> None:
+        """Test 4B.1: eth0's address moved to eth1, which the lab does not use."""
+        (change,) = describe_live_drift(lab(r1="10.0.0.1/24"), {"r1": {1: "10.0.0.1/24"}})
+        assert "r1 eth0 has no address" in change
+
+    def test_an_unaddressed_interface_left_unaddressed_is_silence(self) -> None:
+        assert describe_live_drift(lab(r1=None), {"r1": {}}) == []
 
     def test_an_address_appearing_where_the_canvas_has_none_is_reported(self) -> None:
         (change,) = describe_live_drift(lab(r1=None), {"r1": {0: "10.0.0.1/24"}})

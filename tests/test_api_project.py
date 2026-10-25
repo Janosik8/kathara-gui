@@ -593,7 +593,9 @@ def test_a_capture_becomes_what_the_lab_is_compared_against(
     changed = deployed.model_copy(deep=True)
     changed.nodes[0].interfaces[0].ip = "10.0.0.11/24"
     monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
-    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder, owned=None: changed)
+    monkeypatch.setattr(
+        state, "recover_addresses", lambda topology, folder, owned=None, left_out=None: changed
+    )
 
     response = client.post("/api/project/capture", json={"topology": TRIANGLE})
     assert response.status_code == 200, response.text
@@ -610,10 +612,40 @@ def test_a_capture_with_nothing_deployed_invents_no_baseline(
 
     save(client)
     monkeypatch.setattr(state, "capture", lambda topology, folder: state.CaptureReport())
-    monkeypatch.setattr(state, "recover_addresses", lambda topology, folder, owned=None: topology)
+    monkeypatch.setattr(
+        state, "recover_addresses", lambda topology, folder, owned=None, left_out=None: topology
+    )
 
     client.post("/api/project/capture", json={"topology": TRIANGLE})
     assert session.deployed_topology is None
+
+
+def test_a_capture_says_which_addresses_it_had_no_place_for(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second address on eth0, and one on an eth1 the design lacks, were
+    dropped without a word. One set in FRR is not lost, and is said so."""
+    from kathara_gui.kathara import state
+
+    save(client)
+    report = state.CaptureReport(frr_addresses={"r1": {"eth0": ["10.0.0.99/24"]}})
+    monkeypatch.setattr(state, "capture", lambda topology, folder: report)
+
+    def recover(topology, folder, owned=None, left_out=None):  # noqa: ANN001, ANN202
+        assert left_out is not None
+        left_out["r1"] = {0: ["10.0.0.99/24"]}
+        left_out["r2"] = {0: ["10.0.0.9/24", "10.0.0.10/24"], 1: ["10.1.0.2/24"]}
+        return topology
+
+    monkeypatch.setattr(state, "recover_addresses", recover)
+    message = client.post("/api/project/capture", json={"topology": TRIANGLE}).json()["message"]
+
+    assert "r1 eth0 also has 10.0.0.99/24, set in FRR (vtysh), so it stays in frr.conf." in message
+    assert (
+        "r2 eth0 also has 10.0.0.9/24, 10.0.0.10/24; the design keeps one address per "
+        "interface, so they were not captured." in message
+    )
+    assert "r2 eth1 has 10.1.0.2/24, but the design has no eth1, so it was not captured." in message
 
 
 def test_a_refusal_from_the_file_system_is_a_reason_not_a_bare_500(

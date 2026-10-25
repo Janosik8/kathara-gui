@@ -216,6 +216,9 @@ export default function App() {
   const [canVerify, setCanVerify] = useState(true);
   const [labBusy, setLabBusy] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Conflicts | null>(null);
+  // Set when Verify links found the containers' addresses differing from the
+  // design, which is what it pings: the user chooses whether to capture first.
+  const [verifyDrift, setVerifyDrift] = useState<string[] | null>(null);
   /** Every Kathará lab of this user, for "Stop every lab". Null until known. */
   const [everything, setEverything] = useState<EverythingResponse | null>(null);
 
@@ -701,6 +704,7 @@ export default function App() {
           }
 
           setConflicts(null);
+          setVerifyDrift(null);
           setLabStatus(result);
           // A previous run's results describe a lab that is no longer there.
           setDiagnostics(null);
@@ -1057,6 +1061,43 @@ export default function App() {
     await runLabAction("deploy", true, captured);
   }, [captureState, runLabAction]);
 
+  /**
+   * Verify links pings the addresses in the *design* (test 4B.2): one deleted
+   * or moved inside a container is still pinged until it is captured, and
+   * fails for a reason the results do not show. So the containers are read
+   * first, about 50ms each, and only when their addresses differ is the user
+   * asked whether to capture. Asking every time would train them to click
+   * through; the question only matters when the answer changes something.
+   */
+  const verifyLinks = useCallback(async () => {
+    setLabBusy("verify");
+    let drift: string[];
+    try {
+      const result = await api.labStatus(topology);
+      setLabStatus(result);
+      drift = result.drift;
+    } catch (err) {
+      fail(err);
+      setLabBusy(null);
+      return;
+    }
+    if (drift.length > 0) {
+      setLabBusy(null);
+      setVerifyDrift(drift);
+      setNotice("The running lab differs from the design. Capture it before verifying?");
+      return;
+    }
+    await runLabAction("verify");
+  }, [topology, runLabAction]);
+
+  /** Bring the containers' addresses onto the design, then test those. */
+  const captureAndVerify = useCallback(async () => {
+    setVerifyDrift(null);
+    const captured = await captureState();
+    if (captured === null) return;
+    await runLabAction("verify", false, captured);
+  }, [captureState, runLabAction]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const typing = isTextEntry(event.target);
@@ -1397,7 +1438,17 @@ export default function App() {
             onCheck={checkLab}
             everything={everything}
             onWipe={wipeLabs}
-            onVerify={() => runLabAction("verify")}
+            onVerify={verifyLinks}
+            verifyDrift={verifyDrift}
+            onCaptureAndVerify={captureAndVerify}
+            onVerifyAnyway={() => {
+              setVerifyDrift(null);
+              void runLabAction("verify");
+            }}
+            onCancelVerify={() => {
+              setVerifyDrift(null);
+              setNotice("Verification cancelled. Nothing was changed.");
+            }}
             onDismissDiagnostics={() => setDiagnostics(null)}
             conflicts={conflicts}
             onConfirmDeploy={() => runLabAction("deploy", true)}

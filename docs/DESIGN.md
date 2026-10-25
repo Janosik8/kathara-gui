@@ -338,6 +338,31 @@ the first only. An address set in `vtysh` was therefore captured into both `frr.
 `.startup`, and after that removing it in the editor had no effect. Explaining the domain
 to a user turned out to be a way of reviewing the design against it.
 
+Step 4B.2 found F37, and with it an asymmetry. Capture had been built to *change* an
+address, never to *remove* one: it overwrote the design with whatever the container
+reported, and an address deleted inside the container left nothing to report, so it
+survived every capture. The status check had the same blind spot. The test failed for a
+reason one step removed from the defect. Verify links pings from the containers to the
+addresses in the design, so it was testing an address that no longer existed. Two
+decisions followed:
+- **Verify links asks before it runs, but only when the answer matters.** It reads the
+  containers first and offers a capture only if their addresses differ from the design. A
+  question asked every time, whatever the state, teaches the user to click through it.
+- **Silence about a limit is a defect even when the limit is right.** The design holds one
+  address per interface. Secondary addresses are real (renumbering, VRRP), but rare in
+  these labs, and supporting them would touch allocation, validation, verification and
+  generation. So the limit stays, and the capture now names what it left out, telling
+  apart an address FRR keeps in `frr.conf` from one that is really lost.
+
+The same pass revised the specification itself. Four of its scenarios asked for something
+the accessibility requirements argue against: links glowing green and red, a
+colour-blindness profile to switch on, an in-app zoom control, and a theme chosen in a
+settings menu. A fifth had `lab.conf` text pasted into a box, where the application
+imports a file. What was built instead is each status in a word and a symbol, a
+palette that is safe by default, the browser's and the system's own scaling, and the
+system's dark and contrast themes. Where the built application was the better answer,
+the document was changed to match it, and git keeps the original wording.
+
 Where a defect could be pinned down by a test once it was understood, a test was added: F26
 is now checked against Kathará's own parser. Where it could not, the fix was confirmed by
 hand: F24's clicks and F27's drag. That is the stated reason the manual layer exists rather

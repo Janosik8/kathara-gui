@@ -153,6 +153,37 @@ def test_captured_addresses_reach_the_model(deployed: Topology, lab_dir: Path) -
     assert addresses == ["10.77.77.77/24"]
 
 
+def test_an_address_deleted_inside_a_container_is_cleared(
+    deployed: Topology, lab_dir: Path
+) -> None:
+    """Test 4B.2: delete the address, capture, and the canvas must not keep it.
+
+    Before the fix the model was only ever overwritten by an address the
+    container reported, so a deleted one survived every capture, and the
+    status check did not mention it either.
+    """
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    from kathara_gui.domain.drift import describe_live_drift
+
+    lab = LabParser.parse(str(lab_dir))
+    original = deployed.node("r1").interfaces[0].ip
+    Kathara.get_instance().exec(
+        "r1", ["ip", "address", "del", original, "dev", "eth0"],
+        lab=lab, wait=False, stream=False,
+    )
+
+    (change,) = [
+        c for c in describe_live_drift(deployed, state.live_addresses(deployed, lab_dir))
+        if c.startswith("r1 ")
+    ]
+    assert "no address" in change
+
+    recovered = state.recover_addresses(deployed, lab_dir)
+    assert recovered.node("r1").interfaces[0].ip is None
+
+
 def test_a_secondary_address_does_not_displace_the_primary(
     deployed: Topology, lab_dir: Path
 ) -> None:
@@ -171,8 +202,11 @@ def test_a_secondary_address_does_not_displace_the_primary(
         lab=lab, wait=False, stream=False,
     )
 
-    recovered = state.recover_addresses(deployed, lab_dir)
+    left_out: dict[str, dict[int, list[str]]] = {}
+    recovered = state.recover_addresses(deployed, lab_dir, left_out=left_out)
     assert recovered.node("r1").interfaces[0].ip == original
+    # Not taken into the model, but not dropped in silence either.
+    assert left_out["r1"] == {0: ["10.88.88.88/24"]}
 
 
 def test_a_device_without_routing_is_skipped_not_failed(lab_dir: Path) -> None:

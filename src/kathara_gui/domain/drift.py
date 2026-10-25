@@ -17,9 +17,15 @@ user to ignore the warning.
 
 from __future__ import annotations
 
+import ipaddress
+
 from kathara_gui.domain.model import Node, Topology
 
 __all__ = ["describe_drift", "describe_live_drift"]
+
+
+def _is_ipv4(address: str | None) -> bool:
+    return address is not None and ipaddress.ip_interface(address).version == 4
 
 
 def _interfaces(node: Node) -> dict[int, tuple[str, str | None]]:
@@ -91,7 +97,9 @@ def describe_live_drift(baseline: Topology, live: dict[str, dict[int, str]]) -> 
 
     ``live`` maps a device name to its interfaces' actual addresses. A device
     that is not running, or could not be read, simply does not appear and is
-    not reported as changed.
+    not reported as changed. A device that does appear but lacks an interface
+    has no IPv4 address on it, so an IPv4 address deployed there was removed
+    (test 4B.1 moves one; 4B.2 deletes one).
     """
     changes: list[str] = []
 
@@ -101,7 +109,14 @@ def describe_live_drift(baseline: Topology, live: dict[str, dict[int, str]]) -> 
             continue
         for interface in sorted(node.interfaces, key=lambda i: i.number):
             actual = observed.get(interface.number)
-            if actual is None or actual == interface.ip:
+            if actual is None:
+                if _is_ipv4(interface.ip):
+                    changes.append(
+                        f"{node.name} eth{interface.number} has no address in the running "
+                        f"container but was deployed as {interface.ip}"
+                    )
+                continue
+            if actual == interface.ip:
                 continue
             changes.append(
                 f"{node.name} eth{interface.number} is {actual} in the running container "

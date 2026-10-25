@@ -373,7 +373,8 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
     folder = session.lab_dir(topology)
 
     report = state.capture(topology, folder)
-    updated = state.recover_addresses(topology, folder, report.frr_loopbacks)
+    left_out: dict[str, dict[int, list[str]]] = {}
+    updated = state.recover_addresses(topology, folder, report.frr_loopbacks, left_out)
     if updated != topology:
         topology = session.replace(updated)
 
@@ -395,22 +396,74 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
             for c in report.captured
         ],
         skipped=report.skipped,
-        message=_with_frr_loopbacks(report.message, report.frr_loopbacks),
+        message=_joined(
+            report.message,
+            _frr_loopback_notes(report.frr_loopbacks),
+            _left_out_notes(left_out, report.frr_addresses, topology),
+        ),
         folder=str(folder),
         topology=topology,
     )
 
 
-def _with_frr_loopbacks(message: str | None, owned: dict[str, list[str]]) -> str | None:
+def _joined(message: str | None, *notes: list[str]) -> str | None:
+    parts = [message] if message else []
+    for group in notes:
+        parts.extend(group)
+    return " ".join(parts) or None
+
+
+def _frr_loopback_notes(owned: dict[str, list[str]]) -> list[str]:
     """Say why a loopback set in vtysh is not in the Loopback rows (F31).
 
     Without this the capture would look as if it had missed the address.
     """
-    notes = [
+    return [
         f"{device}: {', '.join(addresses)} on lo "
         f"{'is' if len(addresses) == 1 else 'are'} set in FRR (vtysh), so "
         f"{'it stays' if len(addresses) == 1 else 'they stay'} in frr.conf; change "
         f"{'it' if len(addresses) == 1 else 'them'} there."
         for device, addresses in sorted(owned.items())
     ]
-    return " ".join([message, *notes] if message else notes) or None
+
+
+def _left_out_notes(
+    left_out: dict[str, dict[int, list[str]]],
+    frr_held: dict[str, dict[str, list[str]]],
+    topology: Topology,
+) -> list[str]:
+    """Say which addresses the capture had no place for in the design.
+
+    The design keeps one address per interface, so a second one is not taken
+    into it; nor is an address on an interface the design does not have. Said
+    rather than dropped in silence. A second address set in FRR is not lost:
+    ``frr.conf`` restores it on the next deploy, so that is what is said.
+    """
+    notes: list[str] = []
+    for device, by_interface in sorted(left_out.items()):
+        node = topology.node(device)
+        known = {iface.number for iface in node.interfaces} if node else set()
+        for number, addresses in sorted(by_interface.items()):
+            name = f"eth{number}"
+            listed = ", ".join(addresses)
+            if number not in known:
+                notes.append(
+                    f"{device} {name} has {listed}, but the design has no {name}, "
+                    f"so {'it was' if len(addresses) == 1 else 'they were'} not captured."
+                )
+                continue
+            in_frr = set(frr_held.get(device, {}).get(name, []))
+            kept = [a for a in addresses if a in in_frr]
+            lost = [a for a in addresses if a not in in_frr]
+            if lost:
+                notes.append(
+                    f"{device} {name} also has {', '.join(lost)}; the design keeps one "
+                    "address per interface, so "
+                    f"{'it was' if len(lost) == 1 else 'they were'} not captured."
+                )
+            if kept:
+                notes.append(
+                    f"{device} {name} also has {', '.join(kept)}, set in FRR (vtysh), so "
+                    f"{'it stays' if len(kept) == 1 else 'they stay'} in frr.conf."
+                )
+    return notes

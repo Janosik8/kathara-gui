@@ -19,7 +19,13 @@ from kathara_gui.domain.codec.startup import parse_loopbacks, render_startup
 from kathara_gui.domain.drift import describe_drift
 from kathara_gui.domain.model import Interface, Node, Topology
 from kathara_gui.kathara import connection, state
-from kathara_gui.kathara.state import frr_loopbacks, parse_ip_addr, parse_ip_addr_loopbacks
+from kathara_gui.kathara.state import (
+    frr_interface_addresses,
+    frr_loopbacks,
+    parse_ip_addr,
+    parse_ip_addr_all,
+    parse_ip_addr_loopbacks,
+)
 from kathara_gui.project import scenario
 from kathara_gui.project.labdir import write_lab
 
@@ -179,3 +185,61 @@ def test_a_loopback_frr_holds_is_not_copied_into_the_model(
 
     owned = state.recover_addresses(topology, tmp_path, {"r1": ["10.255.9.9/32"]})
     assert owned.node("r1").loopbacks == ["10.255.0.1/32"]
+
+
+# -- more than one address on an interface ------------------------------------
+
+TWO_ON_ETH0 = IP_ADDR + """\
+2: eth0    inet 10.0.0.9/24 brd 10.0.0.255 scope global secondary eth0\\       valid_lft
+3: eth1    inet 10.1.0.1/24 brd 10.1.0.255 scope global eth1\\       valid_lft forever
+"""
+
+
+def test_every_address_on_an_interface_is_read_the_primary_first() -> None:
+    assert parse_ip_addr_all(TWO_ON_ETH0) == {
+        0: ["10.0.0.1/24", "10.0.0.9/24"],
+        1: ["10.1.0.1/24"],
+    }
+    # The model keeps one: the primary.
+    assert parse_ip_addr(TWO_ON_ETH0) == {0: "10.0.0.1/24", 1: "10.1.0.1/24"}
+
+
+def test_frr_addresses_are_read_for_every_interface() -> None:
+    config = """\
+!
+interface eth0
+ ip address 10.0.0.1/24
+ ip address 10.0.0.9/24
+!
+interface eth1 vrf red
+ ip address 10.1.0.1/24
+!
+interface lo
+ ip address 10.255.0.1/32
+!
+"""
+    assert frr_interface_addresses(config) == {
+        "eth0": ["10.0.0.1/24", "10.0.0.9/24"],
+        "eth1": ["10.1.0.1/24"],
+        "lo": ["10.255.0.1/32"],
+    }
+    assert frr_loopbacks(config) == ["10.255.0.1/32"]
+
+
+def test_a_capture_records_what_the_model_has_no_place_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Manager:
+        def exec(self, device: str, command: list[str], **_: object) -> tuple[bytes, bytes, int]:
+            return TWO_ON_ETH0.encode(), b"", 0
+
+    monkeypatch.setattr(connection.Kathara, "get_instance", staticmethod(Manager))
+    monkeypatch.setattr(state.LabParser, "parse", staticmethod(lambda path: object()))
+    topology = Topology(nodes=[router("r1")])
+
+    left_out: dict[str, dict[int, list[str]]] = {}
+    recovered = state.recover_addresses(topology, tmp_path, left_out=left_out)
+
+    assert recovered.node("r1").interfaces[0].ip == "10.0.0.1/24"
+    # The second address on eth0, and eth1, which the design does not have.
+    assert left_out == {"r1": {0: ["10.0.0.9/24"], 1: ["10.1.0.1/24"]}}

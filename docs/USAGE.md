@@ -412,9 +412,13 @@ them without asking.
 A page reloaded while its lab is running comes back locked, because the containers keep
 running after the browser tab closes.
 
-**Verify links** pings the real containers, so it always reports the lab as it is running.
-If you changed something inside a container and haven't captured it, the results describe
-that changed state, and the panel says so next to them.
+**Verify links** pings from the real containers, to the addresses in the design. So an
+address you deleted or moved inside a container, and haven't captured, is still pinged, and
+the link fails. Verify links therefore reads the containers' addresses first, and if they
+differ from the design it asks: **Capture, then verify** (the design takes the containers'
+addresses, and a link with an end left unaddressed is **Skipped**), **Verify the design as
+it is**, or **Cancel**. When they agree it verifies straight away. If you verify without
+capturing, the panel says beside the results that they describe a lab that differs.
 
 ### Tidying the layout
 
@@ -447,6 +451,14 @@ Capture writes to two places, because a device keeps its configuration in two:
   One set in `vtysh` (`interface lo`, `ip address …`) is different: it is in the captured
   `frr.conf` already, so it is left there and not added to the Loopback rows, and the
   capture message says so. Change or remove it in `vtysh`, then capture again.
+  An address deleted inside the container is cleared from the design.
+- **One address per interface.** The design holds one address on each `ethN`, so when an
+  interface has two, the capture keeps the first (the one Linux treats as primary) and the
+  capture message names the others: "pc1 eth0 also has 10.0.0.9/24; the design keeps one
+  address per interface, so it was not captured." A second address set in `vtysh` is not
+  lost, since `frr.conf` restores it on the next deploy, and the message says that instead.
+  An address on an interface the design doesn't have (`eth1` on a device with one link) is
+  named the same way.
 
 **A router's hostname comes from its device name.** Rename the device in the editor and
 redeploy; FRR picks the name up from the container.

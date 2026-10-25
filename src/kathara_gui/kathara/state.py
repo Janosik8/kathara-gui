@@ -38,6 +38,8 @@ __all__ = [
     "capture",
     "live_addresses",
     "parse_ip_addr",
+    "parse_ip_addr_all",
+    "frr_interface_addresses",
     "frr_loopbacks",
     "parse_ip_addr_loopbacks",
     "recover_addresses",
@@ -70,6 +72,10 @@ class CaptureReport:
     #: Loopback addresses each device's FRR configuration holds (F31), which
     #: a capture leaves in ``frr.conf`` rather than copying into the model.
     frr_loopbacks: dict[str, list[str]] = field(default_factory=dict)
+    #: Every address each device's FRR configuration holds, by interface name.
+    #: An address FRR holds survives a redeploy in ``frr.conf``, so a capture
+    #: that leaves it out of the model has not lost it.
+    frr_addresses: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
     @property
     def any_captured(self) -> bool:
@@ -121,7 +127,16 @@ def parse_ip_addr(output: str) -> dict[int, str]:
     Loopback and anything not called ``ethN`` is ignored: the model has no
     place for them, and Kathará numbers a device's links as ``eth0`` upwards.
     """
-    found: dict[int, str] = {}
+    return {number: addresses[0] for number, addresses in parse_ip_addr_all(output).items()}
+
+
+def parse_ip_addr_all(output: str) -> dict[int, list[str]]:
+    """Every address on each ``ethN``, the primary first.
+
+    The model keeps one address per interface, so a capture keeps the first
+    (:func:`parse_ip_addr`); the rest are what it has to say it left out.
+    """
+    found: dict[int, list[str]] = {}
     for device, address in _IP_ADDR_LINE.findall(output):
         number = _ETH.match(device)
         if not number:
@@ -130,7 +145,9 @@ def parse_ip_addr(output: str) -> dict[int, str]:
             cidr = str(ipaddress.ip_interface(address))
         except ValueError:
             continue
-        found.setdefault(int(number.group(1)), cidr)
+        addresses = found.setdefault(int(number.group(1)), [])
+        if cidr not in addresses:
+            addresses.append(cidr)
     return found
 
 
@@ -169,20 +186,28 @@ def frr_loopbacks(config: str) -> list[str]:
     editor would then change nothing, because FRR would put it back. So an
     address FRR holds is left to FRR.
     """
-    found: list[str] = []
-    inside = False
+    return frr_interface_addresses(config).get("lo", [])
+
+
+def frr_interface_addresses(config: str) -> dict[str, list[str]]:
+    """Addresses an FRR configuration puts on each interface, by its name."""
+    found: dict[str, list[str]] = {}
+    inside: str | None = None
     for line in config.replace("\r\n", "\n").split("\n"):
         if not line.strip() or line.strip() == "!" or not line[0].isspace():
-            # A block ends at "!" or at the next top-level line.
-            inside = line.split() == ["interface", "lo"]
+            # A block ends at "!" or at the next top-level line. The name is
+            # the second word: "interface eth0 vrf red" is still eth0.
+            words = line.split()
+            inside = words[1] if len(words) >= 2 and words[0] == "interface" else None
             continue
         if inside and (match := _FRR_ADDRESS.match(line)):
             try:
                 address = str(ipaddress.ip_interface(match.group(1)))
             except ValueError:
                 continue
-            if address not in found:
-                found.append(address)
+            addresses = found.setdefault(inside, [])
+            if address not in addresses:
+                addresses.append(address)
     return found
 
 
@@ -192,6 +217,10 @@ def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str
     Cheap enough to ask on every status check — measured at about 50ms per
     container — which is what lets the interface notice a change made inside a
     container rather than waiting to be told.
+
+    A device that answered appears even with no address at all, so that an
+    address deleted inside it reads as gone (test 4B.2) rather than as a
+    device that could not be read.
     """
     lab_dir = Path(lab_dir)
     if not topology.nodes:
@@ -207,16 +236,19 @@ def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str
     for node in topology.nodes:
         output, exit_code = _run(manager, lab, node.name, ["ip", "-o", "-4", "addr", "show"])
         if exit_code == 0:
-            observed = parse_ip_addr(output)
-            if observed:
-                found[node.name] = observed
+            found[node.name] = parse_ip_addr(output)
     return found
+
+
+def _is_ipv4(address: str | None) -> bool:
+    return address is not None and ipaddress.ip_interface(address).version == 4
 
 
 def recover_addresses(
     topology: Topology,
     lab_dir: Path,
     frr_owned: dict[str, list[str]] | None = None,
+    left_out: dict[str, dict[int, list[str]]] | None = None,
 ) -> Topology:
     """Read each running device's live interface addresses into the topology.
 
@@ -229,12 +261,21 @@ def recover_addresses(
 
     Overwrites addresses that differ, because the running device is the
     authority here: the user changed it there deliberately and asked for it to
-    be captured.
+    be captured. An IPv4 address the device no longer has is cleared (test
+    4B.2): ``ip -o -4 addr`` lists only addressed interfaces, and Kathará
+    creates every ``ethN``, so an interface missing from an answer that did
+    come back has no address. An IPv6 address is kept, as it was not asked for.
 
     ``frr_owned`` names, per device, the loopbacks FRR's own configuration
     holds (:func:`frr_loopbacks`). Those are not copied into the model: they
     are already restored from ``frr.conf``, and a second copy in ``.startup``
     would outlive any attempt to remove them in the editor (F31).
+
+    ``left_out``, when given, is filled with the IPv4 addresses the model had
+    no place for, per device and ``ethN``: a second address on an interface
+    (the model keeps one, the primary), and any address on an ``ethN`` the
+    design does not have (test 4B.1 moves one there). Reported rather than
+    dropped in silence, which would look like a complete capture.
     """
     frr_owned = frr_owned or {}
     lab_dir = Path(lab_dir)
@@ -254,11 +295,22 @@ def recover_addresses(
             # Not running, or not answering: nothing learned, nothing changed.
             nodes.append(node)
             continue
-        live = parse_ip_addr(output)
+        every = parse_ip_addr_all(output)
+        live = {number: addresses[0] for number, addresses in every.items()}
+        if left_out is not None:
+            known = {iface.number for iface in node.interfaces}
+            extra = {
+                number: addresses[1:] if number in known else addresses
+                for number, addresses in every.items()
+            }
+            if extra := {number: a for number, a in extra.items() if a}:
+                left_out[node.name] = extra
 
         interfaces = [
             iface.model_copy(update={"ip": live[iface.number]})
             if iface.number in live and live[iface.number] != iface.ip
+            else iface.model_copy(update={"ip": None})
+            if iface.number not in live and _is_ipv4(iface.ip)
             else iface
             for iface in node.interfaces
         ]
@@ -311,7 +363,9 @@ def capture(topology: Topology, lab_dir: Path) -> CaptureReport:
             report.skipped.append((node.name, "FRR returned no configuration"))
             continue
 
-        if owned := frr_loopbacks(config):
+        if held := frr_interface_addresses(config):
+            report.frr_addresses[node.name] = held
+        if owned := held.get("lo"):
             report.frr_loopbacks[node.name] = owned
 
         target = lab_dir / node.name / FRR_CONFIG

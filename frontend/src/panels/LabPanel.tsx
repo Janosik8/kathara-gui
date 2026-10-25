@@ -46,6 +46,16 @@ interface Props {
   /** Ask the containers whether anything has changed inside them. */
   onCheck: () => void;
   onVerify: () => void;
+  /**
+   * Set when Verify links found the containers' addresses differing from the
+   * design it pings (test 4B.2); the differences, in words.
+   */
+  verifyDrift?: string[] | null;
+  /** Capture what the containers are running, then verify that. */
+  onCaptureAndVerify?: () => void;
+  /** Verify the design's addresses as they are. */
+  onVerifyAnyway?: () => void;
+  onCancelVerify?: () => void;
   /** Close the link checks (bug 34). */
   onDismissDiagnostics?: () => void;
   /** Deploy anyway, stopping whatever is already running. */
@@ -124,6 +134,10 @@ export function LabPanel({
   onCaptureAndStop,
   onCheck,
   onVerify,
+  verifyDrift,
+  onCaptureAndVerify,
+  onVerifyAnyway,
+  onCancelVerify,
   onDismissDiagnostics,
   onConfirmDeploy,
   onCaptureAndRedeploy,
@@ -308,6 +322,36 @@ export function LabPanel({
         </div>
       )}
 
+      {verifyDrift && verifyDrift.length > 0 && (
+        // Verification pings the design's addresses, so an address changed
+        // inside a container and not captured is tested as it was (test 4B.2).
+        <div className="confirm" role="alertdialog" aria-labelledby="verify-heading">
+          <h3 className="confirm__heading" id="verify-heading">
+            Capture the running lab before verifying?
+          </h3>
+          <p>
+            Verify links tests the addresses in the design. These were changed inside the
+            containers and are not in the design yet:
+          </p>
+          <ul>
+            {verifyDrift.map((change) => (
+              <li key={change}>{change}</li>
+            ))}
+          </ul>
+          <div className="lab__actions">
+            <button type="button" onClick={onCaptureAndVerify} disabled={busy !== null}>
+              Capture, then verify
+            </button>
+            <button type="button" onClick={onVerifyAnyway} disabled={busy !== null}>
+              Verify the design as it is
+            </button>
+            <button type="button" onClick={onCancelVerify}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="lab__actions">
         <button
           type="button"
@@ -339,7 +383,7 @@ export function LabPanel({
           <button
             type="button"
             onClick={onVerify}
-            disabled={busy !== null || !anyRunning}
+            disabled={busy !== null || !anyRunning || (verifyDrift?.length ?? 0) > 0}
             title={
               drift.length > 0
                 ? "Tests the running lab, which no longer matches the canvas"

@@ -253,6 +253,11 @@ beforeEach(() => {
     infrastructure_verification: true,
   });
   deploy.mockReset().mockResolvedValue(idleStatus);
+  // Verify links reads the lab's status first. A real server reports what the
+  // last deploy left running, so the default does the same.
+  vi.mocked(api.labStatus)
+    .mockReset()
+    .mockImplementation(async () => (await deploy.mock.results.at(-1)?.value) ?? idleStatus);
   undeploy.mockReset().mockResolvedValue(idleStatus);
   labEverything.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
   wipeLabs.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
@@ -1424,8 +1429,76 @@ describe("when the running lab has drifted from the canvas", () => {
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Deploy" }));
     await user.click(await screen.findByRole("button", { name: "Verify links" }));
+    await user.click(await screen.findByRole("button", { name: "Verify the design as it is" }));
 
     expect(await screen.findByText(/describe the/)).toBeInTheDocument();
+  });
+
+  // Test 4B.2: Verify links pings the design's addresses, so an address
+  // changed inside a container is tested as it was until it is captured.
+  it("asks to capture before verifying a lab that differs from the design", async () => {
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Capture the running lab before verifying?",
+    });
+    expect(within(dialog).getByText(/r1 eth0 is 192\.168\.1\.1\/24/)).toBeInTheDocument();
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("capturing first verifies the captured design", async () => {
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+
+    captureState.mockClear();
+    const before = useTopologyStore.getState().topology;
+    const after = {
+      ...before,
+      nodes: before.nodes.map((n) => ({ ...n, loopbacks: ["1.1.1.1/32"] })),
+    };
+    captureState.mockResolvedValueOnce({
+      captured: [],
+      skipped: [],
+      message: null,
+      folder: "/workspace/untitled",
+      topology: after,
+    });
+    await user.click(await screen.findByRole("button", { name: "Capture, then verify" }));
+
+    await waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
+    expect(captureState).toHaveBeenCalledTimes(1);
+    expect(verify.mock.lastCall?.[0].nodes[0]?.loopbacks).toEqual(["1.1.1.1/32"]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("cancelling the question verifies nothing", async () => {
+    deploy.mockResolvedValue(drifted);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("verifies without asking when the lab matches the design", async () => {
+    deploy.mockResolvedValue({ ...drifted, drift: [] });
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Verify links" }));
+
+    await waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it("says nothing when the canvas and the lab agree", async () => {
