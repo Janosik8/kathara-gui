@@ -236,10 +236,12 @@ routing daemons from `/etc/frr/daemons`. Without that, an imported lab looked un
 and the validator complained about addresses that were on disk all along. Device kinds,
 which Kathará genuinely does not record, are guessed from FRR evidence first and naming
 convention second, and the guess is presentational: it picks an icon the user can change.
-An import is named after the lab inside it, not the file it came in, for the same reason
-every folder is named after its lab: Kathará knows a lab by its name, so "base exam (1).zip"
-holding "base exam" must not become a second lab of that name. And it never replaces a
-scenario already in the workspace without asking (F39).
+A zip is imported under its file's name, and the `LAB_NAME` inside is rewritten to match.
+That way the folder and the lab stay one name, which is how Kathará knows a lab: a student
+who renames the exam they were given to `student.zip` gets a lab of their own (F40). The
+` (1)` a browser adds to a second download is not part of the name, because it marks a copy
+of the same lab. And an import never replaces a scenario already in the workspace without
+asking (F39).
 
 **The layout is laid out, not simulated.** A foreign lab has no coordinates, so every device
 would land on one point. A force-directed spring model is the usual reach and the wrong
@@ -310,8 +312,8 @@ result before it is run. The tester ticks a step or writes down, in their own wo
 happened instead.
 
 It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 steps
-had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 81 of 121 had
-passed, through the end of section 5. Every defect it
+had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 95 of 121 had
+passed: sections 0–6, with the keyboard steps left untested, and exam mode. Every defect it
 reported is traced in three places. The tester's words go on the step's `Notes:` line or in
 `bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.

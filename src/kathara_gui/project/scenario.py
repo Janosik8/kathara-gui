@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -55,6 +56,7 @@ __all__ = [
     "import_archive",
     "import_archive_bytes",
     "is_scenario",
+    "set_lab_name",
 ]
 
 FORMAT_VERSION = 1
@@ -327,6 +329,30 @@ def load(folder: Path) -> Scenario:
         warnings=[*result.warnings, *renumbered],
         foreign=foreign,
     )
+
+
+#: ``LAB_NAME=...`` at the start of a line, as Kathará reads it.
+_LAB_NAME_LINE = re.compile(r"^\s*LAB_NAME\s*=")
+
+
+def set_lab_name(folder: Path, name: str) -> None:
+    """Make ``LAB_NAME`` in ``folder``'s ``lab.conf`` say ``name``.
+
+    A text edit of that one line, not a :func:`save`: an imported lab may hold
+    lines the parser does not understand, and comments, and rewriting the whole
+    file would drop them. Every other file, ``kgui.json`` included, is left as
+    it was. A lab that names itself nowhere gets the line at the top.
+    """
+    lab_conf = Path(folder) / LAB_CONF
+    line = 'LAB_NAME="' + name.replace('"', '\\"') + '"'
+    lines = lab_conf.read_text(encoding="utf-8").splitlines()
+    for index, existing in enumerate(lines):
+        if _LAB_NAME_LINE.match(existing):
+            lines[index] = line
+            break
+    else:
+        lines.insert(0, line)
+    write_text_lf(lab_conf, "\n".join(lines))
 
 
 def export_zip(folder: Path, destination: Path) -> Path:

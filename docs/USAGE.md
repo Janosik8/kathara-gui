@@ -323,7 +323,7 @@ All but the last are in the top bar; **Capture running state** is in the **Scena
 | **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
 | **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. Each is listed by its lab name, which is also its folder; a folder that differs (one from before folders took the lab's name) is shown after it. A scenario whose lab is running has a green dot and the word **running** beside its name. Allowed while a lab runs, which keeps running. |
 | **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
-| **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. The scenario is named after the lab inside, not the file, so "base exam (1).zip" becomes `base exam`. If the workspace already has a scenario of that name, it asks before replacing it; a scenario whose lab is running is never replaced — stop it first. |
+| **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. A zip is named after its file, and the lab inside is renamed to match, so `student.zip` opens as `student`. A browser's copy number is ignored: "base exam (1).zip" is `base exam`. A bare `lab.conf` keeps the name its `LAB_NAME` gives it. If the workspace already has a scenario of that name, it asks before replacing it; a scenario whose lab is running is never replaced — stop it first. |
 | **Capture running state** | Copies what the devices are actually running back into the scenario. The result stays listed until you close it with its **×**. |
 
 **Save keeps it here; Export sends it out.** Scenario folders live in the workspace

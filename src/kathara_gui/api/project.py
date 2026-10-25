@@ -26,6 +26,7 @@ instead of stalling the event loop.
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 from urllib.parse import unquote
@@ -36,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.model import Topology
+from kathara_gui.domain.naming import lab_name_problem, suggest_lab_name
 from kathara_gui.features import Features
 from kathara_gui.kathara import runner, state
 from kathara_gui.project import scenario
@@ -278,12 +280,14 @@ async def import_scenario(
     Raw bytes rather than a multipart form: the payload is a single file, so
     multipart would add a dependency and a parsing step to carry nothing extra.
 
-    The folder is named after the lab inside, as every other folder is (F34),
-    not after the file: a browser saves a second download of "base exam" as
-    "base exam (1).zip", and a folder of that name holding a lab called "base
-    exam" would be a second lab with one name. A scenario of that name already
-    in the workspace is replaced only when ``replace`` says so; otherwise the
-    answer is 409, so the page can ask first (test 5C.1).
+    A zip is named after its file, and its ``LAB_NAME`` is rewritten to match,
+    so the folder and the lab stay one name (F34): a student who renames
+    "strict exam.zip" to "student.zip" gets a lab called "student" (test 8.2,
+    F40). The " (1)" a browser adds to a second download is not part of the
+    name, so "base exam (1).zip" is still "base exam". A bare ``lab.conf`` is
+    named from ``LAB_NAME`` inside it, its file name being "lab". A scenario of
+    that name already in the workspace is replaced only when ``replace`` says
+    so; otherwise the answer is 409, so the page can ask first (test 5C.1).
     """
     payload = await request.body()
     if not payload:
@@ -314,6 +318,9 @@ async def import_scenario(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
                 ) from exc
+            # Only a file the browser names: a call without one keeps the lab's own.
+            if "X-KGUI-Filename" in request.headers:
+                scenario.set_lab_name(staging, _name_from_filename(stem))
         else:
             _stage_labconf(payload, staging)
 
@@ -335,6 +342,22 @@ async def import_scenario(
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return _adopt(session, target)
+
+
+#: What a browser appends to a second download of the same file: "base exam (1)".
+_DOWNLOAD_COPY = re.compile(r"\s+\(\d+\)$")
+
+
+def _name_from_filename(stem: str) -> str:
+    """The lab name a zip's file name gives, made acceptable if it is not.
+
+    The browser's " (1)" is dropped, because it names a copy of the download,
+    not a different lab. A name that could not be a folder ("a.b,c") becomes
+    the nearest one that could, rather than refusing a file the user only
+    renamed.
+    """
+    name = _DOWNLOAD_COPY.sub("", stem).strip()
+    return name if lab_name_problem(name) is None else suggest_lab_name(name)
 
 
 def _stage_labconf(payload: bytes, staging: Path) -> None:

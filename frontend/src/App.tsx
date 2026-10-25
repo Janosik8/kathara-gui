@@ -1019,7 +1019,7 @@ export default function App() {
         adopt(await api.importProject(file, replace));
       } catch (err) {
         // A scenario of that name is already in the workspace: asked, not
-        // replaced. Only the server knows the name, from the lab inside.
+        // replaced. Only the server knows the name, worked out from the file's.
         if (err instanceof ApiError && err.status === 409 && !replace) {
           setPendingImport({ file, message: err.message });
           setScenarioDialog("import");

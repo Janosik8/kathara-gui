@@ -369,7 +369,7 @@ def test_a_scenario_round_trips_through_export_and_import(client: TestClient) ->
     body = client.post(
         "/api/project/import?replace=true",
         content=exported,
-        headers={"X-KGUI-Filename": "submission-jan.zip"},
+        headers={"X-KGUI-Filename": "ospf triangle.zip"},
     ).json()
 
     assert body["topology"]["name"] == "ospf triangle"
@@ -455,12 +455,11 @@ def lab_zip(name: str, *, extra: str = "") -> bytes:
     return buffer.getvalue()
 
 
-def test_an_import_is_named_after_its_lab_not_its_file(
+def test_an_import_ignores_the_browsers_copy_number(
     client: TestClient, workspace: Path
 ) -> None:
-    """A browser saves a second download as "base exam (1).zip". A folder of
-    that name holding a lab called "base exam" would be two labs with one
-    name, which Kathará treats as one (F34)."""
+    """A browser saves a second download as "base exam (1).zip". That is a
+    copy of the same lab, not a lab called "base exam (1)" (F34, F40)."""
     body = client.post(
         "/api/project/import",
         content=lab_zip("base exam"),
@@ -469,6 +468,88 @@ def test_an_import_is_named_after_its_lab_not_its_file(
 
     assert Path(body["folder"]).name == "base exam"
     assert not (workspace / "base exam (1)").exists()
+
+
+def test_an_import_is_named_after_its_file(client: TestClient, workspace: Path) -> None:
+    """Test 8.2: a student renames "strict exam.zip" to "student.zip" and gets
+    a lab of their own, restrictions included, beside the original (F40)."""
+    original = Path(save(client, {**TRIANGLE, "name": "strict exam"})["folder"])
+    before = (original / "lab.conf").read_text(encoding="utf-8")
+    exported = client.post(
+        "/api/project/export", json={"topology": {**TRIANGLE, "name": "strict exam"}}
+    ).content
+    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+        stored = json.loads(archive.read("kgui.json"))
+    stored["features"]["subnet_calculator"] = False
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(exported)) as source, zipfile.ZipFile(buffer, "w") as archive:
+        for item in source.namelist():
+            data = json.dumps(stored) if item == "kgui.json" else source.read(item)
+            archive.writestr(item, data)
+
+    response = client.post(
+        "/api/project/import",
+        content=buffer.getvalue(),
+        headers={"X-KGUI-Filename": "student.zip"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["topology"]["name"] == "student"
+    assert body["features"]["subnet_calculator"] is False
+    folder = workspace / "student"
+    assert 'LAB_NAME="student"' in (folder / "lab.conf").read_text(encoding="utf-8")
+    assert (original / "lab.conf").read_text(encoding="utf-8") == before
+
+
+def test_a_renamed_import_still_asks_before_replacing(
+    client: TestClient, workspace: Path
+) -> None:
+    save(client, {**TRIANGLE, "name": "student"})
+
+    response = client.post(
+        "/api/project/import",
+        content=lab_zip("strict exam"),
+        headers={"X-KGUI-Filename": "student.zip"},
+    )
+
+    assert response.status_code == 409
+    assert "student" in response.json()["detail"]
+
+
+def test_a_file_name_that_cannot_be_a_lab_name_is_made_into_one(
+    client: TestClient, workspace: Path
+) -> None:
+    body = client.post(
+        "/api/project/import",
+        content=lab_zip("strict exam"),
+        headers={"X-KGUI-Filename": "group.a,v2.zip"},
+    ).json()
+
+    assert body["topology"]["name"] == "group a v2"
+    assert (workspace / "group a v2" / "lab.conf").is_file()
+
+
+def test_set_lab_name_changes_one_line_and_nothing_else(tmp_path: Path) -> None:
+    from kathara_gui.project import scenario
+
+    (tmp_path / "lab.conf").write_text(
+        '# written by hand\nLAB_NAME="strict exam"\nr1[0]="A"\nr1[weird]=kept\n', encoding="utf-8"
+    )
+    scenario.set_lab_name(tmp_path, "student")
+    assert (tmp_path / "lab.conf").read_bytes() == (
+        b'# written by hand\nLAB_NAME="student"\nr1[0]="A"\nr1[weird]=kept\n'
+    )
+
+    (tmp_path / "lab.conf").write_text('r1[0]="A"\n', encoding="utf-8")
+    scenario.set_lab_name(tmp_path, "student")
+    assert (tmp_path / "lab.conf").read_bytes() == b'LAB_NAME="student"\nr1[0]="A"\n'
+
+
+def test_an_import_without_a_file_name_keeps_its_lab_name(client: TestClient) -> None:
+    body = client.post("/api/project/import", content=lab_zip("strict exam")).json()
+
+    assert body["topology"]["name"] == "strict exam"
 
 
 def test_importing_over_an_existing_scenario_asks_first(
@@ -482,7 +563,7 @@ def test_importing_over_an_existing_scenario_asks_first(
     response = client.post(
         "/api/project/import",
         content=lab_zip("base exam"),
-        headers={"X-KGUI-Filename": "anything.zip"},
+        headers={"X-KGUI-Filename": "base exam.zip"},
     )
 
     assert response.status_code == 409
@@ -572,7 +653,7 @@ def test_an_archive_wrapped_in_its_own_folder_still_imports(client: TestClient) 
         archive.writestr("my-lab/r1.startup", "ip address add 10.1.1.1/24 dev eth0\n")
 
     body = client.post(
-        "/api/project/import", content=buffer.getvalue(), headers={"X-KGUI-Filename": "my-lab.zip"}
+        "/api/project/import", content=buffer.getvalue(), headers={"X-KGUI-Filename": "wrapped.zip"}
     ).json()
 
     assert body["topology"]["name"] == "wrapped"
@@ -598,7 +679,7 @@ def test_a_legacy_kgui_package_still_opens(client: TestClient) -> None:
     body = client.post(
         "/api/project/import",
         content=buffer.getvalue(),
-        headers={"X-KGUI-Filename": "submission.kgui"},
+        headers={"X-KGUI-Filename": "legacy exam.kgui"},
     ).json()
 
     assert body["topology"]["name"] == "legacy exam"
