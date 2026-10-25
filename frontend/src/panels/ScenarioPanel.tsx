@@ -4,8 +4,9 @@
  *
  * Save, Save as, Open, Export and Import are all in the header (see
  * `ScenarioDrawer`); Export and Import moved there at the tester's request
- * (test 5C.1), so every action on the scenario file is in one place. This
- * panel says where the scenario lives and reports what those actions found.
+ * (test 5C.1), so every action on the scenario file is in one place, and they
+ * explain themselves there (bug 37). This panel says where the scenario lives
+ * and reports what those actions found.
  *
  * One Save, one Open, one Export, one Import. An earlier version offered
  * `.kgui` and `lab.conf` as separate pairs, which asked the user to understand
@@ -31,6 +32,8 @@ interface Props {
   onDismissCapture?: () => void;
   /** Lines of an imported lab.conf that could not be understood. */
   importWarnings: string[];
+  /** The scenario came from outside this application. */
+  foreign?: boolean;
   onCapture: () => void;
 }
 
@@ -47,6 +50,7 @@ export function ScenarioPanel({
   capture,
   onDismissCapture,
   importWarnings,
+  foreign = false,
   onCapture,
 }: Props) {
   return (
@@ -66,14 +70,16 @@ export function ScenarioPanel({
         )}
       </p>
 
-
-      <p className="field__hint">
-        <strong>Export</strong>, in the top bar, downloads the scenario folder as a{" "}
-        <code>.zip</code>: the topology, the startup scripts and any captured configuration.
-        Anyone can unzip and read it, and anyone with Kathará can run it.{" "}
-        <strong>Import</strong> opens such a zip, a folder zipped by hand, or a plain{" "}
-        <code>lab.conf</code> — including labs made without this application.
-      </p>
+      {foreign && (
+        // Said here and not only in the status bar, where it went unseen
+        // (test 9A.1): it explains why the layout and kinds look as they do.
+        <p className="field__hint">
+          <strong>Imported from outside this application.</strong> Kathará records no device
+          kinds or positions, so the kinds were guessed from each device&apos;s name and
+          configuration, and a lab with no positions was laid out automatically. Change a
+          kind in the device panel.
+        </p>
+      )}
 
       {importWarnings.length > 0 && (
         // Import is deliberately forgiving, which makes saying what was not

@@ -241,6 +241,8 @@ export default function App() {
   const [scenarioBusy, setScenarioBusy] = useState<string | null>(null);
   const [scenarioDialog, setScenarioDialog] = useState<ScenarioDialog | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  /** The open scenario came from outside this application (test 9A.1). */
+  const [foreign, setForeign] = useState(false);
   // A file whose scenario is already in the workspace, held while the user
   // decides whether it replaces that one (test 5C.1).
   const [pendingImport, setPendingImport] = useState<{ file: File; message: string } | null>(
@@ -911,6 +913,7 @@ export default function App() {
   const newButton = useRef<HTMLButtonElement>(null);
   const saveAsButton = useRef<HTMLButtonElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
+  const exportButton = useRef<HTMLButtonElement>(null);
   const importButton = useRef<HTMLButtonElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
 
@@ -919,6 +922,7 @@ export default function App() {
       new: newButton,
       saveAs: saveAsButton,
       open: openButton,
+      export: exportButton,
       import: importButton,
     };
     if (scenarioDialog) opener[scenarioDialog].current?.focus();
@@ -946,6 +950,7 @@ export default function App() {
       load(result.topology);
       setFolder(result.folder);
       setImportWarnings(result.warnings);
+      setForeign(result.foreign);
       setCapture(null);
       setLabStatus(null);
       setDiagnostics(null);
@@ -995,6 +1000,7 @@ export default function App() {
       load(state.topology);
       setFolder(null);
       setImportWarnings([]);
+      setForeign(false);
       setCapture(null);
       setLabStatus(null);
       setDiagnostics(null);
@@ -1298,10 +1304,20 @@ export default function App() {
             Open…
           </button>
           {/* Beside Open and Save rather than in the Scenario panel: the
-              tester looked for them here (test 5C.1). */}
+              tester looked for them here (test 5C.1). The first press says
+              what each does, and the second does it (bug 37). */}
           <button
             type="button"
-            onClick={exportScenario}
+            ref={exportButton}
+            aria-expanded={scenarioDialog === "export"}
+            onClick={() => {
+              if (scenarioDialog === "export") {
+                closeDialog();
+                void exportScenario();
+              } else {
+                toggleDialog("export");
+              }
+            }}
             disabled={scenarioBusy !== null || topology.nodes.length === 0}
           >
             {scenarioBusy === "export" ? "Preparing…" : "Export"}
@@ -1309,7 +1325,14 @@ export default function App() {
           <button
             type="button"
             ref={importButton}
-            onClick={() => importInput.current?.click()}
+            aria-expanded={scenarioDialog === "import"}
+            onClick={() => {
+              if (scenarioDialog === "import" && !pendingImport) {
+                importInput.current?.click();
+              } else {
+                toggleDialog("import");
+              }
+            }}
             // Allowed while a lab runs, like Open: the lab keeps running (3E.2).
             disabled={scenarioBusy !== null}
           >
@@ -1329,7 +1352,11 @@ export default function App() {
             tabIndex={-1}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void importScenario(file);
+              if (file) {
+                // The explanation has done its job; a clash reopens the strip.
+                setScenarioDialog(null);
+                void importScenario(file);
+              }
               // Cleared so choosing the same file twice fires again.
               e.target.value = "";
             }}
@@ -1352,6 +1379,8 @@ export default function App() {
           onReplace={() => {
             if (pendingImport) void importScenario(pendingImport.file, true);
           }}
+          onExport={() => void exportScenario()}
+          onChooseFile={() => importInput.current?.click()}
           onClose={closeDialog}
         />
       )}
@@ -1481,6 +1510,7 @@ export default function App() {
             capture={capture}
             onDismissCapture={() => setCapture(null)}
             importWarnings={importWarnings}
+            foreign={foreign}
             onCapture={captureState}
           />
 

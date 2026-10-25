@@ -312,8 +312,8 @@ result before it is run. The tester ticks a step or writes down, in their own wo
 happened instead.
 
 It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 steps
-had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 95 of 121 had
-passed: sections 0–6, with the keyboard steps left untested, and exam mode. Every defect it
+had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 112 of 121 had
+passed, with the keyboard steps left untested by choice. Every defect it
 reported is traced in three places. The tester's words go on the step's `Notes:` line or in
 `bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.

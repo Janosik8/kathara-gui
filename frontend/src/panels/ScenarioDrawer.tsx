@@ -1,6 +1,11 @@
 /**
- * New, Save as and Open, opened from the header; and the question an Import
- * asks when its scenario is already in the workspace.
+ * New, Save as, Open, Export and Import, opened from the header; and the
+ * question an Import asks when its scenario is already in the workspace.
+ *
+ * Export and Import say what they do before they do it (bug 37). The
+ * explanation used to sit in the middle of the Scenario panel, where it was
+ * read once if at all; here it is read at the moment it applies, and the
+ * second press does the work.
  *
  * They used to live in the Scenario panel on the right, while Save sat in the
  * header: three actions on one document, in two places. Asked for in the
@@ -14,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioSummary } from "../api/client";
 
-export type ScenarioDialog = "new" | "saveAs" | "open" | "import";
+export type ScenarioDialog = "new" | "saveAs" | "open" | "export" | "import";
 
 interface Props {
   dialog: ScenarioDialog;
@@ -33,6 +38,10 @@ interface Props {
   importConflict?: string | null;
   /** Import the held file, replacing the scenario of the same name. */
   onReplace?: () => void;
+  /** Download the scenario as a zip. */
+  onExport?: () => void;
+  /** Open the browser's file chooser for an import. */
+  onChooseFile?: () => void;
   onClose: () => void;
 }
 
@@ -48,6 +57,8 @@ export function ScenarioDrawer({
   onNew,
   importConflict = null,
   onReplace,
+  onExport,
+  onChooseFile,
   onClose,
 }: Props) {
   const [newName, setNewName] = useState("");
@@ -55,6 +66,7 @@ export function ScenarioDrawer({
   const openHeading = useRef<HTMLHeadingElement>(null);
   const newHeading = useRef<HTMLHeadingElement>(null);
   const importHeading = useRef<HTMLHeadingElement>(null);
+  const exportHeading = useRef<HTMLHeadingElement>(null);
 
   // Focus follows the button that opened it, so a keyboard or screen-reader
   // user lands in the form rather than having to find it.
@@ -66,10 +78,12 @@ export function ScenarioDrawer({
       newHeading.current?.focus();
     } else if (dialog === "import") {
       importHeading.current?.focus();
+    } else if (dialog === "export") {
+      exportHeading.current?.focus();
     } else {
       openHeading.current?.focus();
     }
-  }, [dialog]);
+  }, [dialog, importConflict]);
 
   // Shown once something is typed: an empty field is not yet a mistake.
   const problem = newName.trim() ? (validateName?.(newName.trim()) ?? null) : null;
@@ -91,7 +105,60 @@ export function ScenarioDrawer({
         }
       }}
     >
-      {dialog === "import" ? (
+      {dialog === "export" ? (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={exportHeading} tabIndex={-1}>
+            Export the scenario
+          </h2>
+          <p className="field__hint">
+            Downloads the scenario folder as a <code>.zip</code>: the topology, the startup
+            scripts and any captured configuration. Anyone can unzip and read it, and anyone
+            with Kathará can run it. The scenario is saved first.
+          </p>
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => {
+                onExport?.();
+                onClose();
+              }}
+              disabled={busy !== null}
+            >
+              {/* Not "Export": the header already has one (see Save scenario). */}
+              Download .zip
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : dialog === "import" && !importConflict ? (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={importHeading} tabIndex={-1}>
+            Import a scenario
+          </h2>
+          <p className="field__hint">
+            Opens a <code>.zip</code> exported from here, a folder zipped by hand, or a plain{" "}
+            <code>lab.conf</code>, including labs made without this application. The lab
+            takes the zip&apos;s name, so <code>student.zip</code> opens as{" "}
+            <code>student</code>.
+          </p>
+          {dirty && (
+            <p className="confirm__warning">
+              <strong>Warning:</strong> the current scenario has unsaved changes, and importing
+              replaces it on the canvas.
+            </p>
+          )}
+          <div className="lab__actions">
+            <button type="button" onClick={() => onChooseFile?.()} disabled={busy !== null}>
+              Choose a file…
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : dialog === "import" ? (
         <div className="scenario-drawer__body">
           <h2 className="confirm__heading" ref={importHeading} tabIndex={-1}>
             Replace a scenario?

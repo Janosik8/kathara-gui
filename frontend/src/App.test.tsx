@@ -1817,11 +1817,48 @@ describe("the scenario as a folder", () => {
     const user = await renderApp();
     await addRouter(user);
     await user.click(await screen.findByRole("button", { name: "Export" }));
+    // The first press only explains (bug 37).
+    expect(await screen.findByRole("heading", { name: "Export the scenario" })).toHaveFocus();
+    expect(exportProject).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Download .zip" }));
 
     await waitFor(() => expect(exportProject).toHaveBeenCalled());
     expect(createObjectURL).toHaveBeenCalled();
     // Not revoking would keep the whole archive in memory for the tab's life.
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:scenario");
+  });
+
+  it("exports on a second press of Export too (bug 37)", async () => {
+    Object.defineProperty(URL, "createObjectURL", { value: vi.fn(() => "blob:x"), writable: true });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), writable: true });
+    exportProject.mockClear();
+    const user = await renderApp();
+    await addRouter(user);
+    const button = await screen.findByRole("button", { name: "Export" });
+
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    await user.click(button);
+
+    await waitFor(() => expect(exportProject).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("heading", { name: "Export the scenario" })).toBeNull();
+  });
+
+  it("explains Import before choosing a file, not in the panel (bug 37)", async () => {
+    const user = await renderApp();
+    const input = screen.getByLabelText("Scenario file to import") as HTMLInputElement;
+    const chooser = vi.spyOn(input, "click").mockImplementation(() => {});
+    expect(screen.queryByText(/a folder zipped by hand/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Import…" }));
+    expect(await screen.findByRole("heading", { name: "Import a scenario" })).toHaveFocus();
+    expect(screen.getByText(/a folder zipped by hand/)).toBeInTheDocument();
+    expect(chooser).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Choose a file…" }));
+    expect(chooser).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Import…" }));
+    expect(chooser).toHaveBeenCalledTimes(2);
   });
 
   it("imports a scenario the user picks", async () => {
@@ -1884,6 +1921,10 @@ describe("the scenario as a folder", () => {
 
     expect(
       await screen.findByText(/imported from outside this application/),
+    ).toBeInTheDocument();
+    // Standing in the Scenario panel, not only in the status bar (test 9A.1).
+    expect(
+      await screen.findByText("Imported from outside this application."),
     ).toBeInTheDocument();
   });
 
