@@ -241,6 +241,11 @@ export default function App() {
   const [scenarioBusy, setScenarioBusy] = useState<string | null>(null);
   const [scenarioDialog, setScenarioDialog] = useState<ScenarioDialog | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  // A file whose scenario is already in the workspace, held while the user
+  // decides whether it replaces that one (test 5C.1).
+  const [pendingImport, setPendingImport] = useState<{ file: File; message: string } | null>(
+    null,
+  );
 
   // Panel widths, in pixels. Kept here rather than in CSS because the user
   // drags them; the stylesheet supplies only the starting point and the floor.
@@ -906,11 +911,19 @@ export default function App() {
   const newButton = useRef<HTMLButtonElement>(null);
   const saveAsButton = useRef<HTMLButtonElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
+  const importButton = useRef<HTMLButtonElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
 
   const closeDialog = useCallback(() => {
-    const opener = { new: newButton, saveAs: saveAsButton, open: openButton };
+    const opener = {
+      new: newButton,
+      saveAs: saveAsButton,
+      open: openButton,
+      import: importButton,
+    };
     if (scenarioDialog) opener[scenarioDialog].current?.focus();
     setScenarioDialog(null);
+    setPendingImport(null);
   }, [scenarioDialog]);
 
   const toggleDialog = useCallback(
@@ -1000,11 +1013,18 @@ export default function App() {
   }, [load]);
 
   const importScenario = useCallback(
-    async (file: File) => {
+    async (file: File, replace = false) => {
       setScenarioBusy("import");
       try {
-        adopt(await api.importProject(file));
+        adopt(await api.importProject(file, replace));
       } catch (err) {
+        // A scenario of that name is already in the workspace: asked, not
+        // replaced. Only the server knows the name, from the lab inside.
+        if (err instanceof ApiError && err.status === 409 && !replace) {
+          setPendingImport({ file, message: err.message });
+          setScenarioDialog("import");
+          return;
+        }
         fail(err);
       } finally {
         setScenarioBusy(null);
@@ -1277,6 +1297,43 @@ export default function App() {
           >
             Open…
           </button>
+          {/* Beside Open and Save rather than in the Scenario panel: the
+              tester looked for them here (test 5C.1). */}
+          <button
+            type="button"
+            onClick={exportScenario}
+            disabled={scenarioBusy !== null || topology.nodes.length === 0}
+          >
+            {scenarioBusy === "export" ? "Preparing…" : "Export"}
+          </button>
+          <button
+            type="button"
+            ref={importButton}
+            onClick={() => importInput.current?.click()}
+            // Allowed while a lab runs, like Open: the lab keeps running (3E.2).
+            disabled={scenarioBusy !== null}
+          >
+            {scenarioBusy === "import" ? "Importing…" : "Import…"}
+          </button>
+          {/* display:none rather than visually hidden. A hidden-but-focusable
+              input would put an invisible stop in the tab order; the button
+              above is the real control, and it opens the native file dialog,
+              which is accessible in its own right. Named anyway, because an
+              unnamed form control is a defect wherever it does surface. */}
+          <input
+            ref={importInput}
+            type="file"
+            accept=".zip,.conf,application/zip,text/plain"
+            className="file-input"
+            aria-label="Scenario file to import"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void importScenario(file);
+              // Cleared so choosing the same file twice fires again.
+              e.target.value = "";
+            }}
+          />
         </div>
       </header>
 
@@ -1291,6 +1348,10 @@ export default function App() {
           validateName={(name) => labNameProblem(name, otherScenarioNames)}
           onOpen={openScenario}
           onNew={() => void newScenario()}
+          importConflict={pendingImport?.message ?? null}
+          onReplace={() => {
+            if (pendingImport) void importScenario(pendingImport.file, true);
+          }}
           onClose={closeDialog}
         />
       )}
@@ -1416,13 +1477,10 @@ export default function App() {
             folder={folder}
             dirty={dirty}
             busy={scenarioBusy}
-            deviceCount={topology.nodes.length}
             anyRunning={(labStatus?.running.length ?? 0) > 0}
             capture={capture}
             onDismissCapture={() => setCapture(null)}
             importWarnings={importWarnings}
-            onExport={exportScenario}
-            onImport={importScenario}
             onCapture={captureState}
           />
 

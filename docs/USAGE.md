@@ -159,7 +159,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Rename the lab | Click its name in the header. A lab name can hold letters (any language), digits, spaces, `-` and `_`, up to 48 characters, because it is also the folder's name. A name another scenario already has is refused as you type it: Kathará knows a running lab by its name, so two labs with one name would stop each other. Not while the lab runs. |
 | Open | **Open…** in the top bar lists the scenarios in your workspace. A scenario whose lab is still running opens read-only, with **Stop** and **Capture** available, as after a reload. |
 | Start a new scenario | **New…** in the top bar. An empty canvas with no folder; the scenario that was open stays in its own. Warns first if there are unsaved changes. |
-| Export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
+| Export, import | **Export** and **Import…** in the top bar, after Open. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`, and asks before replacing a scenario of the same name. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
 | Verify links | **Laboratory** → **Verify links**: pings across every link. Close the results with their **×**. |
 | See what changed inside the containers | **Laboratory** → **Check for changes**. It asks Docker which devices are running, exited or gone, and compares every interface's address inside the containers with what was deployed or last captured. It does not compare routing configuration typed in `vtysh`; **Capture** reads that. A device whose container was removed outside the application (Docker Desktop, `docker rm`) is named, with a warning in the panel: Redeploy to start it again, or Stop. Nothing polls in the background (NFR-11), so the device states shown are as of the last deploy, capture or check. |
@@ -314,7 +314,7 @@ device kinds ride in `# kgui:` comments that Kathará ignores — so the folder 
 document, and **Export is a plain zip of it**. Anyone can unzip and read the startup
 scripts; anyone with Kathará can `cd` in and `kathara lstart`.
 
-The first four are in the top bar, the rest in the **Scenario** panel on the right:
+All but the last are in the top bar; **Capture running state** is in the **Scenario** panel on the right:
 
 | Control | What it does |
 |---|---|
@@ -323,7 +323,7 @@ The first four are in the top bar, the rest in the **Scenario** panel on the rig
 | **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
 | **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. Each is listed by its lab name, which is also its folder; a folder that differs (one from before folders took the lab's name) is shown after it. A scenario whose lab is running has a green dot and the word **running** beside its name. Allowed while a lab runs, which keeps running. |
 | **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
-| **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. |
+| **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. The scenario is named after the lab inside, not the file, so "base exam (1).zip" becomes `base exam`. If the workspace already has a scenario of that name, it asks before replacing it; a scenario whose lab is running is never replaced — stop it first. |
 | **Capture running state** | Copies what the devices are actually running back into the scenario. The result stays listed until you close it with its **×**. |
 
 **Save keeps it here; Export sends it out.** Scenario folders live in the workspace
@@ -676,7 +676,7 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/project/save` | write the scenario folder into the workspace |
 | POST | `/api/project/export` | the scenario folder as a zip, for download |
 | POST | `/api/project/open` | open a scenario folder from the workspace |
-| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body |
+| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running |
 | POST | `/api/project/capture` | pull running configuration into the scenario |
 
 The `POST` endpoints for addressing and lab operations take the topology in the request body

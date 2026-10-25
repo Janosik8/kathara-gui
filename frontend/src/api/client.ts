@@ -410,8 +410,12 @@ export const api = {
    * Open a scenario from outside the workspace: a zip, or a bare lab.conf.
    * Sent as raw bytes, so the file name travels in a header.
    */
-  importProject: (file: File) =>
-    request<OpenResponse>("/api/project/import", {
+  /**
+   * Import a zip or a bare `lab.conf`. A scenario of the same name already in
+   * the workspace is answered with 409 unless `replace` (test 5C.1).
+   */
+  importProject: (file: File, replace = false) =>
+    request<OpenResponse>(`/api/project/import${replace ? "?replace=true" : ""}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/octet-stream",

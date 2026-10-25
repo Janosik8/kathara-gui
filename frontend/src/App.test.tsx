@@ -1795,6 +1795,19 @@ describe("the scenario as a folder", () => {
     expect(screen.queryByText(/opening another replaces it/)).toBeNull();
   });
 
+  it("keeps Export and Import in the top bar beside Open (test 5C.1)", async () => {
+    await renderApp();
+    const bar = await screen.findByRole("group", { name: "Topology actions" });
+
+    const names = within(bar)
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+    expect(names.slice(-3)).toEqual(["Open…", "Export", "Import…"]);
+    // One of each: not also left behind in the Scenario panel.
+    expect(screen.getAllByRole("button", { name: "Export" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Import…" })).toHaveLength(1);
+  });
+
   it("hands the exported zip to the browser", async () => {
     const createObjectURL = vi.fn(() => "blob:scenario");
     const revokeObjectURL = vi.fn();
@@ -1818,6 +1831,47 @@ describe("the scenario as a folder", () => {
 
     await waitFor(() => expect(importProject).toHaveBeenCalled());
     expect(await screen.findByText(/Opened imported scenario/)).toBeInTheDocument();
+  });
+
+  it("asks before an import replaces a scenario of the same name (test 5C.1)", async () => {
+    const conflict =
+      "There is already a scenario called 'base exam' in the workspace. " +
+      "Importing replaces it, and what is in it now is lost.";
+    importProject.mockClear().mockRejectedValueOnce(new MockApiError(conflict, 409));
+    const user = await renderApp();
+    const file = new File(["PK"], "base exam.zip", { type: "application/zip" });
+
+    await user.upload(screen.getByLabelText("Scenario file to import"), file);
+
+    const heading = await screen.findByRole("heading", { name: "Replace a scenario?" });
+    expect(heading).toHaveFocus();
+    expect(screen.getByText(/already a scenario called 'base exam'/)).toBeInTheDocument();
+    expect(importProject).toHaveBeenCalledTimes(1);
+    expect(importProject).toHaveBeenLastCalledWith(file, false);
+
+    await user.click(screen.getByRole("button", { name: "Replace it" }));
+
+    await waitFor(() => expect(importProject).toHaveBeenLastCalledWith(file, true));
+    expect(await screen.findByText(/Opened imported scenario/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Replace a scenario?" })).toBeNull();
+  });
+
+  it("leaves the scenario alone when the replacement is cancelled", async () => {
+    importProject
+      .mockClear()
+      .mockRejectedValueOnce(new MockApiError("There is already a scenario…", 409));
+    const user = await renderApp();
+    await user.upload(
+      screen.getByLabelText("Scenario file to import"),
+      new File(["PK"], "base exam.zip", { type: "application/zip" }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(importProject).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("heading", { name: "Replace a scenario?" })).toBeNull();
+    // Back on the button that started it, not dropped at the top of the page.
+    expect(screen.getByRole("button", { name: "Import…" })).toHaveFocus();
   });
 
   it("says when an imported lab came from outside this application", async () => {

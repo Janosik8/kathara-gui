@@ -271,12 +271,19 @@ def open_scenario(
 
 @router.post("/import", response_model=OpenResponse)
 async def import_scenario(
-    request: Request, session: Session = Depends(get_session)
+    request: Request, replace: bool = False, session: Session = Depends(get_session)
 ) -> OpenResponse:
     """Open a scenario the browser sends: a zip, or a bare ``lab.conf``.
 
     Raw bytes rather than a multipart form: the payload is a single file, so
     multipart would add a dependency and a parsing step to carry nothing extra.
+
+    The folder is named after the lab inside, as every other folder is (F34),
+    not after the file: a browser saves a second download of "base exam" as
+    "base exam (1).zip", and a folder of that name holding a lab called "base
+    exam" would be a second lab with one name. A scenario of that name already
+    in the workspace is replaced only when ``replace`` says so; otherwise the
+    answer is 409, so the page can ask first (test 5C.1).
     """
     payload = await request.body()
     if not payload:
@@ -292,31 +299,46 @@ async def import_scenario(
     # Percent-encoded by the client: an HTTP header cannot carry non-ASCII, and
     # "ćwiczenie.zip" is an ordinary name for a scenario here.
     filename = unquote(request.headers.get("X-KGUI-Filename", "imported"))
-    stem = Path(filename.replace("\\", "/")).name
+    stem = Path(Path(filename.replace("\\", "/")).name).stem or "imported"
     is_archive = payload[:2] == b"PK"
 
-    if is_archive:
-        target = _folder_in_workspace(session, Path(stem).stem)
-        staging = session.workspace_root / _STAGING / target.name
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True, exist_ok=True)
-        try:
-            scenario.import_archive_bytes(payload, staging)
-            # Only once it is known to be a real scenario does anything the
-            # user already had get touched.
-            shutil.rmtree(target, ignore_errors=True)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(staging), str(target))
-        except scenario.ScenarioError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-            ) from exc
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
-        return _adopt(session, target)
+    # Named after the file, so a lab that names itself nowhere is named by it.
+    staging = session.workspace_root / _STAGING / _folder_in_workspace(session, stem).name
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        if is_archive:
+            try:
+                scenario.import_archive_bytes(payload, staging)
+            except scenario.ScenarioError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                ) from exc
+        else:
+            _stage_labconf(payload, staging)
 
-    # A bare lab.conf. Its name says nothing useful, so the scenario is named
-    # from LAB_NAME inside it, falling back to the file's own stem.
+        # Only once it is known to be a real scenario does anything the user
+        # already had get touched.
+        try:
+            name = scenario.load(staging).topology.name
+        except scenario.ScenarioError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        # Spelt as the lab is: resolving an existing "Base Exam" on Windows
+        # answers in that folder's case, and the replacement is "base exam".
+        target = _folder_in_workspace(session, name).with_name(folder_name(name))
+        existing = _existing_folder(session, target.name)
+        if existing is not None:
+            _may_replace(existing, replace)
+            shutil.rmtree(existing)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(staging), str(target))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return _adopt(session, target)
+
+
+def _stage_labconf(payload: bytes, staging: Path) -> None:
+    """Write a bare ``lab.conf`` into ``staging``, or refuse what is not one."""
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -325,18 +347,49 @@ async def import_scenario(
             detail="That file is neither a zip archive nor readable text.",
         ) from exc
 
-    result = parse(text)
-    if not result.topology.nodes:
+    if not parse(text).topology.nodes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No devices were found in that file, so it is not a lab.conf.",
         )
+    # A bare lab.conf's file name says nothing useful ("lab.conf"), so the
+    # scenario is named from LAB_NAME inside it; `scenario.load` falls back to
+    # the staging folder's name, which is the file's stem.
+    (staging / scenario.LAB_CONF).write_text(text, encoding="utf-8", newline="\n")
 
-    named = result.topology.name
-    target = _folder_in_workspace(session, named if named != "lab" else Path(stem).stem)
-    target.mkdir(parents=True, exist_ok=True)
-    (target / scenario.LAB_CONF).write_text(text, encoding="utf-8", newline="\n")
-    return _adopt(session, target)
+
+def _existing_folder(session: Session, name: str) -> Path | None:
+    """The workspace folder called ``name``, compared case-insensitively.
+
+    Case-insensitively whatever the host, as Save compares, so "Base Exam" and
+    "base exam" are one scenario on every machine.
+    """
+    root = session.workspace_root
+    if not root.is_dir():
+        return None
+    return next((c for c in root.iterdir() if c.name.lower() == name.lower()), None)
+
+
+def _may_replace(existing: Path, replace: bool) -> None:
+    """Refuse to import over ``existing`` unless asked to, and never over a running lab."""
+    try:
+        name = scenario.load(existing).topology.name
+    except scenario.ScenarioError:
+        name = existing.name
+    if runner.running_lab_names([name]):
+        # Replacing the files under a running lab would leave the containers
+        # running one design and the folder holding another.
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"The scenario {existing.name!r} is running. Stop its lab before "
+            "importing over it.",
+        )
+    if not replace:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"There is already a scenario called {existing.name!r} in the workspace. "
+            "Importing replaces it, and what is in it now is lost.",
+        )
 
 
 def _adopt(session: Session, folder: Path) -> OpenResponse:

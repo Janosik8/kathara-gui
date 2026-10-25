@@ -233,6 +233,10 @@ routing daemons from `/etc/frr/daemons`. Without that, an imported lab looked un
 and the validator complained about addresses that were on disk all along. Device kinds,
 which Kathará genuinely does not record, are guessed from FRR evidence first and naming
 convention second, and the guess is presentational: it picks an icon the user can change.
+An import is named after the lab inside it, not the file it came in, for the same reason
+every folder is named after its lab: Kathará knows a lab by its name, so "base exam (1).zip"
+holding "base exam" must not become a second lab of that name. And it never replaces a
+scenario already in the workspace without asking (F39).
 
 **The layout is laid out, not simulated.** A foreign lab has no coordinates, so every device
 would land on one point. A force-directed spring model is the usual reach and the wrong

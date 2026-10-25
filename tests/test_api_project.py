@@ -365,8 +365,9 @@ def test_a_scenario_round_trips_through_export_and_import(client: TestClient) ->
     exported = client.post("/api/project/export", json={"topology": TRIANGLE}).content
     client.post("/api/topology/reset")
 
+    # The export saved the scenario, so importing it back replaces that.
     body = client.post(
-        "/api/project/import",
+        "/api/project/import?replace=true",
         content=exported,
         headers={"X-KGUI-Filename": "submission-jan.zip"},
     ).json()
@@ -444,6 +445,123 @@ def test_importing_a_bare_lab_conf(client: TestClient) -> None:
 
     assert body["topology"]["name"] == "handwritten"
     assert [n["name"] for n in body["topology"]["nodes"]] == ["r1", "r2"]
+
+
+def lab_zip(name: str, *, extra: str = "") -> bytes:
+    """A minimal lab called ``name``, zipped."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("lab.conf", f'LAB_NAME="{name}"\nr1[0]="A"\nr2[0]="A"\n{extra}')
+    return buffer.getvalue()
+
+
+def test_an_import_is_named_after_its_lab_not_its_file(
+    client: TestClient, workspace: Path
+) -> None:
+    """A browser saves a second download as "base exam (1).zip". A folder of
+    that name holding a lab called "base exam" would be two labs with one
+    name, which Kathará treats as one (F34)."""
+    body = client.post(
+        "/api/project/import",
+        content=lab_zip("base exam"),
+        headers={"X-KGUI-Filename": "base exam (1).zip"},
+    ).json()
+
+    assert Path(body["folder"]).name == "base exam"
+    assert not (workspace / "base exam (1)").exists()
+
+
+def test_importing_over_an_existing_scenario_asks_first(
+    client: TestClient, workspace: Path
+) -> None:
+    """Test 5C.1: the import used to replace a scenario of the same name
+    without a word."""
+    folder = Path(save(client, {**TRIANGLE, "name": "base exam"})["folder"])
+    before = (folder / "lab.conf").read_text()
+
+    response = client.post(
+        "/api/project/import",
+        content=lab_zip("base exam"),
+        headers={"X-KGUI-Filename": "anything.zip"},
+    )
+
+    assert response.status_code == 409
+    assert "base exam" in response.json()["detail"]
+    assert "replaces" in response.json()["detail"]
+    assert (folder / "lab.conf").read_text() == before
+    assert not list((workspace / ".import").iterdir())
+
+
+def test_a_confirmed_import_replaces_the_scenario_entirely(
+    client: TestClient, workspace: Path
+) -> None:
+    folder = Path(save(client, {**TRIANGLE, "name": "base exam"})["folder"])
+    (folder / "notes.txt").write_text("from the old one")
+
+    response = client.post(
+        "/api/project/import?replace=true",
+        content=lab_zip("base exam", extra='pc9[0]="A"\n'),
+        headers={"X-KGUI-Filename": "base exam.zip"},
+    )
+
+    assert response.status_code == 200, response.text
+    names = {n["name"] for n in response.json()["topology"]["nodes"]}
+    assert names == {"r1", "r2", "pc9"}
+    # Replaced, not merged: nothing of the old scenario is left behind.
+    assert not (folder / "notes.txt").exists()
+
+
+def test_a_name_differing_only_in_case_is_the_same_scenario(
+    client: TestClient, workspace: Path
+) -> None:
+    save(client, {**TRIANGLE, "name": "Base Exam"})
+
+    response = client.post(
+        "/api/project/import",
+        content=lab_zip("base exam"),
+        headers={"X-KGUI-Filename": "base exam.zip"},
+    )
+    assert response.status_code == 409
+
+    replaced = client.post(
+        "/api/project/import?replace=true",
+        content=lab_zip("base exam"),
+        headers={"X-KGUI-Filename": "base exam.zip"},
+    )
+    assert replaced.status_code == 200, replaced.text
+    # Spelt as the lab is now, not as the folder it replaced was.
+    assert [c.name for c in workspace.iterdir() if not c.name.startswith(".")] == ["base exam"]
+
+
+def test_a_bare_lab_conf_over_an_existing_scenario_asks_too(client: TestClient) -> None:
+    save(client, {**TRIANGLE, "name": "handwritten"})
+
+    response = client.post(
+        "/api/project/import",
+        content=b'LAB_NAME="handwritten"\nr1[0]="A"\n',
+        headers={"X-KGUI-Filename": "lab.conf"},
+    )
+    assert response.status_code == 409
+
+
+def test_a_running_scenario_is_never_imported_over(
+    client: TestClient, running_labs: set[str]
+) -> None:
+    """Replacing the folder under a running lab would leave the containers
+    running one design and the folder holding another."""
+    folder = Path(save(client, {**TRIANGLE, "name": "base exam"})["folder"])
+    before = (folder / "lab.conf").read_text()
+    running_labs.add("base exam")
+
+    response = client.post(
+        "/api/project/import?replace=true",
+        content=lab_zip("base exam"),
+        headers={"X-KGUI-Filename": "base exam.zip"},
+    )
+
+    assert response.status_code == 423
+    assert "Stop" in response.json()["detail"]
+    assert (folder / "lab.conf").read_text() == before
 
 
 def test_an_archive_wrapped_in_its_own_folder_still_imports(client: TestClient) -> None:

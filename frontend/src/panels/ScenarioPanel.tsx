@@ -1,8 +1,11 @@
 /**
- * The scenario as a folder: where it is saved, sharing it, capturing state.
+ * The scenario as a folder: where it is saved, what an import left out, and
+ * capturing state.
  *
- * Save, Save as and Open are in the header (see `ScenarioDrawer`); this panel
- * says where the scenario lives and holds what moves it off the machine.
+ * Save, Save as, Open, Export and Import are all in the header (see
+ * `ScenarioDrawer`); Export and Import moved there at the tester's request
+ * (test 5C.1), so every action on the scenario file is in one place. This
+ * panel says where the scenario lives and reports what those actions found.
  *
  * One Save, one Open, one Export, one Import. An earlier version offered
  * `.kgui` and `lab.conf` as separate pairs, which asked the user to understand
@@ -13,7 +16,6 @@
  * wording says where the file goes rather than naming the mechanism.
  */
 
-import { useRef } from "react";
 import type { CaptureResponse } from "../api/client";
 import { DismissButton } from "./DismissButton";
 
@@ -22,7 +24,6 @@ interface Props {
   folder: string | null;
   dirty: boolean;
   busy: string | null;
-  deviceCount: number;
   /** Whether anything is running to capture configuration from. */
   anyRunning: boolean;
   capture: CaptureResponse | null;
@@ -30,8 +31,6 @@ interface Props {
   onDismissCapture?: () => void;
   /** Lines of an imported lab.conf that could not be understood. */
   importWarnings: string[];
-  onExport: () => void;
-  onImport: (file: File) => void;
   onCapture: () => void;
 }
 
@@ -44,19 +43,12 @@ export function ScenarioPanel({
   folder,
   dirty,
   busy,
-  deviceCount,
   anyRunning,
   capture,
   onDismissCapture,
   importWarnings,
-  onExport,
-  onImport,
   onCapture,
 }: Props) {
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const empty = deviceCount === 0;
-
   return (
     <section className="scenario" aria-labelledby="scenario-heading">
       <h2 className="panel__heading" id="scenario-heading">
@@ -75,46 +67,13 @@ export function ScenarioPanel({
       </p>
 
 
-      <h3 className="panel__heading">Share</h3>
       <p className="field__hint">
-        Export downloads the scenario folder as a <code>.zip</code>: the topology, the
-        startup scripts and any captured configuration. Anyone can unzip and read it, and
-        anyone with Kathará can run it. Import opens such a zip, a folder zipped by hand, or
-        a plain <code>lab.conf</code> — including labs made without this application.
+        <strong>Export</strong>, in the top bar, downloads the scenario folder as a{" "}
+        <code>.zip</code>: the topology, the startup scripts and any captured configuration.
+        Anyone can unzip and read it, and anyone with Kathará can run it.{" "}
+        <strong>Import</strong> opens such a zip, a folder zipped by hand, or a plain{" "}
+        <code>lab.conf</code> — including labs made without this application.
       </p>
-
-      <div className="lab__actions">
-        <button type="button" onClick={onExport} disabled={busy !== null || empty}>
-          {busy === "export" ? "Preparing…" : "Export"}
-        </button>
-        <button
-          type="button"
-          onClick={() => fileInput.current?.click()}
-          // Allowed while a lab runs, like Open: the lab keeps running (3E.2).
-          disabled={busy !== null}
-        >
-          {busy === "import" ? "Importing…" : "Import…"}
-        </button>
-        {/* display:none rather than visually hidden. A hidden-but-focusable
-            input would put an invisible stop in the tab order; the button
-            above is the real control, and it opens the native file dialog,
-            which is accessible in its own right. Named anyway, because an
-            unnamed form control is a defect wherever it does surface. */}
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".zip,.conf,application/zip,text/plain"
-          className="file-input"
-          aria-label="Scenario file to import"
-          tabIndex={-1}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onImport(file);
-            // Cleared so choosing the same file twice fires again.
-            e.target.value = "";
-          }}
-        />
-      </div>
 
       {importWarnings.length > 0 && (
         // Import is deliberately forgiving, which makes saying what was not

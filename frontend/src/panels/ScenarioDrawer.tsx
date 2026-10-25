@@ -1,5 +1,6 @@
 /**
- * New, Save as and Open, opened from the header.
+ * New, Save as and Open, opened from the header; and the question an Import
+ * asks when its scenario is already in the workspace.
  *
  * They used to live in the Scenario panel on the right, while Save sat in the
  * header: three actions on one document, in two places. Asked for in the
@@ -13,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioSummary } from "../api/client";
 
-export type ScenarioDialog = "new" | "saveAs" | "open";
+export type ScenarioDialog = "new" | "saveAs" | "open" | "import";
 
 interface Props {
   dialog: ScenarioDialog;
@@ -28,6 +29,10 @@ interface Props {
   onOpen: (folder: string) => void;
   /** Start an empty scenario with no folder (bug 27). */
   onNew: () => void;
+  /** Why the import waits: the scenario it would replace (test 5C.1). */
+  importConflict?: string | null;
+  /** Import the held file, replacing the scenario of the same name. */
+  onReplace?: () => void;
   onClose: () => void;
 }
 
@@ -41,12 +46,15 @@ export function ScenarioDrawer({
   validateName,
   onOpen,
   onNew,
+  importConflict = null,
+  onReplace,
   onClose,
 }: Props) {
   const [newName, setNewName] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
   const openHeading = useRef<HTMLHeadingElement>(null);
   const newHeading = useRef<HTMLHeadingElement>(null);
+  const importHeading = useRef<HTMLHeadingElement>(null);
 
   // Focus follows the button that opened it, so a keyboard or screen-reader
   // user lands in the form rather than having to find it.
@@ -56,6 +64,8 @@ export function ScenarioDrawer({
       nameInput.current?.focus();
     } else if (dialog === "new") {
       newHeading.current?.focus();
+    } else if (dialog === "import") {
+      importHeading.current?.focus();
     } else {
       openHeading.current?.focus();
     }
@@ -81,7 +91,37 @@ export function ScenarioDrawer({
         }
       }}
     >
-      {dialog === "new" ? (
+      {dialog === "import" ? (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={importHeading} tabIndex={-1}>
+            Replace a scenario?
+          </h2>
+          <p className="confirm__warning">
+            <strong>Warning:</strong> {importConflict}
+          </p>
+          {dirty && (
+            <p className="confirm__warning">
+              <strong>Warning:</strong> the current scenario has unsaved changes, and importing
+              replaces it on the canvas.
+            </p>
+          )}
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => {
+                onReplace?.();
+                onClose();
+              }}
+              disabled={busy !== null}
+            >
+              Replace it
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : dialog === "new" ? (
         <div className="scenario-drawer__body">
           <h2 className="confirm__heading" ref={newHeading} tabIndex={-1}>
             Start a new scenario
@@ -156,8 +196,8 @@ export function ScenarioDrawer({
           </h2>
           {scenarios.length === 0 ? (
             <p className="field__hint">
-              No scenarios in the workspace yet. Use <strong>Import</strong> in the Scenario
-              panel to open one from elsewhere.
+              No scenarios in the workspace yet. Use <strong>Import…</strong> in the top bar to
+              open one from elsewhere.
             </p>
           ) : (
             <ul className="state-list" aria-label="Scenarios in the workspace">
