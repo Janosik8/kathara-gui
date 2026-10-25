@@ -131,7 +131,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. |
 | Select | Click a device in the tree or on the canvas. |
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
-| Connect two devices | Turn on **Connect mode** (button, or press `C`), click one device, then click another. A link appears. |
+| Connect two devices | Turn on **Connect mode** (the button above the collision domain list, or press `C`; it is filled blue, with ◉, while on), click one device, then click another. A link appears. |
 | Draw several links | Connect mode stays on after each link, so keep clicking pairs. |
 | Add a device to an existing network | In connect mode, click the device, then click the **link or collision domain** it should join. All of them then share one collision domain. |
 | Cancel a half-made link | Click the same end again, or click empty canvas. |

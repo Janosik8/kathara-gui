@@ -1320,14 +1320,16 @@ export default function App() {
           <fieldset className="edit-lock" disabled={locked} onPointerDown={refuseLocked}>
             <Palette topology={topology} onAdd={addDevice} />
 
-            <CollisionDomainsPanel topology={topology} onDispatch={edit} />
-
+            {/* Above the collision domains (bug 36): add devices, connect
+                them, then name the segments — the order the work is done in. */}
             <ConnectModeBar
               active={connectMode}
               pending={pending}
               enabled={canConnect}
               onToggle={toggleConnectMode}
             />
+
+            <CollisionDomainsPanel topology={topology} onDispatch={edit} />
           </fieldset>
 
           <h2 className="panel__heading" id="topology">

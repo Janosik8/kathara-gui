@@ -724,7 +724,7 @@ select {
 /* -- connect mode --------------------------------------------------- */
 
 .connect-mode {
-  margin: 16px 0 4px;
+  margin: 16px 0;
 }
 
 .connect-mode__toggle {
@@ -735,10 +735,25 @@ select {
   font-weight: 600;
 }
 
-/* Pressed state carries a border and a filled glyph, never colour alone. */
+/* Pressed state is filled with the accent (bug 36: it was too easy to miss
+   that the mode was on), and still carries the filled glyph, never colour
+   alone. The focus ring sits outside, on the panel, so the fill cannot hide it. */
 .connect-mode__toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.connect-mode__toggle[aria-pressed="true"] .connect-mode__key {
+  border-color: currentColor;
+}
+
+@media (forced-colors: active) {
+  .connect-mode__toggle[aria-pressed="true"] {
+    background: Highlight;
+    color: HighlightText;
+    border-color: HighlightText;
+  }
 }
 
 .connect-mode__key {

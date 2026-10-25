@@ -369,6 +369,19 @@ describe("undo and redo", () => {
 describe("connect mode", () => {
   const toggle = () => screen.getByRole("button", { name: /Connect mode/ });
 
+  it("sits above the collision domains, in the order the work is done", async () => {
+    // Bug 36: add devices, connect them, then name the segments. The domains
+    // are listed only once a link makes one.
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await link(user, "r1", "r2");
+    const domains = screen.getByRole("heading", { name: "Collision domains" });
+    expect(
+      toggle().compareDocumentPosition(domains) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("is unavailable until there are two devices to join", async () => {
     const user = await renderApp();
     expect(toggle()).toBeDisabled();

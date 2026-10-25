@@ -119,6 +119,8 @@ TEXT_PAIRS = [
     # And red while the lab runs and the design is read-only (test step 3A.2).
     ("the title on a locked header", "--fg", "--bg-header-locked"),
     ("the read-only badge", "--danger-fg", "--danger"),
+    # Connect mode, pressed: filled with the accent (bug 36).
+    ("the pressed connect-mode button", "--accent-fg", "--accent"),
     # The two working areas have surfaces of their own, so every pairing that
     # text actually lands on has to be checked, not just the generic panel.
     ("the device block's accent as text", "--device", "--bg-panel-devices"),
@@ -153,6 +155,8 @@ NON_TEXT_PAIRS = [
     ("focus indicator on a panel", "--focus", "--bg-panel"),
     # The bar marking an exited device, and the notice explaining it.
     ("warning boundary on a panel", "--warning", "--bg-panel"),
+    # The filled connect-mode button is its own boundary (bug 36).
+    ("a filled accent control on a panel", "--accent", "--bg-panel"),
 ]
 
 
