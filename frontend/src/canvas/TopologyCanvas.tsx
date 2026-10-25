@@ -30,11 +30,13 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PendingEnd, Topology } from "../types";
 import { DeviceNode } from "./DeviceNode";
+import { SegmentEdge } from "./SegmentEdge";
 import { type Placement, computePlacements, domainPosition, segmentPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
 const NODE_TYPES = { device: DeviceNode };
+const EDGE_TYPES = { segment: SegmentEdge };
 
 /**
  * How far, in pixels, the pointer may move between press and release and the
@@ -69,6 +71,8 @@ interface Props {
    * design is read-only until the lab is stopped.
    */
   locked?: boolean;
+  /** A device was dragged while locked: say why it does not move (test step 3A.3). */
+  onLockedEdit?: () => void;
 }
 
 /**
@@ -147,6 +151,7 @@ function CanvasInner({
   selectedLink,
   connectMode,
   locked = false,
+  onLockedEdit,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
@@ -165,6 +170,7 @@ function CanvasInner({
         label: node.name,
         kind: node.kind,
         interfaces: [...node.interfaces].sort((a, b) => a.number - b.number),
+        loopbacks: node.loopbacks ?? [],
         placements: placements.get(node.name) ?? new Map(),
         pending: node.name === pendingDevice,
       },
@@ -223,6 +229,8 @@ function CanvasInner({
           source: member.node.name,
           target: hubId,
           sourceHandle: `eth${member.iface.number}`,
+          // Ends on the node's outline, on the side it comes from.
+          type: "segment",
           data: { collisionDomain: cd.name },
           className: `link${cd.name === pendingDomain ? " link--pending" : ""}${
             cd.name === selectedLink ? " link--selected" : ""
@@ -263,6 +271,9 @@ function CanvasInner({
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      // Locked, a drag is still let start, so it can be answered with a
+      // reason, but none of its moves is applied.
+      if (locked) changes = changes.filter((change) => change.type !== "position");
       setNodes((current) => applyNodeChanges(changes, current));
 
       for (const change of changes) {
@@ -274,7 +285,7 @@ function CanvasInner({
         }
       }
     },
-    [onMove, onMoveDomain],
+    [onMove, onMoveDomain, locked],
   );
 
   return (
@@ -283,6 +294,7 @@ function CanvasInner({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onNodeClick={(event, node) => {
           const domain = node.data?.collisionDomain;
@@ -311,7 +323,10 @@ function CanvasInner({
         // of hand movement between press and release turns the click into a
         // drag and swallows it. A few pixels is what any pointer needs. And in
         // connect mode a press can only mean "this end", so nothing drags.
-        nodesDraggable={!locked && !connectMode}
+        // Draggable even when locked: refusing the drag outright made it
+        // silent, so it starts, moves nothing, and says why.
+        nodesDraggable={!connectMode}
+        onNodeDragStart={locked ? () => onLockedEdit?.() : undefined}
         nodeClickDistance={NODE_CLICK_DISTANCE}
         snapToGrid
         snapGrid={[16, 16]}

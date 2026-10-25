@@ -71,7 +71,8 @@ function describeDevice(node: Node): string {
   const count = node.interfaces.length;
   const interfaces = count === 1 ? "1 interface" : `${count} interfaces`;
   const daemons = node.daemons.length > 0 ? `, running ${node.daemons.join(", ")}` : "";
-  return `${node.name}, ${node.kind}, ${interfaces}${daemons}`;
+  const lo = node.loopbacks?.length ? `, loopback ${node.loopbacks.join(", ")}` : "";
+  return `${node.name}, ${node.kind}, ${interfaces}${lo}${daemons}`;
 }
 
 export function TopologyTree({

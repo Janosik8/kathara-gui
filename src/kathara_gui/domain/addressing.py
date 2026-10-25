@@ -134,6 +134,7 @@ def validate(topology: Topology) -> list[AddressingIssue]:
     issues.extend(_check_overlapping_planned_subnets(topology))
     issues.extend(_check_reserved_addresses(topology))
     issues.extend(_check_missing_addresses(topology))
+    issues.extend(_check_duplicate_loopbacks(topology))
 
     order = {Severity.ERROR: 0, Severity.WARNING: 1}
     return sorted(issues, key=lambda i: (order[i.severity], i.code, i.collision_domain or ""))
@@ -253,7 +254,13 @@ def _check_addresses_match_planned_subnet(topology: Topology) -> list[Addressing
 
 
 def _check_overlapping_planned_subnets(topology: Topology) -> list[AddressingIssue]:
-    """Two collision domains planned onto overlapping address space."""
+    """Two collision domains planned onto overlapping address space.
+
+    A warning, not an error (bug 23). Usually it is a mistake, but a VPN or VRF
+    lab reuses one subnet on purpose on either side of the tunnel, and calling
+    that an error told the student their correct design was wrong. Unlike two
+    subnets on one wire, Kathará and the routers run it without complaint.
+    """
     issues = []
     planned = [
         (cd.name, ipaddress.ip_network(cd.subnet, strict=False))
@@ -265,10 +272,12 @@ def _check_overlapping_planned_subnets(topology: Topology) -> list[AddressingIss
             if network.overlaps(other):
                 issues.append(
                     AddressingIssue(
-                        Severity.ERROR,
+                        Severity.WARNING,
                         "overlapping_subnets",
                         f"Collision domains {name} ({network}) and {other_name} ({other}) "
-                        "have overlapping address space.",
+                        "have overlapping address space. That is intended when they are "
+                        "kept apart, by a VPN or in different VRFs; otherwise routes to "
+                        "the two will be ambiguous.",
                         name,
                     )
                 )
@@ -324,7 +333,69 @@ def _check_missing_addresses(topology: Topology) -> list[AddressingIssue]:
     return issues
 
 
+def _check_duplicate_loopbacks(topology: Topology) -> list[AddressingIssue]:
+    """One loopback address on two devices.
+
+    A warning: a loopback usually serves as a router ID, which must be unique,
+    but anycast gives several devices one address on purpose.
+    """
+    owners: dict[str, list[str]] = {}
+    for node in topology.nodes:
+        for address in node.loopbacks:
+            ip = str(ipaddress.ip_interface(address).ip)
+            if node.name not in owners.setdefault(ip, []):
+                owners[ip].append(node.name)
+    return [
+        AddressingIssue(
+            Severity.WARNING,
+            "duplicate_loopback",
+            f"{ip} is a loopback address on {', '.join(devices)}. As a router ID it must "
+            "be unique; it is shared on purpose only for anycast.",
+            None,
+            tuple(devices),
+        )
+        for ip, devices in sorted(owners.items())
+        if len(devices) > 1
+    ]
+
+
 # ---------------------------------------------------------------- allocation
+
+
+def _parse_pool(pool: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+    """The pool as a network, refusing one whose address has host bits set.
+
+    ``192.168.0.0/8`` used to be read as ``192.0.0.0/8`` without a word, so
+    the lab was addressed from 192.0.0.x and it looked as if nothing had
+    happened (test step 3B.1). Guessing which half the user meant — the
+    address or the mask — is worse than asking.
+    """
+    try:
+        return ipaddress.ip_network(pool.strip())
+    except ValueError as exc:
+        try:
+            loose = ipaddress.ip_network(pool.strip(), strict=False)
+        except ValueError:
+            raise ValueError(
+                f"{pool!r} is not an address pool. Write one like 10.0.0.0/8."
+            ) from exc
+        address = pool.strip().split("/", 1)[0]
+        value, width = int(ipaddress.ip_address(address)), loose.max_prefixlen
+        # The shortest mask on an octet boundary for which the typed address
+        # is a network address: 192.168.0.0 gives /16.
+        longer = next(
+            (
+                f"{address}/{p}"
+                for p in range(loose.prefixlen + 1, width)
+                if p % 8 == 0 and value % (1 << (width - p)) == 0
+            ),
+            None,
+        )
+        hint = f", or a longer mask such as {longer} to keep {address}" if longer else ""
+        raise ValueError(
+            f"{pool} is not a network: a /{loose.prefixlen} mask keeps only the first "
+            f"{loose.prefixlen} bits, which makes it {loose}. Type {loose} for that{hint}."
+        ) from exc
 
 
 def allocate(
@@ -343,7 +414,7 @@ def allocate(
     design can be completed rather than replaced. ``overwrite=True`` starts
     afresh, which is what "renumber the whole lab" means.
     """
-    network = ipaddress.ip_network(pool, strict=False)
+    network = _parse_pool(pool)
     if prefix < network.prefixlen:
         raise ValueError(
             f"A /{prefix} subnet is larger than the pool {pool}. "

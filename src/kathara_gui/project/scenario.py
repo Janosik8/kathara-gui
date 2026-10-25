@@ -35,7 +35,7 @@ from typing import Any
 from kathara_gui import __version__
 from kathara_gui.domain.addressing import infer_subnets
 from kathara_gui.domain.codec.labconf import parse
-from kathara_gui.domain.codec.startup import parse_startup
+from kathara_gui.domain.codec.startup import parse_loopbacks, parse_startup
 from kathara_gui.domain.layout import arrange, needs_layout
 from kathara_gui.domain.model import KNOWN_DAEMONS, CollisionDomain, Node, Topology
 from kathara_gui.features import Features
@@ -160,6 +160,10 @@ def recover_device_configuration(topology: Topology, folder: Path) -> Topology:
         changes: dict[str, object] = {}
 
         startup = _read(folder / f"{node.name}.startup")
+        if startup and not node.loopbacks:
+            loopbacks = parse_loopbacks(startup)
+            if loopbacks:
+                changes["loopbacks"] = loopbacks
         if startup:
             addresses = parse_startup(startup)
             if addresses:

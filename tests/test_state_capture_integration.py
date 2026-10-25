@@ -203,3 +203,56 @@ def test_capturing_before_deploying_explains_itself(topology: Topology, tmp_path
     assert report.any_captured is False
     assert report.message is not None
     assert "Deploy it" in report.message
+
+
+# -- loopbacks (bugs 28 and 30) ------------------------------------------------
+
+
+@pytest.fixture
+def with_loopback(lab_dir: Path) -> Iterator[Topology]:
+    topology = Topology(
+        name="kgui-loopback-integration",
+        nodes=[
+            Node(
+                name="r1",
+                image=IMAGE,
+                daemons=["zebra"],
+                loopbacks=["10.255.0.1/32"],
+                interfaces=[Interface(number=0, collision_domain="A", ip="172.31.22.1/24")],
+            )
+        ],
+    )
+    runner.deploy(topology, lab_dir, confirm=True)
+    try:
+        yield topology
+    finally:
+        runner.undeploy(topology, lab_dir)
+
+
+def shell(lab_dir: Path, command: list[str]) -> str:
+    from Kathara.manager.Kathara import Kathara
+    from Kathara.parser.netkit.LabParser import LabParser
+
+    lab = LabParser.parse(str(lab_dir))
+    stdout, _, _ = Kathara.get_instance().exec("r1", command, lab=lab, wait=False, stream=False)
+    return stdout.decode(errors="replace") if isinstance(stdout, bytes) else str(stdout)
+
+
+def test_a_loopback_from_the_canvas_is_on_lo_in_the_container(
+    with_loopback: Topology, lab_dir: Path
+) -> None:
+    assert "10.255.0.1/32" in shell(lab_dir, ["ip", "-o", "-4", "addr", "show", "dev", "lo"])
+
+
+def test_a_loopback_added_inside_the_container_is_captured_into_the_startup_file(
+    with_loopback: Topology, lab_dir: Path
+) -> None:
+    """Bug 30: "I set a lo address but capturing did not put it in the startup files"."""
+    shell(lab_dir, ["ip", "address", "add", "10.255.0.2/32", "dev", "lo"])
+
+    updated = state.recover_addresses(with_loopback, lab_dir)
+    assert updated.node("r1").loopbacks == ["10.255.0.1/32", "10.255.0.2/32"]
+
+    # The .startup file follows the model, as the capture endpoint does.
+    scenario.save(updated, lab_dir)
+    assert "ip address add 10.255.0.2/32 dev lo" in (lab_dir / "r1.startup").read_text()

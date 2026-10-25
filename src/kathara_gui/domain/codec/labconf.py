@@ -12,6 +12,7 @@ state travels in a small, greppable comment block::
     # kgui:node r1 pos=120,340 kind=router daemons=zebra,ospfd
     # kgui:cd A subnet=10.0.0.0/24 pos=300,120
     # kgui:iface r1:0 ip=10.0.0.1/24
+    # kgui:lo r1 ip=10.255.0.1/32,10.255.0.11/32
 
     r1[0]="A"
 
@@ -59,7 +60,7 @@ _LAB_META_FIELDS = {
 _FIELD_TO_LAB_META = {v: k for k, v in _LAB_META_FIELDS.items()}
 
 # lab.conf options mapped onto typed model fields; anything else is passed through.
-_MODELLED_OPTIONS = {"image", "mem", "cpus", "bridged"}
+_MODELLED_OPTIONS = {"image", "mem", "cpus", "bridged", "privileged"}
 
 
 @dataclass
@@ -110,6 +111,7 @@ def parse(text: str) -> ParseResult:
     kgui_nodes: dict[str, dict[str, str]] = {}
     kgui_ifaces: dict[str, dict[str, str]] = {}
     kgui_cds: dict[str, dict[str, str]] = {}
+    kgui_los: dict[str, dict[str, str]] = {}
 
     def device(name: str) -> dict:
         return devices.setdefault(name, {"interfaces": {}, "options": {}})
@@ -134,6 +136,8 @@ def parse(text: str) -> ParseResult:
                 kgui_ifaces[subject] = _parse_kv(kv)
             elif record == "cd":
                 kgui_cds[subject] = _parse_kv(kv)
+            elif record == "lo":
+                kgui_los[subject] = _parse_kv(kv)
             continue
 
         lab_match = _LAB_META.match(line)
@@ -201,6 +205,7 @@ def parse(text: str) -> ParseResult:
 
         daemons = [d for d in hints.get("daemons", "").split(",") if d]
         kind = hints.get("kind", "router")
+        loopbacks = [a for a in kgui_los.get(name, {}).get("ip", "").split(",") if a]
 
         try:
             nodes.append(
@@ -211,9 +216,11 @@ def parse(text: str) -> ParseResult:
                     memory=options.get("mem"),
                     cpus=cpus,
                     bridged=options.get("bridged", "").lower() in {"true", "1", "yes"},
+                    privileged=options.get("privileged", "").lower() in {"true", "1", "yes"},
                     position=position,
                     interfaces=interfaces,
                     daemons=daemons,
+                    loopbacks=loopbacks,
                     extra_options={
                         k: v for k, v in options.items() if k not in _MODELLED_OPTIONS
                     },
@@ -291,6 +298,8 @@ def serialize(topology: Topology) -> str:
             lines.append(f"{node.name}[cpus]={_quote(_format_number(node.cpus))}")
         if node.bridged:
             lines.append(f"{node.name}[bridged]={_quote('true')}")
+        if node.privileged:
+            lines.append(f"{node.name}[privileged]={_quote('true')}")
         for key in sorted(node.extra_options):
             lines.append(f"{node.name}[{key}]={_quote(node.extra_options[key])}")
 
@@ -332,6 +341,10 @@ def _render_kgui_block(topology: Topology) -> list[str]:
         for iface in sorted(node.interfaces, key=lambda i: i.number):
             if iface.ip:
                 records.append(f"# {MARKER}:iface {node.name}:{iface.number} ip={iface.ip}")
+
+    for node in topology.nodes:
+        if node.loopbacks:
+            records.append(f"# {MARKER}:lo {node.name} ip={','.join(node.loopbacks)}")
 
     if not records:
         return []

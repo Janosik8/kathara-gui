@@ -274,18 +274,27 @@ reported is traced in three places. The tester's words go on the step's `Notes:`
 `bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.
 
-The striking result is how much the automated suite missed. Every finding from F20 to F27,
-eight in all, came from this run, and in each case every test passed beforehand:
+The striking result is how much the automated suite missed. Every finding from F20 to F29,
+ten in all, came from this run, and in each case every test passed beforehand:
 
 - **Platform behaviour no test could reproduce.** The documented commands did not run in a
   PowerShell with the default execution policy (F21, F22), and the "open a shell" command
   failed on Windows (F20).
 - **Failures that were handled but never shown on screen** (F23, and the unflagged address
-  in F24).
+  in F24). The same pattern recurred in F29: a refused edit while the lab ran explained
+  itself to the keyboard but not to the mouse.
 - **Pointer behaviour that jsdom does not model.** A single pixel of hand movement turned a
   click into a drag (F24). A dragged segment node snapped back (F27).
 - **Kathará's own constraints, which the editor did not enforce.** Kathará refuses gaps in
-  interface numbering (F26), and Save wrote into another scenario's folder (F25).
+  interface numbering (F26) and uppercase device names (F28), and Save wrote into another
+  scenario's folder (F25).
+
+One report is worth singling out. The tester described the read-only lock as returning
+"after a second" on reload, and judged it harmless. The cause was that the design rendered
+before the server had answered whether the lab was running, so for that second it could be
+edited (F29). That is exactly what the lock exists to prevent. A tester's own reading of
+severity is evidence, but it is not the diagnosis, and every report was traced to its
+cause before it was judged.
 
 Where a defect could be pinned down by a test once it was understood, a test was added: F26
 is now checked against Kathará's own parser. Where it could not, the fix was confirmed by

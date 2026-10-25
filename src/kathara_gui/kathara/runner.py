@@ -19,9 +19,10 @@ from typing import Any
 
 from Kathara.manager.Kathara import Kathara
 from Kathara.parser.netkit.LabParser import LabParser
-from Kathara.utils import generate_urlsafe_hash
+from Kathara.utils import generate_urlsafe_hash, is_admin
 
 from kathara_gui.domain.model import Topology
+from kathara_gui.domain.naming import kathara_name_problem
 from kathara_gui.kathara.readiness import StartupTimeout, wait_for_lab
 from kathara_gui.project.labdir import write_lab
 
@@ -263,6 +264,18 @@ def _load(topology: Topology, lab_dir: Path) -> tuple[Any, Path]:
     return LabParser.parse(str(directory)), directory
 
 
+def privilege_message(devices: list[str]) -> str:
+    """Why a lab with privileged devices cannot start here, and what to do."""
+    names = ", ".join(devices)
+    which = "is set" if len(devices) == 1 else "are set"
+    return (
+        f"Could not deploy: {names} {which} to run privileged, which Kathará allows only "
+        "when this application runs as administrator (Windows: open PowerShell with "
+        "Run as administrator) or as root (macOS, Linux: sudo). Start it that way, "
+        "or untick Privileged."
+    )
+
+
 def deploy(
     topology: Topology, lab_dir: Path, *, confirm: bool = False, timeout: float = 180.0
 ) -> LabStatus:
@@ -281,6 +294,18 @@ def deploy(
     """
     if not topology.nodes:
         return LabStatus(message="There is nothing to deploy.")
+
+    # Kathará's refusal names one device and not the rule ("Invalid device
+    # name `R1`."), so say what it accepts, for every device at once.
+    refused = [p for p in map(kathara_name_problem, (n.name for n in topology.nodes)) if p]
+    if refused:
+        return LabStatus(message="Could not deploy. " + " ".join(refused))
+
+    # Kathará refuses this too, but only after creating the lab's networks,
+    # and as "You must be root", which on Windows means nothing.
+    privileged = [n.name for n in topology.nodes if n.privileged]
+    if privileged and not is_admin():
+        return LabStatus(message=privilege_message(privileged))
 
     manager = Kathara.get_instance()
     notes: list[str] = []

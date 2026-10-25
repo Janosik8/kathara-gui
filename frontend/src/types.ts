@@ -26,17 +26,34 @@ export const DEFAULT_IMAGES: Record<DeviceKind, string> = {
   server: "kathara/base",
 };
 
-/** FRR daemons the backend knows how to enable. */
-export const KNOWN_DAEMONS = [
-  "zebra",
-  "bgpd",
-  "ospfd",
-  "ospf6d",
-  "ripd",
-  "ripngd",
-  "isisd",
-  "staticd",
+/**
+ * Every FRR daemon the backend can enable, with what it is for, in the order
+ * shown. Mirrors `KNOWN_DAEMONS` in `domain/model.py`.
+ */
+export const DAEMONS = [
+  ["zebra", "routing table; always needed"],
+  ["staticd", "static routes"],
+  ["bgpd", "BGP"],
+  ["ospfd", "OSPFv2"],
+  ["ospf6d", "OSPFv3, IPv6"],
+  ["ripd", "RIP"],
+  ["ripngd", "RIPng, IPv6"],
+  ["isisd", "IS-IS"],
+  ["fabricd", "OpenFabric"],
+  ["eigrpd", "EIGRP"],
+  ["babeld", "Babel"],
+  ["ldpd", "MPLS LDP"],
+  ["pimd", "PIM multicast"],
+  ["pim6d", "PIM multicast, IPv6"],
+  ["nhrpd", "NHRP, for DMVPN"],
+  ["bfdd", "BFD"],
+  ["pbrd", "policy-based routing"],
+  ["vrrpd", "VRRP"],
+  ["pathd", "segment-routing paths"],
+  ["sharpd", "FRR's test daemon"],
 ] as const;
+
+export const KNOWN_DAEMONS = DAEMONS.map(([name]) => name);
 
 export interface Position {
   x: number;
@@ -69,6 +86,10 @@ export interface Node {
   memory?: string | null;
   cpus?: number | null;
   bridged: boolean;
+  /** Run the container privileged; Kathará allows it only as administrator or root. */
+  privileged?: boolean;
+  /** Addresses on `lo` beyond 127.0.0.1, in CIDR form, e.g. 10.255.0.1/32. */
+  loopbacks?: string[];
   position: Position;
   interfaces: Interface[];
   daemons: string[];

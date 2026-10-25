@@ -21,6 +21,7 @@ import type {
   LinkCheck,
   StatusResponse,
 } from "../api/client";
+import { DismissButton } from "./DismissButton";
 
 /** "5 devices in 2 labs", in words. */
 function describeEverything({ devices, labs }: EverythingResponse): string {
@@ -129,6 +130,8 @@ export function LabPanel({
   const [confirmingStop, setConfirmingStop] = useState(false);
   const [confirmingWipe, setConfirmingWipe] = useState(false);
   const [shellDevice, setShellDevice] = useState<string | null>(null);
+  // The message closed by hand; a different one shows again.
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const blockers = environment.filter((c) => c.status === "blocked");
   const deployed = status?.deployed ?? false;
   const exited = status?.exited ?? [];
@@ -335,7 +338,15 @@ export function LabPanel({
         </div>
       )}
 
-      {status?.message && <p className="lab__message">{status.message}</p>}
+      {status?.message && status.message !== dismissed && (
+        <div className="dismissible">
+          <DismissButton
+            label="Close this message"
+            onDismiss={() => setDismissed(status.message ?? null)}
+          />
+          <p className="lab__message">{status.message}</p>
+        </div>
+      )}
 
       {exited.length > 0 && (
         // The symptom this explains is baffling on its own: `kathara list`

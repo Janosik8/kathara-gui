@@ -20,6 +20,8 @@ export interface DeviceNodeData extends Record<string, unknown> {
   label: string;
   kind: DeviceKind;
   interfaces: Interface[];
+  /** Loopback addresses, shown under the name (FR-09 names `lo` too). */
+  loopbacks?: string[];
   /** Which side each interface sits on, decided by `computePlacements`. */
   placements: DevicePlacements;
   pending?: boolean;
@@ -49,7 +51,7 @@ const GLYPH: Record<DeviceKind, string> = {
 };
 
 export function DeviceNode({ data, selected }: NodeProps) {
-  const { label, kind, interfaces, placements, pending } = data as DeviceNodeData;
+  const { label, kind, interfaces, loopbacks, placements, pending } = data as DeviceNodeData;
 
   return (
     <div
@@ -62,6 +64,11 @@ export function DeviceNode({ data, selected }: NodeProps) {
       </span>
       <span className="device__name">{label}</span>
       <span className="device__kind">{kind}</span>
+      {loopbacks?.map((address) => (
+        <span key={address} className="device__lo">
+          lo {address}
+        </span>
+      ))}
 
       {interfaces.map((iface) => {
         const { position, offset } = placements.get(iface.number) ?? {

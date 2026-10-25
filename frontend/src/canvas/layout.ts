@@ -236,3 +236,48 @@ export function computePlacements(topology: Topology): Map<string, DevicePlaceme
 
   return result;
 }
+
+/**
+ * Where a line from `toward` to the centre of a pill-shaped node crosses its
+ * outline. A shared segment is drawn as a pill (`border-radius: 999px`): a
+ * rectangle with a semicircle at each end, or the other way up when it is
+ * taller than wide.
+ *
+ * Links used to end at the node's single top handle, so every one crossed
+ * the node and ran over its label (test step 3B.4). Ending each where it
+ * meets the outline, on the side it comes from, leaves the label clear.
+ */
+export function pillBoundary(
+  centre: Point,
+  width: number,
+  height: number,
+  toward: Point,
+): Point {
+  const dx = toward.x - centre.x;
+  const dy = toward.y - centre.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0 || width <= 0 || height <= 0) return centre;
+  const ux = dx / length;
+  const uy = dy / length;
+
+  // Lay the pill horizontally: swap axes if it stands upright.
+  const upright = height > width;
+  const [ax, ay] = upright ? [uy, ux] : [ux, uy];
+  const [long, short] = upright ? [height, width] : [width, height];
+  const radius = short / 2;
+  const straight = long / 2 - radius; // half the length of the flat sides
+
+  // The flat side first; outside it, the end cap's circle.
+  let distance: number;
+  const toFlat = ay !== 0 ? radius / Math.abs(ay) : Infinity;
+  if (Math.abs(ax * toFlat) <= straight) {
+    distance = toFlat;
+  } else {
+    // |t·a − c|² = r², with c the cap's centre on the side the line heads.
+    const cx = Math.sign(ax) * straight;
+    const b = ax * cx;
+    distance = b + Math.sqrt(b * b - (cx * cx - radius * radius));
+  }
+
+  return { x: centre.x + ux * distance, y: centre.y + uy * distance };
+}

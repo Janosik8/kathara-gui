@@ -305,3 +305,20 @@ def test_a_gap_in_interface_numbers_is_what_kathara_refuses(tmp_path: Path) -> N
     fixed, _ = gap.compacted()
     lab = LabParser.parse(str(write_lab(fixed, tmp_path / "fixed")))
     assert list(lab.machines["r2"].interfaces) == [0]
+
+
+def test_privileged_reaches_kathara(tmp_path: Path) -> None:
+    """Bug 31: Kathará reads `r1[privileged]` itself, so it must arrive as such."""
+    topo = Topology(
+        nodes=[
+            Node(
+                name="r1",
+                privileged=True,
+                interfaces=[Interface(number=0, collision_domain="A")],
+            ),
+            Node(name="r2", interfaces=[Interface(number=0, collision_domain="A")]),
+        ]
+    )
+    lab = LabParser.parse(str(write_lab(topo, tmp_path / "lab")))
+    assert lab.machines["r1"].is_privileged() is True
+    assert lab.machines["r2"].is_privileged() is False

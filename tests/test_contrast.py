@@ -114,6 +114,9 @@ TEXT_PAIRS = [
     # The header turns loud when the canvas has drifted from the running lab.
     # Loud is no use if it stops the title being readable.
     ("the title on a drifted header", "--fg", "--bg-header-drift"),
+    # And red while the lab runs and the design is read-only (test step 3A.2).
+    ("the title on a locked header", "--fg", "--bg-header-locked"),
+    ("the read-only badge", "--danger-fg", "--danger"),
     # The two working areas have surfaces of their own, so every pairing that
     # text actually lands on has to be checked, not just the generic panel.
     ("the device block's accent as text", "--device", "--bg-panel-devices"),
@@ -203,6 +206,16 @@ def test_the_drifted_header_is_unmistakably_not_the_normal_one() -> None:
     for theme, palette in THEMES:
         distance = channel_distance(palette["--bg-header-drift"], palette["--bg-panel"])
         assert distance >= 60, f"{theme}: the drifted header barely differs ({distance})"
+
+
+def test_the_locked_header_is_neither_the_normal_one_nor_the_drifted_one() -> None:
+    """Test step 3A.2: "it should be more bright, like red". Red and amber
+    differ in hue more than this crude distance shows, so the bar is lower."""
+    for theme, palette in THEMES:
+        normal = channel_distance(palette["--bg-header-locked"], palette["--bg-panel"])
+        assert normal >= 60, f"{theme}: the locked header barely differs ({normal})"
+        drift = channel_distance(palette["--bg-header-locked"], palette["--bg-header-drift"])
+        assert drift >= 40, f"{theme}: locked and drifted look alike ({drift})"
 
 
 def test_the_device_and_laboratory_blocks_are_different_colours() -> None:

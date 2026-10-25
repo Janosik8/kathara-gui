@@ -11,10 +11,31 @@ import {
   DEFAULT_IMAGES,
   DEVICE_KINDS,
   type DeviceKind,
-  KNOWN_DAEMONS,
+  DAEMONS,
   type Node,
   type Topology,
 } from "../types";
+
+/**
+ * Why a loopback address would be refused, or null. The server refuses the
+ * same things; checking here keeps the draft in the field with a reason
+ * instead of a failed request (bug 28).
+ */
+export function validateLoopback(value: string, existing: string[] = []): string | null {
+  const text = value.trim();
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(text);
+  if (v4) {
+    if (v4.slice(1, 5).some((o) => Number(o) > 255)) return "Each octet must be 0-255.";
+    if (Number(v4[5]) > 32) return "The prefix must be /32 or shorter.";
+    if (v4[1] === "127") return "127.0.0.0/8 is already on lo in every container.";
+  } else if (!/^[0-9a-fA-F:]*:[0-9a-fA-F:]*\/\d{1,3}$/.test(text)) {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(text)
+      ? `Add a prefix, usually ${text}/32.`
+      : "Use CIDR form, for example 10.255.0.1/32.";
+  }
+  if (existing.includes(text)) return `${text} is already on lo.`;
+  return null;
+}
 
 interface Props {
   topology: Topology;
@@ -44,8 +65,18 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
     );
   }
 
+  const routers = topology.nodes.filter((n) => n.kind === "router" && n.name !== node.name);
+  const otherRouters = routers.length;
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((d) => b.includes(d));
+  // Nothing to apply when every router already runs exactly these.
+  const allMatch = routers.every((r) => sameSet(r.daemons, node.daemons));
+
   const update = (changes: Partial<Omit<Node, "name">>) =>
     onDispatch({ type: "updateNode", name: node.name, changes });
+
+  const loopbacks = node.loopbacks ?? [];
+  const setLoopbacks = (next: string[]) => update({ loopbacks: next });
 
   const toggleDaemon = (daemon: string, on: boolean) => {
     const daemons = on
@@ -110,18 +141,45 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
         onCommit={(memory) => update({ memory: memory || null })}
       />
 
+      <div className="field">
+        <label className="checkbox" htmlFor="inspector-privileged">
+          <input
+            id="inspector-privileged"
+            type="checkbox"
+            checked={node.privileged ?? false}
+            onChange={(e) => update({ privileged: e.target.checked })}
+            aria-describedby="inspector-privileged-hint"
+          />
+          Privileged
+        </label>
+        <p className="field__hint" id="inspector-privileged-hint">
+          Full access to the host kernel, for MPLS or kernel modules. Kathará allows it only
+          when this application runs as administrator (Windows) or root (macOS, Linux).
+        </p>
+      </div>
+
       <fieldset className="field field--group">
         <legend>Routing daemons</legend>
-        {KNOWN_DAEMONS.map((daemon) => (
+        {DAEMONS.map(([daemon, purpose]) => (
           <label key={daemon} className="checkbox">
             <input
               type="checkbox"
               checked={node.daemons.includes(daemon)}
               onChange={(e) => toggleDaemon(daemon, e.target.checked)}
             />
-            {daemon}
+            {daemon} <span className="checkbox__hint">{purpose}</span>
           </label>
         ))}
+        {node.kind === "router" && otherRouters > 0 && (
+          <button
+            type="button"
+            className="daemons__apply"
+            onClick={() => onDispatch({ type: "applyDaemons", from: node.name })}
+            disabled={allMatch}
+          >
+            Apply to all routers
+          </button>
+        )}
       </fieldset>
 
       <h3 className="panel__heading">Interfaces</h3>
@@ -162,6 +220,51 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
           ))}
         </ul>
       )}
+
+      <h3 className="panel__heading">Loopback (lo)</h3>
+      <p className="field__hint">
+        Extra addresses on <code>lo</code>, for a router ID or an address that stays up
+        whichever link is down. Usually a /32.
+      </p>
+      <ul className="interface-list">
+        {loopbacks.map((address, index) => (
+          <li key={address} className="interface-list__item">
+            <CommittedInput
+              id={`inspector-lo-${index}`}
+              label={`Loopback address ${index + 1}`}
+              value={address}
+              validate={(value) => (value.trim() === "" ? null : validateLoopback(value))}
+              // Emptying the field removes the address.
+              onCommit={(value) =>
+                setLoopbacks(
+                  value.trim() === ""
+                    ? loopbacks.filter((_, i) => i !== index)
+                    : loopbacks.map((a, i) => (i === index ? value.trim() : a)),
+                )
+              }
+            />
+            <button
+              type="button"
+              onClick={() => setLoopbacks(loopbacks.filter((_, i) => i !== index))}
+            >
+              Remove {address}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <CommittedInput
+        // A fresh field after each addition, rather than one still holding
+        // the address just added.
+        key={loopbacks.length}
+        id="inspector-lo-new"
+        label="Add a loopback address"
+        value=""
+        placeholder="e.g. 10.255.0.1/32"
+        validate={(value) => (value.trim() === "" ? null : validateLoopback(value, loopbacks))}
+        onCommit={(value) => {
+          if (value.trim()) setLoopbacks([...loopbacks, value.trim()]);
+        }}
+      />
     </section>
   );
 }

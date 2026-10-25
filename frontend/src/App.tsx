@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
 import {
@@ -120,6 +120,8 @@ export function whereInTopology(
 
 /** Said whenever an edit is refused because the lab is deployed. */
 const LOCKED_NOTICE = "The lab is running, so the design is read-only. Stop the lab to edit it.";
+const CHECKING_NOTICE =
+  "Checking whether this lab is running. The design can be edited once that is known.";
 
 /** Narrower than this and the panel's own controls stop fitting. */
 const PANEL_MIN = 208;
@@ -222,7 +224,16 @@ export default function App() {
    * whether to keep it. `deployed`, not `running`, so exited containers,
    * which still hold their names, keep the design locked too.
    */
-  const locked = labStatus?.deployed ?? false;
+  const running = labStatus?.deployed ?? false;
+  /**
+   * True from page load until the server has said whether the lab is
+   * running. The design shows before that answer, which takes about a
+   * second, and was editable meanwhile (test step 3A.6): an edit then would
+   * have changed a running lab's design.
+   */
+  const [checkingLab, setCheckingLab] = useState(true);
+  const locked = running || checkingLab;
+  const lockNotice = running ? LOCKED_NOTICE : CHECKING_NOTICE;
 
   /**
    * Every edit goes through here, so no control — button, shortcut, drag or
@@ -231,7 +242,7 @@ export default function App() {
   const edit = useCallback(
     (op: Operation): boolean => {
       if (locked) {
-        setNotice(LOCKED_NOTICE);
+        setNotice(lockNotice);
         return false;
       }
       const applied = dispatch(op);
@@ -239,20 +250,34 @@ export default function App() {
       if (applied) setNotice(null);
       return applied;
     },
-    [dispatch, locked],
+    [dispatch, locked, lockNotice],
+  );
+
+  /**
+   * A press on a control the lock has disabled. Disabled controls fire no
+   * click, so without this a press did nothing and said nothing (test step
+   * 3A.3); the note above the panel was easy to miss.
+   */
+  const refuseLocked = useCallback(
+    (event: PointerEvent) => {
+      if (locked && event.target instanceof Element && event.target.closest(":disabled")) {
+        setNotice(lockNotice);
+      }
+    },
+    [locked, lockNotice],
   );
 
   const undoEdit = useCallback(() => {
-    if (locked) return setNotice(LOCKED_NOTICE);
+    if (locked) return setNotice(lockNotice);
     setNotice(null);
     undo();
-  }, [locked, undo]);
+  }, [locked, lockNotice, undo]);
 
   const redoEdit = useCallback(() => {
-    if (locked) return setNotice(LOCKED_NOTICE);
+    if (locked) return setNotice(lockNotice);
     setNotice(null);
     redo();
-  }, [locked, redo]);
+  }, [locked, lockNotice, redo]);
 
   useEffect(() => {
     api
@@ -269,7 +294,8 @@ export default function App() {
           // No daemon, or no answer: treat as not deployed, as the probe will.
         }
       })
-      .catch((err) => fail(err));
+      .catch((err) => fail(err))
+      .finally(() => setCheckingLab(false));
   }, [load]);
 
   // Drop devices that an edit or an undo removed, so neither an alignment nor a
@@ -790,11 +816,13 @@ export default function App() {
   // Save as and Open, from the header. Focus goes back to the button that
   // opened the strip when it closes, so a keyboard user is not dropped at
   // the top of the page.
+  const newButton = useRef<HTMLButtonElement>(null);
   const saveAsButton = useRef<HTMLButtonElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
 
   const closeDialog = useCallback(() => {
-    (scenarioDialog === "saveAs" ? saveAsButton : openButton).current?.focus();
+    const opener = { new: newButton, saveAs: saveAsButton, open: openButton };
+    if (scenarioDialog) opener[scenarioDialog].current?.focus();
     setScenarioDialog(null);
   }, [scenarioDialog]);
 
@@ -850,6 +878,35 @@ export default function App() {
     },
     [adopt],
   );
+
+  /**
+   * An empty scenario with no folder, so the next Save asks for nothing and
+   * cannot overwrite the scenario that was open (bug 27). The server resets
+   * too: Save writes to the folder the session has open (F25).
+   */
+  const newScenario = useCallback(async () => {
+    setScenarioBusy("new");
+    try {
+      const state = await api.reset();
+      load(state.topology);
+      setFolder(null);
+      setImportWarnings([]);
+      setCapture(null);
+      setLabStatus(null);
+      setDiagnostics(null);
+      setSelected([]);
+      setSelectedLink(null);
+      // A new scenario starts without an exam's restrictions.
+      setCanAllocate(true);
+      setCanValidate(true);
+      setCanVerify(true);
+      setStatus("Started a new scenario.");
+    } catch (err) {
+      fail(err);
+    } finally {
+      setScenarioBusy(null);
+    }
+  }, [load]);
 
   const importScenario = useCallback(
     async (file: File) => {
@@ -947,7 +1004,7 @@ export default function App() {
       }
       if (!meta && event.key.toLowerCase() === "c" && canConnect) {
         event.preventDefault();
-        if (locked) setNotice(LOCKED_NOTICE);
+        if (locked) setNotice(lockNotice);
         else toggleConnectMode();
         return;
       }
@@ -969,6 +1026,7 @@ export default function App() {
     undoEdit,
     redoEdit,
     locked,
+    lockNotice,
     topology,
     removeSelected,
     selected,
@@ -990,7 +1048,11 @@ export default function App() {
       {/* The drift warning lives here as well as in the Laboratory panel: it
           was being missed in the panel, and it changes what every other
           control in the application means. */}
-      <header className="app__header" data-drift={driftCount > 0 ? "true" : undefined}>
+      <header
+        className="app__header"
+        data-drift={driftCount > 0 ? "true" : undefined}
+        data-locked={running ? "true" : undefined}
+      >
         <h1 className="app__title">
           Kathara GUI
           <LabTitle
@@ -999,7 +1061,10 @@ export default function App() {
             onRename={(name) => edit({ type: "setLabMetadata", changes: { name } })}
             onAnnounce={setStatus}
           />
-          {locked && driftCount === 0 && (
+          {checkingLab && !running && (
+            <span className="app__checking">Checking whether the lab is running…</span>
+          )}
+          {running && driftCount === 0 && (
             // Said in words beside the name, because every editing control
             // on the page is about to refuse, and that needs a reason.
             <span className="app__locked">Lab running — design is read-only</span>
@@ -1033,6 +1098,16 @@ export default function App() {
             disabled={locked || (selected.length === 0 && !selectedLink)}
           >
             {selectedLink ? "Delete link" : "Delete"}
+          </button>
+          <button
+            type="button"
+            ref={newButton}
+            aria-expanded={scenarioDialog === "new"}
+            onClick={() => toggleDialog("new")}
+            // Like Open: it would swap the design out from under a running lab.
+            disabled={scenarioBusy !== null || locked}
+          >
+            New…
           </button>
           <button
             type="button"
@@ -1071,6 +1146,7 @@ export default function App() {
           scenarios={scenarios}
           onSaveAs={(name) => void save(name)}
           onOpen={openScenario}
+          onNew={() => void newScenario()}
           onClose={closeDialog}
         />
       )}
@@ -1092,12 +1168,12 @@ export default function App() {
 
           <div className="panel__scroll">
 
-          {locked && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
+          {running && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
 
           {/* A disabled fieldset disables every control inside it natively,
               so each stays visible and readable — a screen reader announces
               it as unavailable rather than losing it — and none can act. */}
-          <fieldset className="edit-lock" disabled={locked}>
+          <fieldset className="edit-lock" disabled={locked} onPointerDown={refuseLocked}>
             <Palette topology={topology} onAdd={addDevice} />
 
             <CollisionDomainsPanel topology={topology} onDispatch={edit} />
@@ -1148,6 +1224,7 @@ export default function App() {
             selectedLink={selectedLink}
             connectMode={connectMode}
             locked={locked}
+            onLockedEdit={() => setNotice(lockNotice)}
           />
         </main>
 
@@ -1167,9 +1244,9 @@ export default function App() {
 
           <div className="panel__scroll">
 
-          {locked && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
+          {running && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
 
-          <fieldset className="edit-lock" disabled={locked}>
+          <fieldset className="edit-lock" disabled={locked} onPointerDown={refuseLocked}>
             <Inspector topology={topology} selected={selected} onDispatch={edit} />
             <AddressingPanel
               issues={issues}
@@ -1197,6 +1274,7 @@ export default function App() {
             anyRunning={(labStatus?.running.length ?? 0) > 0}
             locked={locked}
             capture={capture}
+            onDismissCapture={() => setCapture(null)}
             importWarnings={importWarnings}
             onExport={exportScenario}
             onImport={importScenario}

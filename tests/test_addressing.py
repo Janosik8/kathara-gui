@@ -121,6 +121,20 @@ def test_overlapping_planned_subnets() -> None:
     assert "overlapping_subnets" in codes(validate(topo))
 
 
+def test_overlap_is_a_warning_because_a_vpn_lab_means_it() -> None:
+    """Bug 23: the same subnet on both sides of a VPN was reported as an error."""
+    topo = topology(("r1", [(0, "A", "10.9.0.1/24")]), ("r2", [(0, "B", "10.9.0.1/24")]))
+    topo.collision_domains = [
+        CollisionDomain(name="A", subnet="10.9.0.0/24"),
+        CollisionDomain(name="B", subnet="10.9.0.0/24"),
+    ]
+    issues = [i for i in validate(topo) if i.code == "overlapping_subnets"]
+    assert [i.severity for i in issues] == [Severity.WARNING]
+    assert "VPN" in issues[0].message
+    # Nor is the same host address on two separate domains a duplicate.
+    assert not [i for i in validate(topo) if i.severity is Severity.ERROR]
+
+
 def test_adjacent_subnets_do_not_overlap() -> None:
     topo = topology(("r1", [(0, "A", None)]), ("r2", [(0, "B", None)]))
     topo.collision_domains = [
@@ -249,6 +263,22 @@ def test_a_prefix_larger_than_the_pool_is_refused() -> None:
     topo = topology(("r1", [(0, "A", None)]))
     with pytest.raises(ValueError, match="larger than the pool"):
         allocate(topo, pool="10.0.0.0/24", prefix=16)
+
+
+def test_a_pool_with_host_bits_set_is_refused_with_both_readings() -> None:
+    """Test step 3B.1: 192.168.0.0/8 was silently read as 192.0.0.0/8."""
+    topo = topology(("r1", [(0, "A", None)]))
+    with pytest.raises(ValueError) as caught:
+        allocate(topo, pool="192.168.0.0/8", prefix=24)
+    message = str(caught.value)
+    assert "192.0.0.0/8" in message  # what the mask means
+    assert "192.168.0.0/16" in message  # what the address means
+
+
+def test_a_pool_that_is_not_an_address_says_so() -> None:
+    topo = topology(("r1", [(0, "A", None)]))
+    with pytest.raises(ValueError, match="not an address pool"):
+        allocate(topo, pool="ten dot zero", prefix=24)
 
 
 def test_running_out_of_host_addresses_is_reported_not_silent() -> None:

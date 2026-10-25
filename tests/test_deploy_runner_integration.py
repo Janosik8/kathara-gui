@@ -160,6 +160,16 @@ def test_deploying_nothing_says_so(lab_dir: Path) -> None:
     assert status.message == "There is nothing to deploy."
 
 
+def test_a_name_kathara_refuses_is_explained_before_deploying(lab_dir: Path) -> None:
+    """Bug 25: Kathará's own refusal names one device and not the rule."""
+    topology = Topology(name="kgui-names", nodes=[Node(name="R1"), Node(name="edge-1")])
+    status = runner.deploy(topology, lab_dir, confirm=True)
+    assert status.deployed is False
+    assert "lowercase letters, digits and underscores" in status.message
+    assert "'R1'" in status.message and "'edge-1'" in status.message
+    assert "'edge_1'" in status.message
+
+
 # -- redeploying over a running lab ------------------------------------
 
 
@@ -432,3 +442,15 @@ def test_wipe_stops_every_lab_at_once(tmp_path: Path) -> None:
     finally:
         runner.undeploy(first, tmp_path / "first")
         runner.undeploy(second, tmp_path / "second")
+
+
+def test_privileged_without_administrator_is_explained_before_deploying(
+    lab_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bug 31: Kathará's own refusal is "You must be root", even on Windows."""
+    monkeypatch.setattr(runner, "is_admin", lambda: False)
+    topology = Topology(name="kgui-privileged", nodes=[Node(name="r1", privileged=True)])
+    status = runner.deploy(topology, lab_dir, confirm=True)
+    assert status.deployed is False
+    assert "r1 is set to run privileged" in status.message
+    assert "Run as administrator" in status.message and "sudo" in status.message

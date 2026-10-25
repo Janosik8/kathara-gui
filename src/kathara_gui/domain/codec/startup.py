@@ -52,6 +52,10 @@ def render_startup(node: Node) -> str:
         if iface.ip:
             body.append(f"ip address add {iface.ip} dev {iface.name}")
 
+    for address in node.loopbacks:
+        # lo is up in every container already; only the address is ours.
+        body.append(f"ip address add {address} dev lo")
+
     if node.kind == "switch":
         # A switch forwards rather than terminates traffic.
         body.append("sysctl -w net.ipv4.ip_forward=1")
@@ -119,6 +123,39 @@ def parse_startup(text: str) -> dict[int, str]:
             if number and cidr:
                 found.setdefault(int(number.group(1)), cidr)
 
+    return found
+
+
+#: ``ifconfig lo:0 10.255.0.1 netmask 255.255.255.255``: Netkit labs put extra
+#: loopback addresses on aliases.
+_IFCONFIG_LO = re.compile(
+    r"\bifconfig\s+lo(?::\w+)?\s+(\d+\.\d+\.\d+\.\d+)"
+    r"(?:\s*/\s*(\d{1,2})|\s+netmask\s+(\d+\.\d+\.\d+\.\d+))?",
+    re.IGNORECASE,
+)
+
+
+def parse_loopbacks(text: str) -> list[str]:
+    """Addresses a ``.startup`` script puts on ``lo``, apart from 127.0.0.1.
+
+    The counterpart of :func:`parse_startup` for the one interface that is not
+    ``ethN``, so a lab written by hand keeps its router IDs on import.
+    """
+    found: list[str] = []
+    for line in text.splitlines():
+        statement = line.split("#", 1)[0]
+        candidates = [
+            _as_cidr(m.group(1), None, None)
+            for m in _IP_ADDRESS.finditer(statement)
+            if m.group(2).lower() == "lo"
+        ]
+        candidates += [
+            _as_cidr(address, prefix, netmask)
+            for address, prefix, netmask in _IFCONFIG_LO.findall(statement)
+        ]
+        for cidr in candidates:
+            if cidr and not ipaddress.ip_interface(cidr).is_loopback and cidr not in found:
+                found.append(cidr)
     return found
 
 

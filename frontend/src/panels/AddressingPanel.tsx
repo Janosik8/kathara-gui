@@ -101,8 +101,10 @@ export function AddressingPanel({
             Renumber all
           </button>
           <p className="addressing__hint">
-            Assign fills in what is missing and leaves your own addresses and pinned subnets
-            alone. Renumber replaces every address and every subnet, including pinned ones.
+            <strong>Assign addresses</strong> keeps every subnet and address you typed, in
+            the Collision domains panel or on a device, and fills in only what is still
+            missing, from the pool. <strong>Renumber all</strong> discards them and numbers
+            everything afresh from the pool.
           </p>
         </div>
       ) : (

@@ -30,9 +30,33 @@ DEFAULT_IMAGES: dict[DeviceKind, str] = {
     "server": "kathara/base",
 }
 
-# FRR daemons the addressing/config generators know how to enable.
+# Every FRR daemon the `kathara/frr` image's /etc/frr/daemons can switch on,
+# plus zebra and staticd, which FRR always runs (bug 29 asked for ldpd and
+# "all the daemons that can be set on FRR"). A docker test reads the image's
+# own file, so a daemon added to FRR shows up as a failing test, not a gap.
 KNOWN_DAEMONS = frozenset(
-    ["zebra", "bgpd", "ospfd", "ospf6d", "ripd", "ripngd", "isisd", "staticd"]
+    [
+        "zebra",
+        "staticd",
+        "bgpd",
+        "ospfd",
+        "ospf6d",
+        "ripd",
+        "ripngd",
+        "isisd",
+        "fabricd",
+        "eigrpd",
+        "babeld",
+        "ldpd",
+        "pimd",
+        "pim6d",
+        "nhrpd",
+        "bfdd",
+        "pbrd",
+        "vrrpd",
+        "pathd",
+        "sharpd",
+    ]
 )
 
 
@@ -88,9 +112,23 @@ class Node(BaseModel):
     memory: str | None = Field(default=None, description="Kathara mem syntax, e.g. '128m'")
     cpus: float | None = None
     bridged: bool = False
+    privileged: bool = Field(
+        default=False,
+        description=(
+            "Run the container privileged (bug 31), e.g. for MPLS or kernel modules. "
+            "Kathará allows it only when it runs as administrator or root."
+        ),
+    )
     position: Position = Field(default_factory=Position)
     interfaces: list[Interface] = Field(default_factory=list)
     daemons: list[str] = Field(default_factory=list)
+    loopbacks: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Addresses on `lo` beyond 127.0.0.1, in CIDR form, e.g. 10.255.0.1/32: a "
+            "router ID, or an address that stays up whichever link is down (bug 28)."
+        ),
+    )
     extra_options: dict[str, str] = Field(
         default_factory=dict,
         description=(
@@ -103,6 +141,20 @@ class Node(BaseModel):
     @classmethod
     def _name_is_portable(cls, value: str) -> str:
         validate_device_name(value)
+        return value
+
+    @field_validator("loopbacks")
+    @classmethod
+    def _loopbacks_are_cidr(cls, value: list[str]) -> list[str]:
+        for address in value:
+            try:
+                parsed = ipaddress.ip_interface(address)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{address!r} is not a valid loopback address in CIDR form: {exc}"
+                ) from exc
+            if parsed.is_loopback:
+                raise ValueError(f"{address} is already on lo in every container.")
         return value
 
     @field_validator("daemons")

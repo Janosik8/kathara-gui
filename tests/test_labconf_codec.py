@@ -213,3 +213,24 @@ def test_an_unreadable_segment_position_is_reported_not_fatal() -> None:
     result = parse(text)
     assert result.topology.collision_domain("A").position is None
     assert any("could not read position" in w for w in result.warnings)
+
+
+def test_privileged_round_trips_as_a_typed_field() -> None:
+    """Bug 31: a typed switch, not an opaque extra option."""
+    topology = Topology(
+        nodes=[
+            Node(
+                name="r1",
+                privileged=True,
+                interfaces=[Interface(number=0, collision_domain="A")],
+            ),
+            Node(name="r2", interfaces=[Interface(number=0, collision_domain="A")]),
+        ]
+    )
+    text = serialize(topology)
+    assert 'r1[privileged]="true"' in text
+    assert "r2[privileged]" not in text
+    parsed = parse(text).topology
+    assert parsed.node("r1").privileged is True
+    assert parsed.node("r1").extra_options == {}
+    assert parsed.node("r2").privileged is False

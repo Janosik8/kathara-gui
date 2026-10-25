@@ -13,6 +13,7 @@ import {
   domainPosition,
   STUB_DISTANCE,
   preferredSide,
+  pillBoundary,
   segmentPosition,
 } from "./layout";
 
@@ -308,5 +309,47 @@ describe("an interface points at what its link actually reaches", () => {
     const t = topology(device("r1", 0, 0, ["A"]));
     // A is placed below r1, so the interface belongs on the bottom face.
     expect(computePlacements(t).get("r1")!.get(0)!.position).toBe("bottom");
+  });
+});
+
+describe("pillBoundary", () => {
+  // A 120×40 pill: flat top and bottom 80 long, a 20-radius cap at each end.
+  const centre = { x: 0, y: 0 };
+  const hit = (toward: { x: number; y: number }) => pillBoundary(centre, 120, 40, toward);
+  const close = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    expect(a.x).toBeCloseTo(b.x, 6);
+    expect(a.y).toBeCloseTo(b.y, 6);
+  };
+
+  it("ends a link from below on the bottom edge, not the top", () => {
+    // Test step 3B.4: every link ended at the top and crossed the label.
+    close(hit({ x: 0, y: 500 }), { x: 0, y: 20 });
+    close(hit({ x: 0, y: -500 }), { x: 0, y: -20 });
+  });
+
+  it("ends a link from the side on the tip of the end cap", () => {
+    close(hit({ x: 500, y: 0 }), { x: 60, y: 0 });
+    close(hit({ x: -500, y: 0 }), { x: -60, y: 0 });
+  });
+
+  it("lands on the cap's curve, at the radius from its centre", () => {
+    const p = hit({ x: 500, y: 100 }); // shallow enough to miss the flat side
+    expect(Math.hypot(p.x - 40, p.y)).toBeCloseTo(20, 6);
+    expect(p.x).toBeGreaterThan(40);
+  });
+
+  it("lies on the line from the centre towards the device", () => {
+    const toward = { x: 30, y: 400 };
+    const p = hit(toward);
+    expect(p.x / p.y).toBeCloseTo(toward.x / toward.y, 6);
+  });
+
+  it("handles a pill taller than wide", () => {
+    close(pillBoundary(centre, 40, 120, { x: 0, y: 500 }), { x: 0, y: 60 });
+    close(pillBoundary(centre, 40, 120, { x: 500, y: 0 }), { x: 20, y: 0 });
+  });
+
+  it("returns the centre when there is no direction", () => {
+    expect(hit(centre)).toEqual(centre);
   });
 });

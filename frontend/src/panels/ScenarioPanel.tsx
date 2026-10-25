@@ -15,6 +15,7 @@
 
 import { useRef } from "react";
 import type { CaptureResponse } from "../api/client";
+import { DismissButton } from "./DismissButton";
 
 interface Props {
   /** Null until the scenario has a folder on disk. */
@@ -31,6 +32,8 @@ interface Props {
    */
   locked?: boolean;
   capture: CaptureResponse | null;
+  /** Close the capture result. */
+  onDismissCapture?: () => void;
   /** Lines of an imported lab.conf that could not be understood. */
   importWarnings: string[];
   onExport: () => void;
@@ -51,6 +54,7 @@ export function ScenarioPanel({
   anyRunning,
   locked = false,
   capture,
+  onDismissCapture,
   importWarnings,
   onExport,
   onImport,
@@ -155,7 +159,10 @@ export function ScenarioPanel({
       )}
 
       {capture && (
-        <>
+        <div className="dismissible">
+          {onDismissCapture && (
+            <DismissButton label="Close the capture result" onDismiss={onDismissCapture} />
+          )}
           {capture.message && <p className="lab__message">{capture.message}</p>}
           {capture.captured.length > 0 && (
             <ul className="state-list" aria-label="Captured configuration">
@@ -184,7 +191,7 @@ export function ScenarioPanel({
               ))}
             </ul>
           )}
-        </>
+        </div>
       )}
     </section>
   );

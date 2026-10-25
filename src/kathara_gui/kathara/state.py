@@ -38,6 +38,7 @@ __all__ = [
     "capture",
     "live_addresses",
     "parse_ip_addr",
+    "parse_ip_addr_loopbacks",
     "recover_addresses",
 ]
 
@@ -129,6 +130,29 @@ def parse_ip_addr(output: str) -> dict[int, str]:
     return found
 
 
+def parse_ip_addr_loopbacks(output: str) -> list[str]:
+    """Addresses on ``lo`` (or an alias such as ``lo:0``) other than 127.0.0.1.
+
+    What a capture reads back as the device's loopbacks (bug 30: an address put
+    on ``lo`` inside the container was lost, because only ``ethN`` was read).
+    """
+    found: list[str] = []
+    for device, address in _IP_ADDR_LINE_ANY.findall(output):
+        if device.split(":", 1)[0] != "lo":
+            continue
+        try:
+            parsed = ipaddress.ip_interface(address)
+        except ValueError:
+            continue
+        if not parsed.is_loopback and str(parsed) not in found:
+            found.append(str(parsed))
+    return found
+
+
+#: As `_IP_ADDR_LINE`, but also matching an alias label such as ``lo:0``.
+_IP_ADDR_LINE_ANY = re.compile(r"^\d+:\s+([\w:]+)\s+inet\s+(\S+)", re.MULTILINE)
+
+
 def live_addresses(topology: Topology, lab_dir: Path) -> dict[str, dict[int, str]]:
     """Each running device's actual interface addresses, by device name.
 
@@ -183,11 +207,11 @@ def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
     nodes = []
     for node in topology.nodes:
         output, exit_code = _run(manager, lab, node.name, ["ip", "-o", "-4", "addr", "show"])
-        live = parse_ip_addr(output) if exit_code == 0 else {}
-
-        if not live:
+        if exit_code != 0:
+            # Not running, or not answering: nothing learned, nothing changed.
             nodes.append(node)
             continue
+        live = parse_ip_addr(output)
 
         interfaces = [
             iface.model_copy(update={"ip": live[iface.number]})
@@ -195,7 +219,11 @@ def recover_addresses(topology: Topology, lab_dir: Path) -> Topology:
             else iface
             for iface in node.interfaces
         ]
-        nodes.append(node.model_copy(update={"interfaces": interfaces}))
+        # IPv4 only, as for ethN; an IPv6 loopback in the model is kept rather
+        # than dropped for not having been asked about.
+        v6 = [a for a in node.loopbacks if ipaddress.ip_interface(a).version == 6]
+        loopbacks = parse_ip_addr_loopbacks(output) + v6
+        nodes.append(node.model_copy(update={"interfaces": interfaces, "loopbacks": loopbacks}))
 
     return topology.model_copy(update={"nodes": nodes})
 

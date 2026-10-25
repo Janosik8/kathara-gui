@@ -41,6 +41,12 @@ def _describe_device(deployed: Node, current: Node) -> list[str]:
             f"{', '.join(sorted(current.daemons)) or 'none'}"
         )
 
+    if sorted(deployed.loopbacks) != sorted(current.loopbacks):
+        changes.append(
+            f"{current.name} loopback addresses changed to "
+            f"{', '.join(current.loopbacks) or 'none'}"
+        )
+
     was, now = _interfaces(deployed), _interfaces(current)
 
     for number in sorted(set(was) | set(now)):

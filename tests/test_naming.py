@@ -8,6 +8,8 @@ from kathara_gui.domain.naming import (
     RESERVED_WINDOWS_NAMES,
     NameError_,
     check_unique_names,
+    kathara_name_problem,
+    suggest_kathara_name,
     validate_device_name,
 )
 
@@ -75,3 +77,38 @@ def test_exact_duplicates_are_not_a_case_collision() -> None:
 
 def test_distinct_names_pass() -> None:
     check_unique_names(["r1", "r2", "pc1", "switch-a"])
+
+
+@pytest.mark.parametrize("name", ["r1", "pc_10", "a", "r" * 30])
+def test_kathara_accepts_its_own_names(name: str) -> None:
+    assert kathara_name_problem(name) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "suggestion"),
+    [("R1", "r1"), ("edge-1", "edge_1"), ("spine.01", "spine_01"), ("r" * 31, "r" * 30)],
+)
+def test_kathara_refuses_what_portability_allows(name: str, suggestion: str) -> None:
+    """Bug 25: `R1` passes the portability check, then Kathará refuses it at deploy."""
+    validate_device_name(name)  # portable everywhere, and still refused
+    problem = kathara_name_problem(name)
+    assert problem is not None and "lowercase letters" in problem
+    assert suggest_kathara_name(name) == suggestion
+
+
+def test_the_rule_is_kathara_s_own() -> None:
+    """Checked against Kathará itself, so the two cannot drift apart."""
+    from Kathara.model.Machine import Machine
+
+    for name in ["r1", "pc_10", "R1", "edge-1", "spine.01", "r" * 31]:
+        # The name is checked first; with no lab, anything after it fails
+        # differently, which still means the name itself was accepted.
+        try:
+            Machine(None, name)
+        except SyntaxError:
+            kathara_accepts = False
+        except Exception:  # noqa: BLE001
+            kathara_accepts = True
+        else:
+            kathara_accepts = True
+        assert kathara_accepts == (kathara_name_problem(name) is None), name

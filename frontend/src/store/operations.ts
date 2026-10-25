@@ -42,6 +42,9 @@ export type Operation =
   | { type: "moveDomain"; name: string; position: Position }
   | { type: "renameNode"; from: string; to: string }
   | { type: "updateNode"; name: string; changes: Partial<Omit<Node, "name">> }
+  // One router's daemons onto every router, as one undo step (test step 3B.1:
+  // "apply to all ... only one button for the whole daemon settings").
+  | { type: "applyDaemons"; from: string }
   | { type: "connect"; node: string; collisionDomain: string; number?: number }
   // Linking two devices is one user intent, so it is one operation and one
   // undo step — not two `connect`s the user must undo twice.
@@ -89,6 +92,21 @@ function ensureCollisionDomain(topology: Topology, name: string): CollisionDomai
     return topology.collision_domains;
   }
   return [...topology.collision_domains, { name }];
+}
+
+/**
+ * Why Kathará would refuse this device name, or null. Its own rule
+ * (`Kathara.model.Machine`): otherwise the deploy fails with "Invalid device
+ * name" and says nothing about what is allowed. Mirrors
+ * `kathara_name_problem` in `domain/naming.py`.
+ */
+export function deviceNameProblem(name: string): string | null {
+  if (/^[a-z0-9_]{1,30}$/.test(name)) return null;
+  const suggestion = name.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 30) || "r1";
+  return (
+    "Kathará only accepts device names made of lowercase letters, digits and " +
+    `underscores, up to 30 characters, so it would refuse "${name}". Try "${suggestion}".`
+  );
 }
 
 export function apply(topology: Topology, op: Operation): Topology {
@@ -153,7 +171,14 @@ export function apply(topology: Topology, op: Operation): Topology {
 
     case "renameNode": {
       if (op.from === op.to) return topology;
-      if (topology.nodes.some((n) => n.name.toLowerCase() === op.to.toLowerCase())) {
+      const problem = deviceNameProblem(op.to);
+      if (problem) throw new OperationError(problem);
+      // Not the device itself: renaming "R23" to "r23" is not a clash.
+      if (
+        topology.nodes.some(
+          (n) => n.name !== op.from && n.name.toLowerCase() === op.to.toLowerCase(),
+        )
+      ) {
         throw new OperationError(`A device named "${op.to}" already exists.`);
       }
       return mapNode(topology, op.from, (node) => ({ ...node, name: op.to }));
@@ -161,6 +186,18 @@ export function apply(topology: Topology, op: Operation): Topology {
 
     case "updateNode":
       return mapNode(topology, op.name, (node) => ({ ...node, ...op.changes }));
+
+    case "applyDaemons": {
+      const source = topology.nodes.find((n) => n.name === op.from);
+      if (!source) throw new OperationError(`No device named "${op.from}".`);
+      // Only routers run FRR; a PC's daemon list would mean nothing.
+      return {
+        ...topology,
+        nodes: topology.nodes.map((n) =>
+          n.kind === "router" && n !== source ? { ...n, daemons: [...source.daemons] } : n,
+        ),
+      };
+    }
 
     case "connect": {
       const node = topology.nodes.find((n) => n.name === op.node);
@@ -291,6 +328,8 @@ export function describe(op: Operation): string {
       return `Renamed ${op.from} to ${op.to}`;
     case "updateNode":
       return `Changed ${op.name}`;
+    case "applyDaemons":
+      return `Gave every router the routing daemons of ${op.from}`;
     case "connect":
       return `Connected ${op.node} to ${op.collisionDomain}`;
     case "link":

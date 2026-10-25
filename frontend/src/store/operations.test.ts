@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { type Topology, newNode } from "../types";
-import { type Operation, OperationError, apply, applyAll, describe as label } from "./operations";
+import {
+  type Operation,
+  OperationError,
+  apply,
+  applyAll,
+  deviceNameProblem,
+  describe as label,
+} from "./operations";
 
 const at = (x: number, y: number) => ({ x, y });
 
@@ -211,6 +218,46 @@ describe("renameNode", () => {
     expect(() => apply(base(), { type: "renameNode", from: "r1", to: "r2" })).toThrow(
       /already exists/,
     );
+  });
+
+  it("refuses a name Kathará would refuse at deploy, and suggests one", () => {
+    // Bug 25: "R1" was accepted here and the deploy then failed unexplained.
+    for (const to of ["R1", "edge-1", "spine.01", "r".repeat(31)]) {
+      expect(() => apply(base(), { type: "renameNode", from: "r1", to })).toThrow(
+        /lowercase letters, digits and underscores/,
+      );
+    }
+    expect(deviceNameProblem("Edge-1")).toMatch(/Try "edge_1"/);
+    expect(deviceNameProblem("pc_10")).toBeNull();
+  });
+
+  it("does not count the device itself as a clash", () => {
+    // Bug 26: renaming R23 to r23 said a device of that name already exists.
+    const upper: Topology = {
+      ...base(),
+      nodes: base().nodes.map((n) => (n.name === "r1" ? { ...n, name: "R23" } : n)),
+    };
+    const next = apply(upper, { type: "renameNode", from: "R23", to: "r23" });
+    expect(next.nodes.map((n) => n.name)).toEqual(["r23", "r2"]);
+  });
+});
+
+describe("applyDaemons", () => {
+  it("gives every router the source's daemons, and leaves other kinds alone", () => {
+    const start: Topology = {
+      name: "lab",
+      nodes: [
+        { ...newNode("r1", "router", at(0, 0)), daemons: ["zebra", "ospfd"] },
+        { ...newNode("r2", "router", at(1, 0)), daemons: ["zebra", "bgpd"] },
+        newNode("pc1", "pc", at(2, 0)),
+      ],
+      collision_domains: [],
+    };
+    const next = apply(start, { type: "applyDaemons", from: "r1" });
+    expect(next.nodes.map((n) => n.daemons)).toEqual([["zebra", "ospfd"], ["zebra", "ospfd"], []]);
+    // A copy, not a shared array that one router's edit would change for all.
+    expect(next.nodes[1]!.daemons).not.toBe(next.nodes[0]!.daemons);
+    expect(label({ type: "applyDaemons", from: "r1" })).toMatch(/every router.*r1/);
   });
 });
 

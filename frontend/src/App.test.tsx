@@ -7,7 +7,7 @@
  * testing.
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -183,6 +183,11 @@ vi.mock("./api/client", () => ({
       path: null,
     })),
     save: vi.fn(async () => ({
+      topology: { name: "untitled", nodes: [], collision_domains: [] },
+      dirty: false,
+      path: null,
+    })),
+    reset: vi.fn(async () => ({
       topology: { name: "untitled", nodes: [], collision_domains: [] },
       dirty: false,
       path: null,
@@ -1519,11 +1524,26 @@ describe("the scenario as a folder", () => {
     // The tester's notes: "save, save as and open buttons should be at the top bar".
     await renderApp();
     const header = screen.getByRole("group", { name: "Topology actions" });
-    for (const name of ["Save", "Save as…", "Open…"]) {
+    for (const name of ["New…", "Save", "Save as…", "Open…"]) {
       expect(within(header).getByRole("button", { name })).toBeInTheDocument();
     }
     // And only there, so the page does not offer each of them twice.
     expect(screen.getAllByRole("button", { name: "Open…" })).toHaveLength(1);
+  });
+
+  it("starts a new, empty scenario, warning first about unsaved changes", async () => {
+    // Bug 27: there was no way to start a clean project.
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(screen.getByRole("button", { name: "New…" }));
+    expect(screen.getByRole("heading", { name: "Start a new scenario" })).toHaveFocus();
+    expect(screen.getByText(/unsaved changes, and they will be lost/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Start new scenario" }));
+    // The server forgets the open folder too, so Save cannot overwrite it.
+    await waitFor(() => expect(api.reset).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useTopologyStore.getState().topology.nodes).toHaveLength(0));
+    expect(await screen.findByText(/Not saved yet/)).toBeInTheDocument();
   });
 
   it("closes Save as with Escape and returns focus to its button", async () => {
@@ -1771,6 +1791,27 @@ describe("capturing running configuration", () => {
 
     expect(await screen.findByText("not a router")).toBeInTheDocument();
     expect(screen.getByText("Nothing was captured.")).toBeInTheDocument();
+  });
+
+  it("can be closed", async () => {
+    // Test step 3A.1: the result stayed until the next capture replaced it.
+    deploy.mockResolvedValue(running);
+    captureState.mockResolvedValue({
+      captured: [{ device: "r1", path: "r1/etc/frr/frr.conf", lines: 42 }],
+      skipped: [],
+      message: null,
+      folder: "/workspace/untitled",
+      topology: { name: "untitled", nodes: [], collision_domains: [] } as never,
+    });
+
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await user.click(await screen.findByRole("button", { name: "Capture running state" }));
+    await screen.findByText("42 lines");
+
+    await user.click(screen.getByRole("button", { name: "Close the capture result" }));
+    expect(screen.queryByText("42 lines")).not.toBeInTheDocument();
   });
 });
 
@@ -2307,6 +2348,23 @@ describe("a deployed lab locks the design", () => {
     );
   });
 
+  it("says why when a disabled control is pressed", async () => {
+    // Test step 3A.3: pressing Add router did nothing and said nothing; only
+    // renaming the lab gave a reason. A disabled button fires no click, so
+    // the press itself is answered.
+    await deployed();
+    fireEvent.pointerDown(screen.getByRole("button", { name: /Add router/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Stop the lab to edit it/),
+    );
+  });
+
+  it("colours the header while the design is read-only", async () => {
+    // Test step 3A.2: the words were there, but the bar did not stand out.
+    await deployed();
+    expect(document.querySelector(".app__header")).toHaveAttribute("data-locked", "true");
+  });
+
   it("refuses an edit however it arrives", async () => {
     // The guard sits on the path every edit takes, not on each control, so a
     // shortcut or a control added later cannot slip past it.
@@ -2446,6 +2504,32 @@ describe("a deployed lab locks the design", () => {
 
     expect(await screen.findByText("Lab running — design is read-only")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+  });
+
+  it("stays locked while it is still asking whether the lab runs", async () => {
+    // Test step 3A.6: the design showed about a second before the answer
+    // and could be edited meanwhile, which would change a running lab.
+    let answer: (status: typeof running) => void = () => {};
+    vi.mocked(api.labStatus).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }) as never,
+    );
+    vi.mocked(api.read).mockResolvedValueOnce({
+      topology: captured("10.0.0.1/24").topology,
+      dirty: false,
+      path: null,
+    } as never);
+    render(<App />);
+
+    expect(await screen.findByText("Checking whether the lab is running…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+    // Not red yet: it is usually not running, and that is not known.
+    expect(document.querySelector(".app__header")).not.toHaveAttribute("data-locked");
+
+    answer({ ...running, deployed: false });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Add router/ })).toBeEnabled());
+    expect(screen.queryByText("Checking whether the lab is running…")).not.toBeInTheDocument();
   });
 
   it("announces edits again once the lab is stopped", async () => {

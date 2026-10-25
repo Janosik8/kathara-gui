@@ -1,5 +1,5 @@
 /**
- * Save as and Open, opened from the header.
+ * New, Save as and Open, opened from the header.
  *
  * They used to live in the Scenario panel on the right, while Save sat in the
  * header: three actions on one document, in two places. Asked for in the
@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioSummary } from "../api/client";
 
-export type ScenarioDialog = "saveAs" | "open";
+export type ScenarioDialog = "new" | "saveAs" | "open";
 
 interface Props {
   dialog: ScenarioDialog;
@@ -22,6 +22,8 @@ interface Props {
   scenarios: ScenarioSummary[];
   onSaveAs: (name: string) => void;
   onOpen: (folder: string) => void;
+  /** Start an empty scenario with no folder (bug 27). */
+  onNew: () => void;
   onClose: () => void;
 }
 
@@ -32,11 +34,13 @@ export function ScenarioDrawer({
   scenarios,
   onSaveAs,
   onOpen,
+  onNew,
   onClose,
 }: Props) {
   const [newName, setNewName] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
   const openHeading = useRef<HTMLHeadingElement>(null);
+  const newHeading = useRef<HTMLHeadingElement>(null);
 
   // Focus follows the button that opened it, so a keyboard or screen-reader
   // user lands in the form rather than having to find it.
@@ -44,6 +48,8 @@ export function ScenarioDrawer({
     if (dialog === "saveAs") {
       setNewName("");
       nameInput.current?.focus();
+    } else if (dialog === "new") {
+      newHeading.current?.focus();
     } else {
       openHeading.current?.focus();
     }
@@ -66,7 +72,38 @@ export function ScenarioDrawer({
         }
       }}
     >
-      {dialog === "saveAs" ? (
+      {dialog === "new" ? (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={newHeading} tabIndex={-1}>
+            Start a new scenario
+          </h2>
+          <p className="field__hint">
+            An empty canvas, not yet saved anywhere. The scenario open now stays in its
+            folder; <strong>Open…</strong> brings it back.
+          </p>
+          {dirty && (
+            <p className="confirm__warning">
+              <strong>Warning:</strong> the current scenario has unsaved changes, and they will
+              be lost.
+            </p>
+          )}
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => {
+                onNew();
+                onClose();
+              }}
+              disabled={busy !== null}
+            >
+              Start new scenario
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : dialog === "saveAs" ? (
         <div className="scenario-drawer__body">
           <label className="field" htmlFor="scenario-save-as">
             <span className="field__label">Save as</span>

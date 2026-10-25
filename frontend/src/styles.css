@@ -42,6 +42,11 @@
      on purpose — the warning in the side panel was being missed — but it still
      carries words, because a colour alone is not a status (ACC-03). */
   --bg-header-drift: #ffcf85;
+  /* The header while a lab runs and the design is read-only (D9). Red, unlike
+     drift's amber, because every editing control is about to refuse; and
+     words again, for the same reason (test step 3A.2). */
+  --bg-header-locked: #ffb0b6;
+  --danger-fg: #ffffff;
   --focus: #0b5cad;
 
   --radius: 6px;
@@ -69,6 +74,8 @@
     --bg-panel-lab: #302616;
     --device: #c9a7f5;
     --bg-header-drift: #5a3d00;
+    --bg-header-locked: #661a2e;
+    --danger-fg: #14181f;
     --focus: #6fb3ff;
     --minimap-mask: rgba(0, 0, 0, 0.5);
   }
@@ -135,6 +142,13 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* Read-only: 10.3:1 for the title in light, 10.6:1 in dark. Before the drift
+   rule, so a drifted header, which also means "running", shows the drift. */
+.app__header[data-locked="true"] {
+  background: var(--bg-header-locked);
+  border-bottom: 3px solid var(--danger);
 }
 
 /* Impossible to miss, and still readable: 12.3:1 in light, 8.8:1 in dark. */
@@ -431,6 +445,11 @@ button:disabled {
   color: var(--fg-muted);
 }
 
+.device__lo {
+  font-size: 10px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
 .device--router {
   border-radius: 50% / 26%;
 }
@@ -520,13 +539,20 @@ button:disabled {
 
 .react-flow__node.collision-domain {
   border: 2px dotted var(--fg-muted);
-  background: transparent;
+  /* Opaque, so nothing drawn beneath shows through the label. */
+  background: var(--bg);
   color: var(--fg-muted);
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 11px;
   white-space: pre-line;
   text-align: center;
+}
+
+/* Links meet the outline wherever they arrive (SegmentEdge), so the default
+   node's top and bottom handles are only anchors and are not drawn. */
+.react-flow__node.collision-domain .react-flow__handle {
+  visibility: hidden;
 }
 
 /* -- forms and inspector ------------------------------------------- */
@@ -960,6 +986,40 @@ select {
   margin-bottom: 8px;
 }
 
+/* What a daemon is for, beside its name: twenty bare names mean little to a
+   student who has met only OSPF and BGP. */
+.checkbox__hint {
+  color: var(--fg-muted);
+  font-size: 0.85em;
+}
+
+.daemons__apply {
+  margin-top: 6px;
+}
+
+/* A message with a × in its top-right corner. */
+.dismissible {
+  position: relative;
+  padding-right: 32px;
+}
+
+/* 24×24 at least: the WCAG 2.2 minimum target size (2.5.8). */
+.dismiss {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
 .lab__message {
   font-size: 0.85rem;
   color: var(--fg-muted);
@@ -1051,14 +1111,26 @@ select {
   border-radius: var(--radius);
 }
 
-/* The design is read-only while the lab runs (D9). A border in the text
-   colour rather than a new hue, so the palette the contrast tests assert is
-   unchanged, and shape rather than colour distinguishes it from drift. */
+/* The design is read-only while the lab runs (D9). Solid red, 7.9:1 in light
+   and 8.2:1 in dark; the dashed border is kept so shape, not only colour,
+   tells it from the drift badge. */
 .app__locked {
   font-size: 0.8rem;
   font-weight: 600;
   padding: 2px 8px;
-  border: 2px dashed var(--fg);
+  background: var(--danger);
+  color: var(--danger-fg);
+  border: 2px dashed var(--danger-fg);
+  border-radius: var(--radius);
+}
+
+/* The moment after a reload, before the server has said whether the lab is
+   running: locked, but not alarming, since it is usually not running. */
+.app__checking {
+  font-size: 0.8rem;
+  font-weight: 400;
+  padding: 2px 8px;
+  border: 2px dotted var(--fg-muted);
   border-radius: var(--radius);
 }
 

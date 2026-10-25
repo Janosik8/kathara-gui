@@ -136,9 +136,11 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Add a device to an existing network | In connect mode, click the device, then click the **link or collision domain** it should join. All of them then share one collision domain. |
 | Cancel a half-made link | Click the same end again, or click empty canvas. |
 | Leave connect mode | Press `Escape`, or the toggle again. |
-| Rename | Select a device → **Details** → Name → Enter or click away. |
+| Rename | Select a device → **Details** → Name → Enter or click away. Kathará accepts only lowercase letters, digits and underscores, up to 30 characters, so `R1` or `edge-1` is refused with a suggestion (`r1`, `edge_1`). A lab opened from elsewhere with such names still opens; Deploy lists each one to rename. |
 | Set an address | Select a device → **Details** → Interfaces → address field, e.g. `10.0.0.1/24`. |
-| Enable routing daemons | **Details** → Routing daemons. Ticking any protocol also ticks `zebra`. |
+| Enable routing daemons | **Details** → Routing daemons. Every daemon FRR can start is listed, each with what it is for (`ldpd` is MPLS LDP). Ticking any protocol also ticks `zebra`. **Apply to all routers** gives every router this one's daemons, as one undo step. |
+| Add a loopback address | **Details** → Loopback (lo) → Add a loopback address, e.g. `10.255.0.1/32`. It goes on `lo` in the container and shows under the device's name on the canvas. Empty the field, or press Remove, to take it off. |
+| Run a device privileged | **Details** → **Privileged**. Kathará starts it only when the application runs as administrator (Windows: PowerShell opened with *Run as administrator*) or root (macOS, Linux: `sudo`); otherwise Deploy says so and starts nothing. |
 | Change the image | **Details** → Container image. See the warning below before clearing it. |
 | Move a device | Drag on the canvas. Snaps to a 16px grid. |
 | Tidy up | Select 2+ devices → **Arrange** → align. Distribute needs 3+. |
@@ -152,9 +154,10 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Let a domain be allocated | Leave its subnet field blank. |
 | Assign addresses | Right panel → **Addressing** → **Assign addresses**. Fills gaps, keeps pinned subnets and hand-written addresses. |
 | Renumber everything | **Renumber all**. Replaces every address *and* every pinned subnet. |
-| Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. |
+| Change the default pool | **Addressing** → Address pool and Subnet size, before assigning. The pool must be a network: `192.168.0.0/8` is refused, naming both readings (`192.0.0.0/8`, or `192.168.0.0/16`). |
 | Save | **Save** in the top bar, or Ctrl/Cmd+S, writes the scenario to the folder it was opened from, or, the first time, to a folder named after it: `lab.conf`, the `.startup` files and the device folders. **Save as…** writes a copy under a new name, and the copy takes that name too. |
 | Open | **Open…** in the top bar lists the scenarios in your workspace. |
+| Start a new scenario | **New…** in the top bar. An empty canvas with no folder; the scenario that was open stays in its own. Warns first if there are unsaved changes. |
 | Export, import | Right panel → **Scenario**. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
 | Verify links | **Laboratory** → **Verify links**: pings across every link. |
@@ -229,8 +232,9 @@ links do not cross.
 A collision domain with exactly two devices is drawn as a plain link. With three or more it
 gets a node of its own, because a Kathará collision domain is a shared medium rather than a
 cable, and drawing a shared segment as a single line would misrepresent it. That node sits
-between its devices until you drag it somewhere; from then on it stays put. Click it and
-press Delete to remove the whole segment, as you would a link.
+between its devices until you drag it somewhere; from then on it stays put. Each link
+meets the node's outline on the side it arrives from, so none crosses its label. Click it
+and press Delete to remove the whole segment, as you would a link.
 
 ### Keyboard
 
@@ -282,6 +286,11 @@ A subnet field rejects a host address (`192.168.1.1/24`) and suggests the networ
 because the model requires a network and an invalid value would otherwise be rejected on
 every later request.
 
+**Two collision domains with overlapping subnets** are a *warning*, not an error. Usually it
+is a slip, but a VPN or VRF lab reuses one subnet on purpose on either side, and Kathará runs
+it without complaint. The same goes for one loopback address on two devices: wrong for a
+router ID, deliberate for anycast.
+
 ### Saving, sharing and reopening a scenario
 
 **A scenario is a folder**, and it is an ordinary Kathará lab directory:
@@ -299,16 +308,17 @@ device kinds ride in `# kgui:` comments that Kathará ignores — so the folder 
 document, and **Export is a plain zip of it**. Anyone can unzip and read the startup
 scripts; anyone with Kathará can `cd` in and `kathara lstart`.
 
-The first three are in the top bar, the rest in the **Scenario** panel on the right:
+The first four are in the top bar, the rest in the **Scenario** panel on the right:
 
 | Control | What it does |
 |---|---|
+| **New…** | Starts an empty scenario that is not saved anywhere yet. The next Save writes it to a folder of its own name, so it cannot overwrite the one that was open. |
 | **Save** | Writes the folder into your workspace. Ctrl/Cmd+S does the same. |
 | **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
 | **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. |
 | **Export** | Downloads the folder as `<name>.zip` — for submitting or sending. |
 | **Import…** | Opens a zip, or a bare `lab.conf`, from anywhere. |
-| **Capture running state** | Copies what the devices are actually running back into the scenario. |
+| **Capture running state** | Copies what the devices are actually running back into the scenario. The result stays listed until you close it with its **×**. |
 
 **Save keeps it here; Export sends it out.** Scenario folders live in the workspace
 (`./kathara-labs` unless `--workspace` says otherwise), which is also where labs deploy from.
@@ -346,11 +356,16 @@ on the same spot. See below.
 
 ### While the lab is running, the design is read-only
 
-Once a lab is deployed the header says **Lab running — design is read-only**, and every
-editing control is disabled: adding, deleting, linking, moving, the inspector, addressing,
-arranging, undo, Open and Import. You can still select devices and read their settings, on
-the canvas and in the tree. Anything that tries to edit anyway, such as a keyboard
-shortcut, is refused and says why.
+Once a lab is deployed the header turns red and says **Lab running — design is
+read-only**, and every editing control is disabled: adding, deleting, linking, moving, the
+inspector, addressing, arranging, undo, New, Open and Import. You can still select devices
+and read their settings, on the canvas and in the tree. Anything that tries to edit anyway
+is refused and says why in the status line: a keyboard shortcut, a press on a disabled
+button, or dragging a device, which stays where it is.
+
+After reloading the page, the header says **Checking whether the lab is running…** for
+about a second, and the design is locked meanwhile. Docker has to be asked, and an edit
+made before the answer would have changed a lab that turns out to be running.
 
 The reason is that there are two places the network can change, the canvas and the
 containers, and when both can change at once there's no simple answer to "which one is
@@ -418,7 +433,9 @@ Capture writes to two places, because a device keeps its configuration in two:
   than from disk, and placed where Kathará copies from on the next deploy.
 - **Interface addresses** go back into the topology, and therefore onto the canvas and into
   the regenerated `.startup`. This is how capture works for a PC, which has no routing
-  daemon to ask.
+  daemon to ask. Loopback addresses come back too: one added with
+  `ip address add 10.255.0.2/32 dev lo` inside the container ends up in the `.startup`.
+  IPv4 only, as for the other interfaces.
 
 **A router's hostname comes from its device name.** Rename the device in the editor and
 redeploy; FRR picks the name up from the container.

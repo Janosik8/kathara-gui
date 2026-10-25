@@ -24,6 +24,8 @@ __all__ = [
     "NameError_",
     "validate_device_name",
     "check_unique_names",
+    "kathara_name_problem",
+    "suggest_kathara_name",
     "safe_dir_name",
     "RESERVED_WINDOWS_NAMES",
 ]
@@ -85,6 +87,29 @@ def validate_device_name(name: str) -> None:
             f"Device name {name!r} must start with a letter or digit and contain "
             "only letters, digits, dots, dashes and underscores."
         )
+
+
+# Kathará's own rule, from `Kathara.model.Machine`: anything else is refused
+# at deploy with "Invalid device name". Stricter than portability needs, so it
+# is checked separately: a lab with `R1` in it must still open, to be renamed.
+_KATHARA_PATTERN = re.compile(r"^[a-z0-9_]{1,30}$")
+
+
+def kathara_name_problem(name: str) -> str | None:
+    """Why Kathará would refuse ``name`` as a device name, or None if it would not."""
+    if _KATHARA_PATTERN.match(name):
+        return None
+    return (
+        f"Kathará only accepts device names made of lowercase letters, digits and "
+        f"underscores, up to 30 characters, so it would refuse {name!r}. "
+        f"Try {suggest_kathara_name(name)!r}."
+    )
+
+
+def suggest_kathara_name(name: str) -> str:
+    """The nearest name Kathará accepts: ``R1`` → ``r1``, ``edge-1`` → ``edge_1``."""
+    cleaned = re.sub(r"[^a-z0-9_]", "_", name.strip().lower())[:30]
+    return cleaned or "r1"
 
 
 def check_unique_names(names: Iterable[str]) -> None:

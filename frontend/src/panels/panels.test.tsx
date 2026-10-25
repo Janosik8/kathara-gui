@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 import { type Topology, newNode, suggestCollisionDomain } from "../types";
-import { Inspector } from "./Inspector";
+import { Inspector, validateLoopback } from "./Inspector";
 import { CollisionDomainsPanel, validateSubnet } from "./CollisionDomainsPanel";
 import { Palette, suggestName } from "./Palette";
 
@@ -131,12 +131,87 @@ describe("Inspector", () => {
     topology.nodes[0]!.daemons = [];
     render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
 
-    await user.click(screen.getByRole("checkbox", { name: "ospfd" }));
+    await user.click(screen.getByRole("checkbox", { name: "ospfd OSPFv2" }));
 
     // A protocol daemon without zebra yields a router that silently does nothing.
     const [op] = onDispatch.mock.calls[0]!;
     expect(op.changes.daemons).toContain("ospfd");
     expect(op.changes.daemons).toContain("zebra");
+  });
+
+  it("offers every FRR daemon, saying what each is for", () => {
+    // Bug 29: ldpd, and "all the daemons that can be set on FRR".
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />);
+    expect(screen.getByRole("checkbox", { name: "ldpd MPLS LDP" })).toBeInTheDocument();
+    // Twenty daemons, and the privileged switch.
+    expect(screen.getAllByRole("checkbox")).toHaveLength(21);
+  });
+
+  it("applies one router's daemons to every router in one step", async () => {
+    // Test step 3B.1: one button for the whole daemon setting, not per daemon.
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    const topology = linked();
+    topology.nodes[0]!.daemons = ["zebra", "ospfd"];
+    render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
+
+    await user.click(screen.getByRole("button", { name: "Apply to all routers" }));
+    expect(onDispatch).toHaveBeenCalledExactlyOnceWith({ type: "applyDaemons", from: "r1" });
+  });
+
+  it("has nothing to apply when every router already matches", () => {
+    const topology = linked();
+    topology.nodes.forEach((n) => (n.daemons = ["zebra", "bgpd"]));
+    render(<Inspector topology={topology} selected={["r1"]} onDispatch={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Apply to all routers" })).toBeDisabled();
+  });
+
+  it("sets privileged mode, and says what it needs", async () => {
+    // Bug 31.
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
+    const box = screen.getByRole("checkbox", { name: "Privileged" });
+    expect(box).toHaveAccessibleDescription(/administrator .* or root/);
+    await user.click(box);
+    expect(onDispatch).toHaveBeenCalledWith({
+      type: "updateNode",
+      name: "r1",
+      changes: { privileged: true },
+    });
+  });
+
+  it("adds a loopback address", async () => {
+    // Bug 28.
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
+    await user.type(screen.getByLabelText("Add a loopback address"), "10.255.0.1/32{Enter}");
+    expect(onDispatch).toHaveBeenCalledWith({
+      type: "updateNode",
+      name: "r1",
+      changes: { loopbacks: ["10.255.0.1/32"] },
+    });
+  });
+
+  it("removes one, and keeps a bad one in the field with a reason", async () => {
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    const topology = linked();
+    topology.nodes[0]!.loopbacks = ["1.1.1.1/32", "2.2.2.2/32"];
+    render(<Inspector topology={topology} selected={["r1"]} onDispatch={onDispatch} />);
+
+    await user.click(screen.getByRole("button", { name: "Remove 1.1.1.1/32" }));
+    expect(onDispatch).toHaveBeenLastCalledWith({
+      type: "updateNode",
+      name: "r1",
+      changes: { loopbacks: ["2.2.2.2/32"] },
+    });
+
+    onDispatch.mockClear();
+    await user.type(screen.getByLabelText("Add a loopback address"), "3.3.3.3{Enter}");
+    expect(onDispatch).not.toHaveBeenCalled();
+    expect(screen.getByText("Add a prefix, usually 3.3.3.3/32.")).toBeInTheDocument();
   });
 
   it("lists interfaces with their collision domain", () => {
@@ -312,5 +387,19 @@ describe("CollisionDomainsPanel", () => {
     );
     const results = await axeCore.run(container);
     expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("validateLoopback", () => {
+  it("accepts IPv4 and IPv6 addresses in CIDR form", () => {
+    expect(validateLoopback("10.255.0.1/32")).toBeNull();
+    expect(validateLoopback("2001:db8::1/128")).toBeNull();
+  });
+
+  it("explains what is wrong", () => {
+    expect(validateLoopback("abc")).toMatch(/CIDR form/);
+    expect(validateLoopback("10.0.0.300/32")).toMatch(/0-255/);
+    expect(validateLoopback("127.0.0.2/8")).toMatch(/already on lo/);
+    expect(validateLoopback("1.1.1.1/32", ["1.1.1.1/32"])).toMatch(/already on lo/);
   });
 });
