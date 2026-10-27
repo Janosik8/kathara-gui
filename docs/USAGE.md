@@ -131,7 +131,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. |
 | Select | Click a device in the tree or on the canvas. |
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
-| Connect two devices | Turn on **Connect mode** (the button above the collision domain list, or press `C`; it is filled blue, with ◉, while on), click one device, then click another. A link appears. |
+| Connect two devices | Turn on **Connect mode** (the button above the collision domain list, or press `C`; it is filled blue, with ◉, while on), click one device, then click another. A link appears. `C` can be switched off with **Single-key shortcuts (C)** in the top bar. |
 | Draw several links | Connect mode stays on after each link, so keep clicking pairs. |
 | Add a device to an existing network | In connect mode, click the device, then click the **link or collision domain** it should join. All of them then share one collision domain. |
 | Cancel a half-made link | Click the same end again, or click empty canvas. |
@@ -251,7 +251,7 @@ report anything that is not.
 | `Home` / `End` | First / last row. |
 | `Enter` | Select the focused device. |
 | `Ctrl/Cmd + Enter` | Add to the selection. |
-| `C` | Toggle connect mode. In it, `Enter` on a device picks it, and `Enter` on an interface row picks that row's collision domain. |
+| `C` | Toggle connect mode, unless **Single-key shortcuts (C)** in the top bar is unticked (it starts ticked on every launch). In it, `Enter` on a device picks it, and `Enter` on an interface row picks that row's collision domain. |
 | `Delete` | On a device row, remove the device. On an interface row, disconnect that interface. Ignored while typing in a field. |
 | `Escape` | Leave connect mode, or abandon an in-progress text edit. |
 | `Ctrl/Cmd + A` | Select every device. Ignored while typing, where it selects the field's text. |
@@ -823,9 +823,8 @@ says "Exited"* above.
 
 ## 7. Accessibility testing
 
-> The EN 301 549 conformance table (ACC-09) is written at the end of the project, once the
-> interface has stopped changing. The automated evidence it will rest on is listed below and
-> runs today.
+> The EN 301 549 conformance table (ACC-09) is `docs/CONFORMANCE.md`. It rests on the
+> automated evidence below and on section 6 of `docs/TEST-PROCEDURE-WINDOWS.md`.
 
 > **Screen readers are out of scope** (D10 in `PLAN.md`, 2026-10-25). There is no
 > VoiceOver or NVDA pass, and the conformance claim is partial. The application makes no

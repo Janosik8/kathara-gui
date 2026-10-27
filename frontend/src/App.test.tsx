@@ -487,6 +487,38 @@ describe("connect mode", () => {
     expect(toggle()).toHaveAttribute("aria-pressed", "false");
   });
 
+  // WCAG 2.1.4: a one-letter shortcut must be possible to turn off (F42).
+  const shortcuts = () => screen.getByRole("checkbox", { name: /Single-key shortcuts/ });
+
+  it("ignores C once single-key shortcuts are off, and the button still works", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(shortcuts());
+    // Off the checkbox, or C would be ignored for being in an input anyway.
+    await user.click(row("r1"));
+    await user.keyboard("c");
+    expect(toggle()).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(toggle());
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("answers C again once single-key shortcuts are back on", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+
+    await user.click(shortcuts());
+    await user.click(shortcuts());
+    expect(shortcuts()).toBeChecked();
+    // Off the checkbox first: C is never taken from a focused input.
+    await user.click(row("r1"));
+    await user.keyboard("c");
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("does not hijack C while typing in a field", async () => {
     const user = await renderApp();
     await addRouter(user);

@@ -184,6 +184,10 @@ export default function App() {
   // interaction people expect from a topology editor.
   const [connectMode, setConnectMode] = useState(false);
   const [pending, setPending] = useState<PendingEnd | null>(null);
+  // Whether the single key C toggles connect mode. WCAG 2.1.4 asks that a
+  // one-letter shortcut can be turned off (F42). Not remembered between
+  // launches, by decision: the port changes each run, so the browser could not.
+  const [singleKeyShortcuts, setSingleKeyShortcuts] = useState(true);
 
   /**
    * The latest thing worth saying that is not an edit's own description.
@@ -1168,7 +1172,7 @@ export default function App() {
         setSelected(topology.nodes.map((n) => n.name));
         return;
       }
-      if (!meta && event.key.toLowerCase() === "c" && canConnect) {
+      if (!meta && event.key.toLowerCase() === "c" && canConnect && singleKeyShortcuts) {
         event.preventDefault();
         if (locked) setNotice(lockNotice);
         else toggleConnectMode();
@@ -1201,6 +1205,7 @@ export default function App() {
     leaveConnectMode,
     toggleConnectMode,
     canConnect,
+    singleKeyShortcuts,
     save,
     scenarioBusy,
   ]);
@@ -1361,6 +1366,16 @@ export default function App() {
               e.target.value = "";
             }}
           />
+          {/* The off switch WCAG 2.1.4 asks for (F42): a stray "c" from
+              speech input or a slip of the hand should not change mode. */}
+          <label className="checkbox app__shortcuts">
+            <input
+              type="checkbox"
+              checked={singleKeyShortcuts}
+              onChange={(e) => setSingleKeyShortcuts(e.target.checked)}
+            />
+            Single-key shortcuts (C)
+          </label>
         </div>
       </header>
 
