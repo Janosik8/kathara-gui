@@ -62,3 +62,13 @@ def test_each_session_mints_a_distinct_token() -> None:
 
 def test_generated_token_is_long_enough_to_resist_guessing() -> None:
     assert len(create_app().state.token) >= 32
+
+
+def test_without_an_interface_the_root_says_why_instead_of_404(tmp_path) -> None:
+    """F45. Served without a token, like the page it stands in for; the API keeps its gate."""
+    bare = TestClient(create_app(token=TOKEN, static_dir=tmp_path))
+    page = bare.get("/")
+    assert page.status_code == 200
+    assert "has no interface" in page.text
+    assert "install.cmd" in page.text
+    assert bare.get("/api/health").status_code == 401

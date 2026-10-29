@@ -31,6 +31,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kathara_gui"]
+# The built interface is gitignored, and hatchling leaves out what git ignores,
+# so without this an installed copy served a 404 at every page (F45). Artifacts
+# are hatchling's way to ship a build product that is not in git.
+artifacts = ["src/kathara_gui/static/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

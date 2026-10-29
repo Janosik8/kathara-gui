@@ -14,7 +14,7 @@ import uvicorn
 
 from kathara_gui import __version__
 from kathara_gui.kathara import runner
-from kathara_gui.main import STATIC_DIR, create_app
+from kathara_gui.main import MISSING_INTERFACE, STATIC_DIR, create_app, interface_built
 
 HOST = "127.0.0.1"
 
@@ -148,8 +148,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     if stale:
         print(f"Warning: {stale}\n", flush=True)
+    elif not interface_built(STATIC_DIR):
+        # An installed copy has no frontend/ to compare against, so the check
+        # above is silent, and it was this case that served a 404 (F45).
+        print(f"Warning: {MISSING_INTERFACE}\n", flush=True)
 
     if args.check:
+        # A server with no page is not a working installation; the installer
+        # and CI both rely on this failing.
+        if not interface_built(STATIC_DIR):
+            print("kathara-gui check failed: the interface is missing.", flush=True)
+            return 1
         print(f"kathara-gui {__version__} OK", flush=True)
         return 0
 

@@ -8,6 +8,11 @@
 # edited on two machines.
 * text=auto eol=lf
 
+# Except what Windows itself runs: cmd.exe misreads labels and blocks in a
+# batch file with LF endings (install.cmd, F45).
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # Binary, so Git must not touch them at all.
 *.png binary
 *.jpg binary

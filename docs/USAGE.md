@@ -110,13 +110,46 @@ Point the proxy elsewhere with `KGUI_BACKEND=http://127.0.0.1:9000 npm run dev` 
 shell, or `$env:KGUI_BACKEND="http://127.0.0.1:9000"; npm --prefix frontend run dev` in
 PowerShell.
 
-### Installed as a tool
+### Installed as a command, in one step
+
+To run `kathara-gui` from any folder without `uv run`, install it with the script in the
+project folder. On Windows, in PowerShell or Command Prompt:
+
+```powershell
+.\install.cmd
+```
+
+On macOS or Linux:
 
 ```bash
-uv tool install .        # from this checkout
-kathara-gui
-uv tool uninstall kathara-gui
+./install.sh
 ```
+
+It checks for **uv** (which provides Python and installs the application) and **Node.js**
+(needed once, to build the interface). If one is missing, it stops and prints the command
+that gets it, for example `winget install astral-sh.uv`; it never installs system software
+itself. Then it builds the interface, installs the `kathara-gui` command, checks that the
+installed copy starts, and puts uv's command folder on your PATH if it is not there yet.
+`install.cmd` is a `.cmd` file on purpose: Windows PowerShell's default *Restricted* policy
+refuses `.ps1` scripts but runs it.
+
+Then, in a **new** terminal (the first time only, so it sees the new PATH):
+
+```
+kathara-gui
+kathara-gui --help
+```
+
+Labs go to a `kathara-labs` folder in the folder you start it from, as with `uv run`;
+`--workspace` chooses another. Docker Desktop must be running to deploy.
+
+**To update** after a `git pull`, run the installer again. **To remove it:**
+`uv tool uninstall kathara-gui`.
+
+*Why not just `uv tool install .`?* The interface is a build product and is not in git, so
+before it is built there is nothing to install with the server. That is how a copy that
+answered "404 Not Found" at every page came about (F45). The installed command now says
+so when it starts, and shows the reason on the page.
 
 ---
 
@@ -769,6 +802,10 @@ scripts/              the integration spike
 
 **`npm error EACCES ... _cacache`** — the npm cache is unwritable. Use another:
 `NPM_CONFIG_CACHE=./.npm-cache npm install`
+
+**"Kathara GUI has no interface" on the page, or a warning saying so at startup** — the
+copy you started was installed before the interface was built (F45). Run `install.cmd` or
+`./install.sh` in the project folder.
 
 **Blank page, or 404 at the root** — the UI has not been built. `npm --prefix frontend run build`
 

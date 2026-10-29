@@ -16,7 +16,7 @@ import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from kathara_gui import __version__
@@ -30,8 +30,24 @@ STATIC_DIR = Path(__file__).parent / "static"
 _PUBLIC_PATHS = frozenset(["/", "/index.html", "/favicon.ico"])
 _TOKEN_HEADER = "x-kgui-token"
 
+#: Said at startup and on the page when an installation has no interface (F45).
+#: `uv tool install .` before the interface was built gave a server with no
+#: page at all, and a bare 404 gave no hint why.
+MISSING_INTERFACE = (
+    "This installation has no interface: it was installed before the interface was "
+    "built. In the project folder, run install.cmd (Windows) or ./install.sh (macOS, "
+    "Linux), which builds it and installs again. In a source checkout run by "
+    "`uv run`, `npm --prefix frontend run build` is enough."
+)
 
-def create_app(token: str | None = None, workspace: Path | None = None) -> FastAPI:
+
+def interface_built(static_dir: Path = STATIC_DIR) -> bool:
+    return (static_dir / "index.html").is_file()
+
+
+def create_app(
+    token: str | None = None, workspace: Path | None = None, static_dir: Path = STATIC_DIR
+) -> FastAPI:
     """Build the application.
 
     ``token`` of ``None`` mints a fresh one. ``workspace`` is where labs are
@@ -93,9 +109,21 @@ def create_app(token: str | None = None, workspace: Path | None = None) -> FastA
     app.include_router(project.router)
     app.include_router(preferences.router)
 
-    # Mounted last so API routes win. Absent during early development and in
-    # a source checkout that has not built the frontend yet.
-    if STATIC_DIR.is_dir() and any(STATIC_DIR.iterdir()):
-        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    # Mounted last so API routes win. Absent in a source checkout that has not
+    # built the frontend yet, and in a copy installed before it was built.
+    if interface_built(static_dir):
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    else:
+        # The reason, where the user is looking, rather than a 404 (F45).
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+        async def missing_interface() -> str:
+            return (
+                '<!doctype html><html lang="en"><meta charset="utf-8">'
+                "<title>Kathara GUI: no interface</title>"
+                '<body style="font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; '
+                'margin: 3rem auto; padding: 0 1rem">'
+                f"<h1>Kathara GUI has no interface</h1><p>{MISSING_INTERFACE}</p>"
+                "</body></html>"
+            )
 
     return app

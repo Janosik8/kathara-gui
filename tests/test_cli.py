@@ -196,7 +196,17 @@ def test_an_empty_workspace_is_refused() -> None:
         cli.workspace_arg("   ")
 
 
-def test_the_workspace_is_created_at_startup(tmp_path: Any) -> None:
+@pytest.fixture
+def built(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """An interface to serve, so a check does not depend on the checkout's build."""
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(cli, "STATIC_DIR", static)
+    return static
+
+
+def test_the_workspace_is_created_at_startup(tmp_path: Any, built: Any) -> None:
     """A folder that cannot exist is reported before the browser opens."""
     workspace = tmp_path / "kgui test" / "nested"
     assert cli.main(["--check", "--workspace", str(workspace)]) == 0
@@ -211,3 +221,23 @@ def test_a_workspace_that_cannot_be_created_stops_startup(
     with pytest.raises(SystemExit):
         cli.main(["--check", "--workspace", str(blocker / "labs")])
     assert "cannot use" in capsys.readouterr().err
+
+
+def test_a_copy_installed_without_its_interface_fails_the_check_and_says_why(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """F45: `uv tool install .` before the build gave a server with no page."""
+    monkeypatch.setattr(cli, "STATIC_DIR", tmp_path / "static")
+    # Installed: there is no frontend/ beside the package to compare against.
+    monkeypatch.setattr(cli, "FRONTEND_DIR", tmp_path / "no-frontend")
+
+    assert cli.main(["--check", "--workspace", str(tmp_path / "labs")]) == 1
+    out = capsys.readouterr().out
+    assert "has no interface" in out
+    assert "install.cmd" in out
+    assert "check failed" in out
+
+
+def test_the_check_passes_with_the_interface_built(tmp_path: Any, built: Any, capsys: Any) -> None:
+    assert cli.main(["--check", "--workspace", str(tmp_path / "labs")]) == 0
+    assert "OK" in capsys.readouterr().out

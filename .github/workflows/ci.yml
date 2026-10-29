@@ -62,8 +62,14 @@ jobs:
 
   # Guards the distribution promise: a user can install from a clean checkout
   # and the command works. Replaces the binary-packaging gate.
+  #
+  # It installs the interface built above, as install.cmd and install.sh do.
+  # It used to install without it, and passed: --check did not look for the
+  # interface, so the installed copy served a 404 at every page and nothing
+  # noticed until the user tried it (F45). --check now fails without it.
   install-smoke:
     name: install (${{ matrix.os }})
+    needs: frontend
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -72,6 +78,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: src/kathara_gui/static/
       - name: Install as a tool
         run: uv tool install .
       - name: Command is on PATH and starts
