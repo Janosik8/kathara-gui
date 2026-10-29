@@ -15,6 +15,7 @@
  */
 
 import type { PendingEnd } from "../types";
+import { Explanation } from "./Explain";
 
 interface Props {
   active: boolean;
@@ -58,10 +59,10 @@ export function ConnectModeBar({ active, pending, enabled, onToggle }: Props) {
       <p className="connect-mode__instruction">{instructionFor(active, enabled, pending)}</p>
 
       {active && (
-        <p className="connect-mode__instruction">
+        <Explanation className="connect-mode__instruction">
           To add a device to an existing network, click the device and then the link or
           collision domain it should join.
-        </p>
+        </Explanation>
       )}
     </div>
   );

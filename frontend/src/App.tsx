@@ -20,6 +20,7 @@ import { AddressingPanel } from "./panels/AddressingPanel";
 import { CollisionDomainsPanel, referencedDomains } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
+import { ExplainContext } from "./panels/Explain";
 import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
 import { LabTitle } from "./panels/LabTitle";
@@ -178,6 +179,23 @@ const DEFAULT_LAYOUT: Preferences["panels"] = {
   right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
 };
 
+/**
+ * What each top-bar control does, shown under the bar while ⓘ is on (note 4).
+ * One sentence each: the labels themselves stay short to keep the bar small.
+ */
+const TOP_BAR_EXPLANATIONS: readonly (readonly [string, string])[] = [
+  ["Undo, Redo", "Step back through your edits, or forward again. Ctrl+Z and Ctrl+Shift+Z do the same."],
+  ["Delete", "Removes the selected devices, or the selected link, with what only they used."],
+  ["New…", "Starts an empty scenario. The one open now stays saved in its folder."],
+  ["Save", "Writes the scenario into its folder in the workspace. Ctrl+S does the same."],
+  ["Save as…", "Saves a copy under a new name, in a folder of that name."],
+  ["Open…", "Opens another scenario from the workspace. A running lab keeps running."],
+  ["Export", "Downloads the scenario folder as a .zip, to hand in or share."],
+  ["Import…", "Opens a .zip or a lab.conf from elsewhere, including labs made without this application."],
+  ["Single-key shortcuts (C)", "When ticked, the C key turns connect mode on and off. Untick it if you type commands by voice."],
+  ["ⓘ", "Shows or hides these explanations, and the ones in the side panels."],
+];
+
 /** A panel section as App renders it; `shown: false` leaves it out for now. */
 interface SectionSpec {
   title: string;
@@ -218,6 +236,9 @@ export default function App() {
   // one-letter shortcut can be turned off (F42). Not remembered between
   // launches, by decision: the port changes each run, so the browser could not.
   const [singleKeyShortcuts, setSingleKeyShortcuts] = useState(true);
+  // Whether explanations of the controls are showing (note 4). Off on every
+  // launch, by the user's choice, so the bars and panels show labels only.
+  const [explain, setExplain] = useState(false);
 
   /**
    * The latest thing worth saying that is not an edit's own description.
@@ -1475,8 +1496,39 @@ export default function App() {
             />
             Single-key shortcuts (C)
           </label>
+          {/* A toggle, not a dialog: pressing it again closes what it opened,
+              and focus stays here so nothing moves under the user. */}
+          <button
+            type="button"
+            className="app__explain"
+            aria-pressed={explain}
+            aria-label="Explain the buttons"
+            title="Explain the buttons"
+            onClick={() => setExplain((on) => !on)}
+          >
+            ⓘ
+          </button>
         </div>
       </header>
+
+      {explain && (
+        <section className="scenario-drawer app__explanations" aria-labelledby="explanations-heading">
+          <h2 className="confirm__heading" id="explanations-heading">
+            What the buttons do
+          </h2>
+          <dl className="app__explanations-list">
+            {TOP_BAR_EXPLANATIONS.map(([name, what]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="field__hint">
+            The side panels are showing their explanations too. Press ⓘ again to hide them.
+          </p>
+        </section>
+      )}
 
       {scenarioDialog && (
         <ScenarioDrawer
@@ -1499,6 +1551,7 @@ export default function App() {
         />
       )}
 
+      <ExplainContext.Provider value={explain}>
       <div className="app__body">
         <aside
           className="panel"
@@ -1725,6 +1778,7 @@ export default function App() {
           </div>
         </aside>
       </div>
+      </ExplainContext.Provider>
 
       {error && (
         <div className="app__error">

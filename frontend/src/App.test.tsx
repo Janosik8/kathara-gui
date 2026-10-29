@@ -1854,7 +1854,8 @@ describe("the scenario as a folder", () => {
     const names = within(bar)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(-3)).toEqual(["Open…", "Export", "Import…"]);
+    // ⓘ closes the bar (note 4), after the C switch, which is not a button.
+    expect(names.slice(-4)).toEqual(["Open…", "Export", "Import…", "ⓘ"]);
     // One of each: not also left behind in the Scenario panel.
     expect(screen.getAllByRole("button", { name: "Export" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Import…" })).toHaveLength(1);
@@ -3588,6 +3589,86 @@ describe("side-panel sections collapse and move (note 3)", () => {
     await user.click(toggle("Details"));
     await user.click(toggle("Laboratory"));
     await user.click(screen.getByRole("button", { name: "Move Topology up" }));
+
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+});
+
+describe("explanations on request, behind ⓘ (note 4)", () => {
+  const info = () => screen.getByRole("button", { name: "Explain the buttons" });
+  /** Panel explanations, one per panel that has one with nothing selected. */
+  const explanations = [
+    /keeps every subnet you typed/,
+    /Lays every device out in layers/,
+    /into the scenario folder/,
+  ];
+
+  it("starts with labels and statuses only", async () => {
+    await renderApp();
+    expect(info()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("heading", { name: "What the buttons do" })).toBeNull();
+    for (const text of explanations) expect(screen.queryByText(text)).toBeNull();
+    // A status or a reason is not an explanation, and stays.
+    expect(screen.getByText("Add a device before deploying.")).toBeInTheDocument();
+    expect(screen.getByText(/Select two or more devices to align them/)).toBeInTheDocument();
+    expect(screen.getByText(/Deploy the lab first/)).toBeInTheDocument();
+  });
+
+  it("shows what every top-bar button does, and the panels' explanations, then hides them", async () => {
+    const user = await renderApp();
+    await user.click(info());
+
+    expect(info()).toHaveAttribute("aria-pressed", "true");
+    expect(info()).toHaveFocus();
+    const strip = screen.getByRole("region", { name: "What the buttons do" });
+    const bar = screen.getByRole("group", { name: "Topology actions" });
+    // Every button in the bar is described, by the name it shows.
+    const described = within(strip)
+      .getAllByRole("term")
+      .map((term) => term.textContent ?? "");
+    for (const button of within(bar).getAllByRole("button")) {
+      const label = button.textContent ?? "";
+      expect(described.some((name) => name.includes(label.replace("Delete link", "Delete"))), label).toBe(
+        true,
+      );
+    }
+    expect(within(strip).getByText("Single-key shortcuts (C)")).toBeInTheDocument();
+    for (const text of explanations) expect(screen.getByText(text)).toBeInTheDocument();
+
+    await user.click(info());
+    expect(info()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("region", { name: "What the buttons do" })).toBeNull();
+    for (const text of explanations) expect(screen.queryByText(text)).toBeNull();
+  });
+
+  it("explains inside a section that is in use, such as a selected device's loopbacks", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(row("r1"));
+    expect(screen.queryByText(/for a router ID/)).toBeNull();
+
+    await user.click(info());
+    expect(screen.getByText(/for a router ID/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Privileged" })).toHaveAccessibleDescription(
+      /administrator .* or root/,
+    );
+  });
+
+  it("is not remembered: pressing it stores nothing", async () => {
+    const user = await renderApp();
+    await waitFor(() => expect(preferences).toHaveBeenCalled());
+    await user.click(info());
+    // Longer than the layout's debounce, so a write would have happened.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(savePreferences).not.toHaveBeenCalled();
+  });
+
+  it("has no axe violations with explanations showing and a device selected", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(row("r1"));
+    await user.click(info());
 
     const results = await axeCore.run(document.body);
     expect(results.violations.map((v) => v.id)).toEqual([]);

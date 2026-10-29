@@ -816,6 +816,37 @@ select {
 
 /* -- connect mode --------------------------------------------------- */
 
+/* -- ⓘ: explanations of the controls, on request (note 4) -------------- */
+
+.app__explain {
+  min-width: 32px;
+  min-height: 24px;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+/* Filled while on, like Connect mode; aria-pressed is what is announced. */
+.app__explain[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+/* Name and sentence side by side while there is room, stacked when there is
+   not (1.4.10): no column asks for more than the strip has. */
+.app__explanations-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 4px 16px;
+  margin: 6px 0;
+}
+.app__explanations-list dt {
+  font-weight: 600;
+}
+.app__explanations-list dd {
+  margin: 0 0 4px;
+  color: var(--fg-muted);
+}
+
 .connect-mode {
   margin: 16px 0;
 }

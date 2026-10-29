@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import type { AddressingIssue } from "../api/client";
+import { Explanation } from "./Explain";
 
 interface Props {
   issues: AddressingIssue[];
@@ -97,13 +98,13 @@ export function AddressingPanel({
           <button type="button" onClick={() => onAllocate(true, pool, prefix)} disabled={busy}>
             Renumber all
           </button>
-          <p className="addressing__hint">
+          <Explanation className="addressing__hint">
             <strong>Assign addresses</strong> keeps every subnet you typed in the Collision
             domains panel, and every address that lies inside its domain&apos;s subnet. An
             address outside that subnet is replaced, and the rest is filled in from the
             pool. <strong>Renumber all</strong> discards them and numbers everything afresh
             from the pool.
-          </p>
+          </Explanation>
         </div>
       ) : (
         <p className="addressing__hint">

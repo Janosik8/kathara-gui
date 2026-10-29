@@ -16,6 +16,7 @@ import {
   type Node,
   type Topology,
 } from "../types";
+import { Explanation, useExplain } from "./Explain";
 
 /**
  * Why a loopback address would be refused, or null. The server refuses the
@@ -47,6 +48,7 @@ interface Props {
 export function Inspector({ topology, selected, onDispatch }: Props) {
   const only = selected.length === 1 ? selected[0] : undefined;
   const node: Node | undefined = topology.nodes.find((n) => n.name === only);
+  const explain = useExplain();
 
   if (!node) {
     return (
@@ -144,14 +146,15 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
             type="checkbox"
             checked={node.privileged ?? false}
             onChange={(e) => update({ privileged: e.target.checked })}
-            aria-describedby="inspector-privileged-hint"
+            // Only while the hint exists, so it never points at nothing.
+            aria-describedby={explain ? "inspector-privileged-hint" : undefined}
           />
           Privileged
         </label>
-        <p className="field__hint" id="inspector-privileged-hint">
+        <Explanation id="inspector-privileged-hint">
           Full access to the host kernel, for MPLS or kernel modules. Kathará allows it only
           when this application runs as administrator (Windows) or root (macOS, Linux).
-        </p>
+        </Explanation>
       </div>
 
       <fieldset className="field field--group">
@@ -218,10 +221,10 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
       )}
 
       <h3 className="panel__heading">Loopback (lo)</h3>
-      <p className="field__hint">
+      <Explanation>
         Extra addresses on <code>lo</code>, for a router ID or an address that stays up
         whichever link is down. Usually a /32.
-      </p>
+      </Explanation>
       {/* Keyed by device, so empty rows opened on one device do not follow
           the selection to the next. */}
       <LoopbackRows key={node.name} loopbacks={loopbacks} onChange={setLoopbacks} />

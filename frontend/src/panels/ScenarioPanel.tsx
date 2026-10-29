@@ -19,6 +19,7 @@
 
 import type { CaptureResponse } from "../api/client";
 import { DismissButton } from "./DismissButton";
+import { Explanation } from "./Explain";
 
 interface Props {
   /** Null until the scenario has a folder on disk. */
@@ -94,11 +95,11 @@ export function ScenarioPanel({
       )}
 
       <h3 className="panel__heading">Running configuration</h3>
-      <p className="field__hint">
+      <Explanation>
         Copies what the devices are <em>actually</em> running into the scenario folder —
         routing configuration into each router's <code>frr.conf</code>, and interface
         addresses back onto the canvas.
-      </p>
+      </Explanation>
 
       <div className="lab__actions">
         <button type="button" onClick={onCapture} disabled={busy !== null || !anyRunning}>

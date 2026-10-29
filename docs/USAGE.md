@@ -227,6 +227,14 @@ because they change nothing in the design. A collapsed **Scenario** or **Laborat
 by itself when something in it needs an answer or reports a result, such as a capture, a
 question before a redeploy, or the link checks.
 
+**ⓘ, at the right-hand end of the top bar, explains the controls.** The bars and panels
+show button labels and what is happening now, and nothing more, to keep them small. Press
+ⓘ (it fills blue while on) and a strip under the top bar says what each of its buttons
+does, while the side panels show their explanations too: Assign addresses against
+Renumber all, what Tidy layout does, what Capture copies, the privileged and loopback
+hints. Press it again to hide them. Statuses and reasons, such as "Add a device before
+deploying", are never hidden. It starts off on every launch.
+
 ### Reading the diagram
 
 Each interface is drawn as a labelled point on the device's edge — `eth0`, `eth1` — and a

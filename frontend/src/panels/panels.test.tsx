@@ -8,6 +8,7 @@ import { type Topology, newNode, suggestCollisionDomain } from "../types";
 import { Inspector, validateLoopback } from "./Inspector";
 import { CollisionDomainsPanel, validateSubnet } from "./CollisionDomainsPanel";
 import { Palette, suggestName } from "./Palette";
+import { ExplainContext } from "./Explain";
 
 function twoRouters(): Topology {
   return {
@@ -172,7 +173,12 @@ describe("Inspector", () => {
     // Bug 31.
     const user = userEvent.setup();
     const onDispatch = vi.fn();
-    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />);
+    // What it needs is an explanation, so it shows while ⓘ is on (note 4).
+    render(
+      <ExplainContext.Provider value={true}>
+        <Inspector topology={linked()} selected={["r1"]} onDispatch={onDispatch} />
+      </ExplainContext.Provider>,
+    );
     const box = screen.getByRole("checkbox", { name: "Privileged" });
     expect(box).toHaveAccessibleDescription(/administrator .* or root/);
     await user.click(box);
@@ -181,6 +187,13 @@ describe("Inspector", () => {
       name: "r1",
       changes: { privileged: true },
     });
+  });
+
+  it("describes privileged mode only while explanations are on, never pointing at nothing", () => {
+    render(<Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />);
+    const box = screen.getByRole("checkbox", { name: "Privileged" });
+    expect(box).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText(/administrator .* or root/)).toBeNull();
   });
 
   describe("loopback rows", () => {

@@ -14,6 +14,7 @@ import {
   type AlignmentAction,
   minimumSelection,
 } from "../store/alignment";
+import { Explanation } from "./Explain";
 
 const GROUPS: { legend: string; actions: AlignmentAction[] }[] = [
   { legend: "Align", actions: ["left", "centerX", "right", "top", "centerY", "bottom"] },
@@ -56,10 +57,10 @@ export function AlignmentToolbar({
             {busy ? "Arranging…" : "Tidy layout"}
           </button>
         </div>
-        <p className="alignment__hint">
+        <Explanation className="alignment__hint">
           Lays every device out in layers with as few link crossings as it can. Applied
           automatically to a lab imported without a saved layout.
-        </p>
+        </Explanation>
       </fieldset>
 
       {GROUPS.map((group) => (

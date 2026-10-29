@@ -15,6 +15,7 @@
 import type { Operation } from "../store/operations";
 import type { Topology } from "../types";
 import { CommittedInput } from "./CommittedInput";
+import { Explanation } from "./Explain";
 
 interface Props {
   topology: Topology;
@@ -52,9 +53,9 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
 
   return (
     <>
-      <p className="field__hint">
+      <Explanation>
         Leave a subnet blank to have one allocated. Set one to pin that network.
-      </p>
+      </Explanation>
 
       <ul className="domain-list">
         {domains.map(({ name, members, subnet }) => (
