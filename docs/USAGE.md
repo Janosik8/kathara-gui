@@ -153,10 +153,26 @@ folder; `uv tool uninstall kathara-gui` does the same. Only the command goes: yo
 and uv, Node.js and Docker, stay. A lab still deployed keeps running in Docker, so press
 **Stop every lab** first if you are done with it.
 
-*Why not just `uv tool install .`?* The interface is a build product and is not in git, so
-before it is built there is nothing to install with the server. That is how a copy that
-answered "404 Not Found" at every page came about (F45). The installed command now says
-so when it starts, and shows the reason on the page.
+### Installed as a tool, by hand with uv
+
+The installer is a convenience, not a requirement: it runs these commands, which work as
+well typed by hand in the project folder. In PowerShell, type `npm.cmd` for `npm`.
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run build                  # first: uv installs what is built
+uv tool install --reinstall-package kathara-gui .
+uv tool update-shell                             # once, if kathara-gui is not found
+kathara-gui
+uv tool uninstall kathara-gui
+```
+
+**Build the interface before `uv tool install .`** The interface is a build product and
+is not in git, so before it is built there is nothing to install with the server. That is
+how a copy that answered "404 Not Found" at every page came about (F45). Such a copy now
+says so when it starts, and shows the reason on the page. `--reinstall-package` makes uv
+rebuild rather than reuse its cached copy, so a `git pull` reaches the installed command.
+`uv run kathara-gui`, above, needs no installation at all.
 
 ---
 
