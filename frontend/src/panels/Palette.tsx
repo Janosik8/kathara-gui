@@ -6,6 +6,7 @@
  * action in the application. Placement is automatic and can be adjusted after.
  */
 
+import { DEVICE_ICONS } from "../canvas/icons";
 import { DEVICE_KINDS, type DeviceKind, type Topology } from "../types";
 
 interface Props {
@@ -44,6 +45,9 @@ export function Palette({ topology, onAdd, disabled }: Props) {
             onClick={() => onAdd(kind)}
             disabled={disabled}
           >
+            {/* The picture the device will have on the canvas (UX-08); the
+                words carry the name, so it is decoration here. */}
+            <img className="palette__icon" src={DEVICE_ICONS[kind]} alt="" />
             {/* Name the device that will be created, so the outcome is
                 predictable before activating the control. */}
             Add {kind} <span className="palette__hint">({suggestName(topology, kind)})</span>

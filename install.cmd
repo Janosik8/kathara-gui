@@ -11,13 +11,20 @@ rem command that gets it.
 setlocal
 cd /d "%~dp0"
 
+rem Opened by a double-click, the window closes the moment this exits and takes
+rem every message with it (bug 38). So when cmd was started just to run this
+rem file, which is what a double-click or PowerShell does, wait for a key at the
+rem end. Typed into an open Command Prompt, the window stays anyway.
+echo "%cmdcmdline%" | find /i "%~f0" >nul && set "HOLD=1"
+
 where uv >nul 2>nul
 if errorlevel 1 (
   echo uv is not installed. It provides Python and installs the application.
   echo Get it with:  winget install astral-sh.uv
   echo or see https://docs.astral.sh/uv/getting-started/installation/
   echo Then open a new terminal and run install.cmd again.
-  exit /b 1
+  set "RC=1"
+  goto end
 )
 where npm.cmd >nul 2>nul
 if errorlevel 1 (
@@ -25,7 +32,8 @@ if errorlevel 1 (
   echo Get it with:  winget install OpenJS.NodeJS.LTS
   echo or see https://nodejs.org/
   echo Then open a new terminal and run install.cmd again.
-  exit /b 1
+  set "RC=1"
+  goto end
 )
 
 echo [1/4] Fetching the tools that build the interface (npm ci)...
@@ -60,9 +68,17 @@ echo If "kathara-gui" is not found, open a new terminal first. Then run:
 echo   kathara-gui
 echo Labs go to a kathara-labs folder in the folder you start it from.
 echo "kathara-gui --help" lists the options.
-exit /b 0
+set "RC=0"
+goto end
 
 :failed
 echo.
 echo Installation stopped: %STEP% failed. The messages above say why.
-exit /b 1
+set "RC=1"
+
+:end
+if defined HOLD (
+  echo.
+  pause
+)
+exit /b %RC%

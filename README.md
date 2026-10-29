@@ -57,19 +57,32 @@ Kathará has platform-specific prerequisites that this application inherits:
 The application runs as a local web application: it starts a server on `127.0.0.1` and opens
 your browser. The same command works on macOS, Windows and Linux.
 
-**Recommended** — [`uv`](https://docs.astral.sh/uv/) installs a suitable Python itself:
+You need **uv** (it provides Python and installs the application) and, once, **Node.js**
+(to build the interface). On Windows: `winget install astral-sh.uv` and
+`winget install OpenJS.NodeJS.LTS`, then open a new terminal. Then get the code and run the
+installer in its folder:
 
 ```
-uv tool install git+https://github.com/<user>/kathara-gui
+git clone https://github.com/Janosik8/kathara-gui
+cd kathara-gui
+.\install.cmd          # Windows (PowerShell or Command Prompt; double-clicking works too)
+./install.sh           # macOS, Linux
+```
+
+(No git? Download the ZIP from GitHub, unpack it, and run the installer in that folder.)
+
+The installer checks for uv and Node and says how to get whichever is missing, builds the
+interface, installs the `kathara-gui` command and checks that it starts. It waits for a key
+before closing, so its messages can be read. Then, in a **new** terminal:
+
+```
 kathara-gui
 ```
 
-**Without uv:**
-
-```
-python3 -m pip install --user git+https://github.com/<user>/kathara-gui
-kathara-gui
-```
+**Not** `uv tool install git+https://…` or `pip install git+https://…`: the interface is a
+build product and is not in git, so either installs a copy that answers "Kathara GUI has no
+interface" (bug 38, F45). To update, `git pull` and run the installer again. To remove it, run `.\uninstall.cmd`
+or `./uninstall.sh`; your labs are kept.
 
 Your browser opens automatically. To stop the server, press Ctrl+C.
 
@@ -88,13 +101,13 @@ kathara-gui --workspace ~/labs  # where deployed labs are written
 ## Development
 
 ```
-git clone https://github.com/<user>/kathara-gui
+git clone https://github.com/Janosik8/kathara-gui
 cd kathara-gui
 uv sync
 uv run kathara-gui --no-browser
 ```
 
-Frontend (only needed when working on the UI — releases ship it pre-built):
+Frontend (built by the installer; when working on the UI, rebuild it by hand):
 
 ```
 npm --prefix frontend ci

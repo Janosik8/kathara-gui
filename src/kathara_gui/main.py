@@ -35,9 +35,12 @@ _TOKEN_HEADER = "x-kgui-token"
 #: page at all, and a bare 404 gave no hint why.
 MISSING_INTERFACE = (
     "This installation has no interface: it was installed before the interface was "
-    "built. In the project folder, run install.cmd (Windows) or ./install.sh (macOS, "
-    "Linux), which builds it and installs again. In a source checkout run by "
-    "`uv run`, `npm --prefix frontend run build` is enough."
+    "built, for example by `uv tool install git+https://...`, which cannot build it "
+    "(bug 38). Get the project folder (git clone "
+    "https://github.com/Janosik8/kathara-gui, or the ZIP from that page), and in it "
+    "run install.cmd (Windows) or ./install.sh (macOS, Linux), which builds the "
+    "interface and installs again. In a source checkout run by `uv run`, "
+    "`npm --prefix frontend run build` is enough."
 )
 
 

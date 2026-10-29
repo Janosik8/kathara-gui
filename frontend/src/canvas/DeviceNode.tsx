@@ -14,6 +14,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Fragment } from "react";
 import type { DeviceKind, Interface } from "../types";
+import { DEVICE_ICONS } from "./icons";
 import type { DevicePlacements } from "./layout";
 
 export interface DeviceNodeData extends Record<string, unknown> {
@@ -43,13 +44,6 @@ function alongBorder(position: Position, offset: string): React.CSSProperties {
     : { left: offset };
 }
 
-const GLYPH: Record<DeviceKind, string> = {
-  router: "◆",
-  switch: "▬",
-  pc: "▢",
-  server: "▤",
-};
-
 export function DeviceNode({ data, selected }: NodeProps) {
   const { label, kind, interfaces, loopbacks, placements, pending } = data as DeviceNodeData;
 
@@ -59,11 +53,11 @@ export function DeviceNode({ data, selected }: NodeProps) {
       data-selected={selected || undefined}
       data-pending={pending || undefined}
     >
-      <span className="device__glyph" aria-hidden="true">
-        {GLYPH[kind]}
-      </span>
+      {/* The picture names the kind, so the word "router" under it went
+          (UX-08). Not draggable: a dragged image would leave the browser's
+          ghost picture instead of moving the device. */}
+      <img className="device__icon" src={DEVICE_ICONS[kind]} alt="" draggable={false} />
       <span className="device__name">{label}</span>
-      <span className="device__kind">{kind}</span>
       {loopbacks?.map((address) => (
         <span key={address} className="device__lo">
           lo {address}

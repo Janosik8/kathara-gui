@@ -131,7 +131,11 @@ that gets it, for example `winget install astral-sh.uv`; it never installs syste
 itself. Then it builds the interface, installs the `kathara-gui` command, checks that the
 installed copy starts, and puts uv's command folder on your PATH if it is not there yet.
 `install.cmd` is a `.cmd` file on purpose: Windows PowerShell's default *Restricted* policy
-refuses `.ps1` scripts but runs it.
+refuses `.ps1` scripts but runs it. It can also be double-clicked in Explorer; the window
+then waits for a key before it closes, so its messages can be read (bug 38).
+
+Do **not** install with `uv tool install git+https://…` or `pip install git+https://…`:
+the interface is not in git, so that copy can only say "Kathara GUI has no interface".
 
 Then, in a **new** terminal (the first time only, so it sees the new PATH):
 
@@ -143,8 +147,11 @@ kathara-gui --help
 Labs go to a `kathara-labs` folder in the folder you start it from, as with `uv run`;
 `--workspace` chooses another. Docker Desktop must be running to deploy.
 
-**To update** after a `git pull`, run the installer again. **To remove it:**
-`uv tool uninstall kathara-gui`.
+**To update** after a `git pull`, run the installer again. **To remove it**, run
+`.\uninstall.cmd` (Windows; double-clicking works too) or `./uninstall.sh` in the same
+folder; `uv tool uninstall kathara-gui` does the same. Only the command goes: your labs,
+and uv, Node.js and Docker, stay. A lab still deployed keeps running in Docker, so press
+**Stop every lab** first if you are done with it.
 
 *Why not just `uv tool install .`?* The interface is a build product and is not in git, so
 before it is built there is nothing to install with the server. That is how a copy that
@@ -161,7 +168,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 
 | Action | How |
 |---|---|
-| Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. |
+| Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. On the canvas each kind is drawn as its own picture (router, switch, computer, server tower) with the name under it. |
 | Select | Click a device in the tree or on the canvas. |
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
 | Connect two devices | Turn on **Connect mode** (the button above the collision domain list, or press `C`; it is filled blue, with ◉, while on), click one device, then click another. A link appears. `C` can be switched off with **Single-key shortcuts (C)** in the top bar. |

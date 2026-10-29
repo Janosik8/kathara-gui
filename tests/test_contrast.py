@@ -269,6 +269,38 @@ def test_the_strong_border_is_stronger_than_the_subtle_one() -> None:
         assert strong > subtle, f"{theme}: --border-strong is no stronger than --border"
 
 
+# -- device pictures (UX-08, F46) -----------------------------------------
+
+#: The body colour of each picture on the canvas, as measured by
+#: `scripts/icons_to_png.py` from the PNGs it writes. Rerun it if they change.
+DEVICE_ICON_COLOURS = {
+    "router": "#007cc4",
+    "switch": "#0077c1",
+    "pc": "#0084c7",
+    "server": "#00a5d4",
+}
+
+
+def test_a_device_picture_too_light_for_the_canvas_is_outlined() -> None:
+    """WCAG 1.4.11: the picture tells the kind, so it must stand out at 3:1.
+
+    The pictures are bitmaps and cannot use a token. Where one falls short (the
+    server's light blue on the light canvas, 2.86:1), the stylesheet outlines
+    every picture in --border-strong, which the boundary tests above hold at
+    3:1 against the canvas in both themes. If the outline is ever removed,
+    every picture has to manage on its own colour.
+    """
+    short = [
+        f"{kind} in {theme} ({contrast_ratio(colour, palette['--bg']):.2f}:1)"
+        for theme, palette in THEMES
+        for kind, colour in DEVICE_ICON_COLOURS.items()
+        if contrast_ratio(colour, palette["--bg"]) < NON_TEXT_MINIMUM
+    ]
+    rule = _block(STYLES.read_text(encoding="utf-8"), ".device__icon {")
+    outlined = "drop-shadow" in rule and "var(--border-strong)" in rule
+    assert outlined or not short, f"pictures below 3:1 and not outlined: {short}"
+
+
 # -- the maths itself ---------------------------------------------------
 
 
