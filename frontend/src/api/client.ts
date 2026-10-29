@@ -190,6 +190,11 @@ export interface StatusResponse {
   conflicts: Conflicts | null;
 }
 
+/** The side panels' arrangement, remembered between launches (note 3). */
+export interface Preferences {
+  panels: Record<"left" | "right", { order: string[]; collapsed: string[] }>;
+}
+
 /** Which assistive features this scenario permits (exam mode). */
 export interface Features {
   subnet_calculator: boolean;
@@ -429,5 +434,17 @@ export const api = {
     request<CaptureResponse>("/api/project/capture", {
       method: "POST",
       body: JSON.stringify({ topology }),
+    }),
+
+  // -- preferences -------------------------------------------------------
+  // Kept by the server in the workspace: browser storage is keyed by origin,
+  // and the port, so the origin, changes on every launch (F42).
+
+  preferences: () => request<Preferences>("/api/preferences"),
+
+  savePreferences: (preferences: Preferences) =>
+    request<Preferences>("/api/preferences", {
+      method: "PUT",
+      body: JSON.stringify(preferences),
     }),
 };

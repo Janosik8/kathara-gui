@@ -63,10 +63,7 @@ export function AddressingPanel({
   if (!canAllocate && !canValidate) return null;
 
   return (
-    <section className="addressing" aria-labelledby="addressing-heading">
-      <h2 className="panel__heading" id="addressing-heading">
-        Addressing
-      </h2>
+    <div className="addressing">
 
       {canAllocate ? (
         <div className="addressing__actions">
@@ -147,6 +144,6 @@ export function AddressingPanel({
           )}
         </>
       )}
-    </section>
+    </div>
   );
 }

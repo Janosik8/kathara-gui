@@ -166,10 +166,8 @@ export function LabPanel({
   const anyRunning = (status?.running.length ?? 0) > 0;
 
   return (
-    <section className="lab" aria-labelledby="lab-heading">
-      <h2 className="panel__heading" id="lab-heading">
-        Laboratory
-      </h2>
+    // The tinted block is the panel section around this, heading included.
+    <>
 
       {blockers.length > 0 && (
         <ul className="issue-list" aria-label="Environment problems">
@@ -669,6 +667,6 @@ export function LabPanel({
           </div>
         </div>
       )}
-    </section>
+    </>
   );
 }

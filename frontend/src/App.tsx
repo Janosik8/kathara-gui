@@ -1,4 +1,4 @@
-import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { LiveRegion } from "./a11y/LiveRegion";
 import { TopologyTree } from "./a11y/TopologyTree";
 import {
@@ -10,19 +10,28 @@ import {
   type Conflicts,
   type EnvironmentCheck,
   type EverythingResponse,
+  type Preferences,
   type ScenarioSummary,
   type StatusResponse,
   api,
 } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
 import { AddressingPanel } from "./panels/AddressingPanel";
-import { CollisionDomainsPanel } from "./panels/CollisionDomainsPanel";
+import { CollisionDomainsPanel, referencedDomains } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
 import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
 import { LabTitle } from "./panels/LabTitle";
 import { PanelResizer } from "./panels/PanelResizer";
+import {
+  type PanelLayout,
+  PanelSection,
+  type PanelSide,
+  dropSection,
+  moveSection,
+  setCollapsed,
+} from "./panels/PanelSection";
 import { type ScenarioDialog, ScenarioDrawer } from "./panels/ScenarioDrawer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { Palette, suggestName } from "./panels/Palette";
@@ -158,6 +167,27 @@ function describeCheck(result: StatusResponse, wasDeployed: boolean): string {
 
 /** Narrower than this and the panel's own controls stop fitting. */
 const PANEL_MIN = 208;
+
+/**
+ * The side panels' sections in their default order, until the stored layout
+ * arrives (note 3). The server keeps the same list in api/preferences.py and
+ * repairs a stored layout against it, so the two must name the same ids.
+ */
+const DEFAULT_LAYOUT: Preferences["panels"] = {
+  left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+  right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
+};
+
+/** A panel section as App renders it; `shown: false` leaves it out for now. */
+interface SectionSpec {
+  title: string;
+  headingId: string;
+  shown?: boolean;
+  lockable?: boolean;
+  attention?: boolean;
+  className?: string;
+  content: ReactNode;
+}
 /** Wider than this and the canvas is the thing being squeezed out. */
 const PANEL_MAX = 560;
 
@@ -256,6 +286,34 @@ export default function App() {
   // Panel widths, in pixels. Kept here rather than in CSS because the user
   // drags them; the stylesheet supplies only the starting point and the floor.
   const [panelWidths, setPanelWidths] = useState({ left: 336, right: 304 });
+
+  // Which sections each panel shows, in what order, and which are collapsed.
+  // Read from the workspace at startup and written back on every change.
+  const [layout, setLayout] = useState<Preferences["panels"]>(DEFAULT_LAYOUT);
+  /** True once the user has arranged anything, so the stored layout, arriving late, cannot undo it. */
+  const layoutChanged = useRef(false);
+  const layoutSaveFailed = useRef(false);
+  const arrangePanel = useCallback(
+    (side: PanelSide, change: (current: PanelLayout) => PanelLayout) => {
+      layoutChanged.current = true;
+      setLayout((current) => ({ ...current, [side]: change(current[side]) }));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!layoutChanged.current) return;
+    // Debounced: a drag across the panel or ▲ pressed five times is one write.
+    const timer = window.setTimeout(() => {
+      api.savePreferences({ panels: layout }).catch(() => {
+        // Said once: a panel layout is not worth a message on every press.
+        if (layoutSaveFailed.current) return;
+        layoutSaveFailed.current = true;
+        setNotice("The panel layout could not be saved, so it lasts only until the page is closed.");
+      });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [layout]);
 
   const canConnect = topology.nodes.length >= 2;
   /** How far the running lab has moved on from the canvas. */
@@ -672,6 +730,14 @@ export default function App() {
     api
       .features()
       .then((f) => setCanVerify(f.infrastructure_verification))
+      .catch(() => undefined);
+
+    api
+      .preferences()
+      .then((stored) => {
+        if (!layoutChanged.current) setLayout(stored.panels);
+      })
+      // The default layout serves perfectly well without the stored one.
       .catch(() => undefined);
 
     refreshEverything();
@@ -1210,6 +1276,39 @@ export default function App() {
     scenarioBusy,
   ]);
 
+  const inspecting =
+    selected.length === 1 && topology.nodes.some((n) => n.name === selected[0]);
+
+  /** A side panel's sections, in the user's order, each collapsible and movable. */
+  const renderPanel = (side: PanelSide, sections: Record<string, SectionSpec>) => {
+    const shown = layout[side].order.filter((id) => (sections[id]?.shown ?? true) && id in sections);
+    return shown.map((id, index) => {
+      const spec = sections[id]!;
+      return (
+        <PanelSection
+          key={id}
+          side={side}
+          id={id}
+          title={spec.title}
+          headingId={spec.headingId}
+          index={index}
+          count={shown.length}
+          collapsed={layout[side].collapsed.includes(id)}
+          onCollapsedChange={(closed) => arrangePanel(side, (l) => setCollapsed(l, id, closed))}
+          onMove={(direction) => arrangePanel(side, (l) => moveSection(l, shown, id, direction))}
+          onDropSection={(dragged, after) =>
+            arrangePanel(side, (l) => dropSection(l, dragged, id, after))
+          }
+          lock={spec.lockable ? { locked, onPointerDown: refuseLocked } : undefined}
+          attention={spec.attention}
+          className={spec.className}
+        >
+          {spec.content}
+        </PanelSection>
+      );
+    });
+  };
+
   return (
     <div className="app" data-connect-mode={connectMode || undefined}>
       <a className="skip-link" href="#topology">
@@ -1419,41 +1518,61 @@ export default function App() {
 
           {running && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
 
-          {/* A disabled fieldset disables every control inside it natively,
-              so each stays visible and readable — a screen reader announces
-              it as unavailable rather than losing it — and none can act. */}
-          <fieldset className="edit-lock" disabled={locked} onPointerDown={refuseLocked}>
-            <Palette topology={topology} onAdd={addDevice} />
-
-            {/* Above the collision domains (bug 36): add devices, connect
-                them, then name the segments — the order the work is done in. */}
-            <ConnectModeBar
-              active={connectMode}
-              pending={pending}
-              enabled={canConnect}
-              onToggle={toggleConnectMode}
-            />
-
-            <CollisionDomainsPanel topology={topology} onDispatch={edit} />
-          </fieldset>
-
-          <h2 className="panel__heading" id="topology">
-            Topology
-          </h2>
-          <TopologyTree
-            topology={topology}
-            selected={selected}
-            pending={pending}
-            connectMode={connectMode}
-            onSelectCollisionDomain={activateDomain}
-            onSelect={activate}
-            // Left navigable while locked, since it is how a keyboard user
-            // reads the design; only its editing keys are withdrawn.
-            onRemove={locked ? undefined : (name) => edit({ type: "removeNode", name })}
-            onDisconnect={
-              locked ? undefined : (node, number) => edit({ type: "disconnect", node, number })
-            }
-          />
+          {/* Each section's body sits in its own disabled fieldset while the
+              lab runs, which disables every control inside it natively, so
+              each stays visible and readable but none can act. Its heading
+              stays live: collapsing and moving a section edit nothing. */}
+          {renderPanel("left", {
+            palette: {
+              title: "Add device",
+              headingId: "palette-heading",
+              lockable: true,
+              content: <Palette topology={topology} onAdd={addDevice} />,
+            },
+            // Above the collision domains by default (bug 36): add devices,
+            // connect them, then name the segments — the order the work is
+            // done in.
+            connect: {
+              title: "Connect",
+              headingId: "connect-heading",
+              lockable: true,
+              content: (
+                <ConnectModeBar
+                  active={connectMode}
+                  pending={pending}
+                  enabled={canConnect}
+                  onToggle={toggleConnectMode}
+                />
+              ),
+            },
+            domains: {
+              title: "Collision domains",
+              headingId: "domains-heading",
+              shown: referencedDomains(topology).length > 0,
+              lockable: true,
+              content: <CollisionDomainsPanel topology={topology} onDispatch={edit} />,
+            },
+            topology: {
+              title: "Topology",
+              headingId: "topology",
+              // Not locked: it is how a keyboard user reads the design, so it
+              // stays navigable and only its editing keys are withdrawn.
+              content: (
+                <TopologyTree
+                  topology={topology}
+                  selected={selected}
+                  pending={pending}
+                  connectMode={connectMode}
+                  onSelectCollisionDomain={activateDomain}
+                  onSelect={activate}
+                  onRemove={locked ? undefined : (name) => edit({ type: "removeNode", name })}
+                  onDisconnect={
+                    locked ? undefined : (node, number) => edit({ type: "disconnect", node, number })
+                  }
+                />
+              ),
+            },
+          })}
           </div>
         </aside>
 
@@ -1497,73 +1616,112 @@ export default function App() {
 
           {running && <p className="edit-lock__note">{LOCKED_NOTICE}</p>}
 
-          <fieldset className="edit-lock" disabled={locked} onPointerDown={refuseLocked}>
-            <Inspector topology={topology} selected={selected} onDispatch={edit} />
-            <AddressingPanel
-              issues={issues}
-              errors={counts.errors}
-              warnings={counts.warnings}
-              busy={allocating}
-              checking={checking}
-              canAllocate={canAllocate}
-              canValidate={canValidate}
-              onAllocate={allocateAddressing}
-            />
-            <AlignmentToolbar
-              selectionCount={selected.length}
-              deviceCount={topology.nodes.length}
-              busy={scenarioBusy === "arrange"}
-              onAlign={align}
-              onAutoArrange={autoArrange}
-            />
-          </fieldset>
-          <ScenarioPanel
-            folder={folder}
-            dirty={dirty}
-            busy={scenarioBusy}
-            anyRunning={(labStatus?.running.length ?? 0) > 0}
-            capture={capture}
-            onDismissCapture={() => setCapture(null)}
-            importWarnings={importWarnings}
-            foreign={foreign}
-            onCapture={captureState}
-          />
-
-          <LabPanel
-            status={labStatus}
-            diagnostics={diagnostics}
-            environment={environment}
-            canDeploy={canDeploy}
-            canVerify={canVerify}
-            busy={labBusy}
-            deviceCount={topology.nodes.length}
-            onDeploy={() => runLabAction("deploy")}
-            onUndeploy={() => runLabAction("undeploy")}
-            onCaptureAndStop={captureAndStop}
-            onCheck={checkLab}
-            everything={everything}
-            onWipe={wipeLabs}
-            onVerify={verifyLinks}
-            verifyDrift={verifyDrift}
-            onCaptureAndVerify={captureAndVerify}
-            onVerifyAnyway={() => {
-              setVerifyDrift(null);
-              void runLabAction("verify");
-            }}
-            onCancelVerify={() => {
-              setVerifyDrift(null);
-              setNotice("Verification cancelled. Nothing was changed.");
-            }}
-            onDismissDiagnostics={() => setDiagnostics(null)}
-            conflicts={conflicts}
-            onConfirmDeploy={() => runLabAction("deploy", true)}
-            onCaptureAndRedeploy={captureAndRedeploy}
-            onCancelDeploy={() => {
-              setConflicts(null);
-              setNotice("Deployment cancelled. Nothing was changed.");
-            }}
-            onAnnounce={setNotice}
-          />
+          {renderPanel("right", {
+            details: {
+              title: "Details",
+              headingId: "inspector-heading",
+              lockable: true,
+              // The tinted block means "these controls act on one device", so
+              // it appears only while exactly one device is selected.
+              className: inspecting ? "inspector--device" : undefined,
+              content: <Inspector topology={topology} selected={selected} onDispatch={edit} />,
+            },
+            addressing: {
+              title: "Addressing",
+              headingId: "addressing-heading",
+              shown: canAllocate || canValidate,
+              lockable: true,
+              content: (
+                <AddressingPanel
+                  issues={issues}
+                  errors={counts.errors}
+                  warnings={counts.warnings}
+                  busy={allocating}
+                  checking={checking}
+                  canAllocate={canAllocate}
+                  canValidate={canValidate}
+                  onAllocate={allocateAddressing}
+                />
+              ),
+            },
+            arrange: {
+              title: "Arrange",
+              headingId: "align-heading",
+              lockable: true,
+              content: (
+                <AlignmentToolbar
+                  selectionCount={selected.length}
+                  deviceCount={topology.nodes.length}
+                  busy={scenarioBusy === "arrange"}
+                  onAlign={align}
+                  onAutoArrange={autoArrange}
+                />
+              ),
+            },
+            scenario: {
+              title: "Scenario",
+              headingId: "scenario-heading",
+              attention: capture !== null || importWarnings.length > 0,
+              content: (
+                <ScenarioPanel
+                  folder={folder}
+                  dirty={dirty}
+                  busy={scenarioBusy}
+                  anyRunning={(labStatus?.running.length ?? 0) > 0}
+                  capture={capture}
+                  onDismissCapture={() => setCapture(null)}
+                  importWarnings={importWarnings}
+                  foreign={foreign}
+                  onCapture={captureState}
+                />
+              ),
+            },
+            lab: {
+              title: "Laboratory",
+              headingId: "lab-heading",
+              className: "lab",
+              // A question or a result in here must not wait unseen behind a
+              // collapsed heading.
+              attention: conflicts !== null || verifyDrift !== null || diagnostics !== null,
+              content: (
+                <LabPanel
+                  status={labStatus}
+                  diagnostics={diagnostics}
+                  environment={environment}
+                  canDeploy={canDeploy}
+                  canVerify={canVerify}
+                  busy={labBusy}
+                  deviceCount={topology.nodes.length}
+                  onDeploy={() => runLabAction("deploy")}
+                  onUndeploy={() => runLabAction("undeploy")}
+                  onCaptureAndStop={captureAndStop}
+                  onCheck={checkLab}
+                  everything={everything}
+                  onWipe={wipeLabs}
+                  onVerify={verifyLinks}
+                  verifyDrift={verifyDrift}
+                  onCaptureAndVerify={captureAndVerify}
+                  onVerifyAnyway={() => {
+                    setVerifyDrift(null);
+                    void runLabAction("verify");
+                  }}
+                  onCancelVerify={() => {
+                    setVerifyDrift(null);
+                    setNotice("Verification cancelled. Nothing was changed.");
+                  }}
+                  onDismissDiagnostics={() => setDiagnostics(null)}
+                  conflicts={conflicts}
+                  onConfirmDeploy={() => runLabAction("deploy", true)}
+                  onCaptureAndRedeploy={captureAndRedeploy}
+                  onCancelDeploy={() => {
+                    setConflicts(null);
+                    setNotice("Deployment cancelled. Nothing was changed.");
+                  }}
+                  onAnnounce={setNotice}
+                />
+              ),
+            },
+          })}
           </div>
         </aside>
       </div>

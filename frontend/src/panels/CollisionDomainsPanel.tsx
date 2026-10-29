@@ -51,10 +51,7 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
   if (domains.length === 0) return null;
 
   return (
-    <section aria-labelledby="domains-heading">
-      <h2 className="panel__heading" id="domains-heading">
-        Collision domains
-      </h2>
+    <>
       <p className="field__hint">
         Leave a subnet blank to have one allocated. Set one to pin that network.
       </p>
@@ -86,7 +83,7 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
           </li>
         ))}
       </ul>
-    </section>
+    </>
   );
 }
 
@@ -97,7 +94,7 @@ interface DomainRow {
 }
 
 /** Domains something is actually attached to, in first-seen order. */
-function referencedDomains(topology: Topology): DomainRow[] {
+export function referencedDomains(topology: Topology): DomainRow[] {
   const counts = new Map<string, number>();
   for (const node of topology.nodes) {
     for (const iface of node.interfaces) {

@@ -359,6 +359,99 @@ button:disabled {
   margin-top: 0;
 }
 
+/* -- a side panel's sections, collapsible and movable (note 3) --------- */
+
+.panel-section + .panel-section {
+  margin-top: 8px;
+}
+
+/* The heading, its ▲ ▼ and the grip on one line. Wraps rather than
+   overflowing when the panel is narrow or the text is enlarged (1.4.10). */
+.panel-section__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  cursor: grab;
+}
+.panel-section__header:active {
+  cursor: grabbing;
+}
+.panel-section--collapsed .panel-section__header {
+  margin-bottom: 0;
+}
+
+.panel-section__heading {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Reads as the heading it is, not as a button; the chevron and the hover
+   border say it can be pressed. */
+.panel-section__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.panel-section__toggle:hover {
+  border-color: var(--border-strong);
+}
+
+.panel-section__chevron {
+  width: 1em;
+  flex-shrink: 0;
+}
+
+.panel-section__grip {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  user-select: none;
+}
+
+/* 24 pixels square, the WCAG 2.2 target-size minimum, though EN 301 549 v3.2.1
+   does not yet ask for it. */
+.panel-section__move {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.panel-section__move:disabled {
+  /* Still drawn, so the pair keeps its place; dimmed text says it cannot go
+     further, and 1.4.3 exempts inactive controls. */
+  color: var(--fg-muted);
+  cursor: default;
+}
+
+/* Where a dragged section will land. A thick line in the focus colour, the
+   one colour the stylesheet already guarantees against every panel. */
+.panel-section--drop-before {
+  box-shadow: 0 -3px 0 0 var(--focus);
+}
+.panel-section--drop-after {
+  box-shadow: 0 3px 0 0 var(--focus);
+}
+
 .palette__buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;

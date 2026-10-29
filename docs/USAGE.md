@@ -213,6 +213,20 @@ survives the common red-green colour deficiencies — and the edges differ in *s
 because the two tints sit at almost the same lightness and would otherwise be identical to
 someone with no colour vision at all.
 
+**Every side-panel section can be collapsed and moved.** Press a section's heading to fold
+it down to the heading alone, and again to open it. Drag a section by its header (the ⠿
+grip, or anywhere on the header but its buttons) to another place in the same panel; a line
+shows where it will land. From the keyboard, ▲ and ▼ beside the heading move it one place,
+and focus stays on the button so it can be pressed again. Both panels work this way.
+
+The arrangement is remembered between launches, in `.kgui-preferences.json` in the
+workspace. Delete that file to go back to the default order with everything open. The
+browser cannot remember it: every launch takes a new port, and the browser keys its storage
+by port. Collapsing and moving still work while a lab runs and the design is read-only,
+because they change nothing in the design. A collapsed **Scenario** or **Laboratory** opens
+by itself when something in it needs an answer or reports a result, such as a capture, a
+question before a redeploy, or the link checks.
+
 ### Reading the diagram
 
 Each interface is drawn as a labelled point on the device's edge — `eth0`, `eth1` — and a
@@ -678,6 +692,8 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/project/open` | open a scenario folder from the workspace |
 | POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running |
 | POST | `/api/project/capture` | pull running configuration into the scenario |
+| GET | `/api/preferences` | the side panels' layout: each panel's section order and which are collapsed |
+| PUT | `/api/preferences` | store that layout in `.kgui-preferences.json`; unknown sections are dropped, missing ones restored |
 
 The `POST` endpoints for addressing and lab operations take the topology in the request body
 rather than acting on the stored one, because the browser normally holds newer work than the

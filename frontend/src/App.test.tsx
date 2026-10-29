@@ -20,6 +20,7 @@ import type {
   FeaturesResponse,
   IssuesResponse,
   OpenResponse,
+  Preferences,
   ScenarioSummary,
   ProbeResponse,
   SaveResponse,
@@ -54,6 +55,8 @@ const {
   arrange,
   labEverything,
   wipeLabs,
+  preferences,
+  savePreferences,
 } = vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
@@ -65,6 +68,12 @@ const {
     }
   }
   const blank = () => ({ name: "untitled", nodes: [], collision_domains: [] });
+  const defaultPreferences = (): Preferences => ({
+    panels: {
+      left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+      right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
+    },
+  });
   const idleStatus = (): StatusResponse => ({
     devices: [],
     running: [],
@@ -157,6 +166,8 @@ const {
     scenarios: vi.fn(async (): Promise<ScenarioSummary[]> => []),
     labEverything: vi.fn(async () => ({ devices: 0, labs: 0, message: null as string | null })),
     wipeLabs: vi.fn(async () => ({ devices: 0, labs: 0, message: null as string | null })),
+    preferences: vi.fn(async (): Promise<Preferences> => defaultPreferences()),
+    savePreferences: vi.fn(async (stored: Preferences): Promise<Preferences> => stored),
     arrange: vi.fn(async (topology: Topology) => ({
       positions: Object.fromEntries(
         topology.nodes.map((n, i) => [n.name, { x: i * 260, y: 0 }]),
@@ -219,6 +230,8 @@ vi.mock("./api/client", () => ({
     arrange,
     labEverything,
     wipeLabs,
+    preferences,
+    savePreferences,
   },
   initialiseToken: vi.fn(),
 }));
@@ -261,6 +274,13 @@ beforeEach(() => {
   undeploy.mockReset().mockResolvedValue(idleStatus);
   labEverything.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
   wipeLabs.mockReset().mockResolvedValue({ devices: 0, labs: 0, message: null });
+  preferences.mockReset().mockResolvedValue({
+    panels: {
+      left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+      right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
+    },
+  });
+  savePreferences.mockReset().mockImplementation(async (stored: Preferences) => stored);
   verify.mockReset().mockResolvedValue({
     checks: [],
     passed: 0,
@@ -3387,5 +3407,189 @@ describe("an address the server cannot read", () => {
     expect(
       await screen.findByText(/Could not check the addressing: Internal Server Error/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("side-panel sections collapse and move (note 3)", () => {
+  const toggle = (name: string) => screen.getByRole("button", { name, expanded: true });
+  /** The section ids of one panel, top to bottom, as rendered. */
+  const order = (panel: "Devices" | "Device details") =>
+    [...screen.getByRole("complementary", { name: panel }).querySelectorAll("[data-section]")].map(
+      (s) => s.getAttribute("data-section"),
+    );
+
+  /** jsdom has no DataTransfer; this one keeps what is set, as a browser's does. */
+  const transfer = () => {
+    const store = new Map<string, string>();
+    return {
+      get types() {
+        return [...store.keys()];
+      },
+      setData: (type: string, value: string) => store.set(type, value),
+      getData: (type: string) => store.get(type) ?? "",
+      dropEffect: "none",
+      effectAllowed: "all",
+    };
+  };
+
+  const runningLab: StatusResponse = {
+    devices: [{ name: "r1", state: "running" }],
+    running: ["r1"],
+    exited: [],
+    drift: [],
+    deployed: true,
+    lab_dir: "/workspace/untitled",
+    message: null,
+    needs_confirmation: false,
+    conflicts: null,
+  };
+
+  it("collapses a section to its heading with one press, and opens it with the next", async () => {
+    const user = await renderApp();
+    await user.click(toggle("Arrange"));
+
+    const closed = screen.getByRole("button", { name: "Arrange", expanded: false });
+    expect(screen.queryByRole("button", { name: "Auto-arrange" })).toBeNull();
+    // Still a heading, so the section can be found by its name.
+    expect(screen.getByRole("heading", { name: "Arrange" })).toBeInTheDocument();
+
+    await user.click(closed);
+    expect(screen.getByRole("button", { name: "Arrange", expanded: true })).toBeInTheDocument();
+  });
+
+  it("moves a section with the keyboard, and the button keeps focus", async () => {
+    const user = await renderApp();
+    expect(order("Device details")).toEqual(["details", "addressing", "arrange", "scenario", "lab"]);
+
+    screen.getByRole("button", { name: "Move Laboratory up" }).focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard("{Enter}");
+
+    expect(order("Device details")).toEqual(["details", "addressing", "lab", "arrange", "scenario"]);
+    expect(screen.getByRole("button", { name: "Move Laboratory up" })).toHaveFocus();
+  });
+
+  it("hands focus to the other arrow at the end of the panel", async () => {
+    const user = await renderApp();
+    screen.getByRole("button", { name: "Move Addressing up" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(order("Device details")[0]).toBe("addressing");
+    expect(screen.getByRole("button", { name: "Move Addressing up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Addressing down" })).toHaveFocus();
+  });
+
+  it("moves a section by dragging its header onto another", async () => {
+    await renderApp();
+    const panel = screen.getByRole("complementary", { name: "Devices" });
+    const header = panel.querySelector('[data-section="topology"] .panel-section__header')!;
+    const target = panel.querySelector('[data-section="palette"]')!;
+
+    const dataTransfer = transfer();
+    fireEvent.dragStart(header, { dataTransfer });
+    // jsdom's boxes are all zero-sized; above the middle means "before".
+    fireEvent.dragOver(target, { dataTransfer, clientY: -1 });
+    fireEvent.drop(target, { dataTransfer, clientY: -1 });
+
+    expect(order("Devices")).toEqual(["topology", "palette", "connect"]);
+  });
+
+  it("refuses a section dragged in from the other panel", async () => {
+    await renderApp();
+    const header = document.querySelector('[data-section="lab"] .panel-section__header')!;
+    const target = document.querySelector('[data-section="palette"]')!;
+
+    const dataTransfer = transfer();
+    fireEvent.dragStart(header, { dataTransfer });
+    // Not accepted: the browser shows "no drop", and no landing line is drawn.
+    // fireEvent returns false only when the handler called preventDefault.
+    expect(fireEvent.dragOver(target, { dataTransfer, clientY: -1 })).toBe(true);
+    expect(target.className).not.toMatch(/drop/);
+    fireEvent.drop(target, { dataTransfer, clientY: -1 });
+
+    expect(order("Devices")).toEqual(["palette", "connect", "topology"]);
+    expect(order("Device details")).toEqual(["details", "addressing", "arrange", "scenario", "lab"]);
+  });
+
+  it("still collapses and moves while the lab runs and the design is locked", async () => {
+    deploy.mockResolvedValue(runningLab);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+
+    expect(screen.getByRole("button", { name: /Add router/ })).toBeDisabled();
+    await user.click(toggle("Add device"));
+    expect(screen.getByRole("button", { name: "Add device", expanded: false })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Move Topology up" }));
+    expect(order("Devices")).toEqual(["palette", "topology", "connect"]);
+  });
+
+  it("opens a collapsed Scenario when a capture reports into it", async () => {
+    deploy.mockResolvedValue(runningLab);
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByText("Lab running — design is read-only");
+
+    await user.click(toggle("Scenario"));
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(await screen.findByRole("button", { name: "Capture, then stop" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Scenario", expanded: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("applies the stored layout at startup", async () => {
+    preferences.mockResolvedValue({
+      panels: {
+        left: { order: ["topology", "palette", "connect", "domains"], collapsed: ["palette"] },
+        right: { order: ["lab", "details", "addressing", "arrange", "scenario"], collapsed: [] },
+      },
+    });
+    await renderApp();
+
+    await waitFor(() => expect(order("Device details")[0]).toBe("lab"));
+    expect(order("Devices")).toEqual(["topology", "palette", "connect"]);
+    expect(screen.getByRole("button", { name: "Add device", expanded: false })).toBeInTheDocument();
+  });
+
+  it("writes a change back, once, after a burst of presses", async () => {
+    const user = await renderApp();
+    await waitFor(() => expect(preferences).toHaveBeenCalled());
+    expect(savePreferences).not.toHaveBeenCalled();
+
+    await user.click(toggle("Laboratory"));
+    await user.click(screen.getByRole("button", { name: "Move Arrange up" }));
+
+    await waitFor(() => expect(savePreferences).toHaveBeenCalledTimes(1));
+    expect(savePreferences).toHaveBeenLastCalledWith({
+      panels: {
+        left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+        right: {
+          order: ["details", "arrange", "addressing", "scenario", "lab"],
+          collapsed: ["lab"],
+        },
+      },
+    });
+  });
+
+  it("says, once, that the layout could not be saved", async () => {
+    savePreferences.mockRejectedValue(new MockApiError("disk full", 500));
+    const user = await renderApp();
+    await user.click(toggle("Arrange"));
+    expect(await screen.findByText(/panel layout could not be saved/)).toBeInTheDocument();
+  });
+
+  it("has no axe violations with sections collapsed and moved", async () => {
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(toggle("Details"));
+    await user.click(toggle("Laboratory"));
+    await user.click(screen.getByRole("button", { name: "Move Topology up" }));
+
+    const results = await axeCore.run(document.body);
+    expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 });

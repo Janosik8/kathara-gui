@@ -34,9 +34,7 @@ export function suggestName(topology: Topology, kind: DeviceKind): string {
 export function Palette({ topology, onAdd, disabled }: Props) {
   return (
     <div className="palette">
-      <h2 className="panel__heading" id="palette-heading">
-        Add device
-      </h2>
+      {/* Labelled by its panel section's heading, which App gives this id. */}
       <div className="palette__buttons" role="group" aria-labelledby="palette-heading">
         {DEVICE_KINDS.map((kind) => (
           <button

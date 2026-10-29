@@ -38,10 +38,6 @@ export function AlignmentToolbar({
 }: Props) {
   return (
     <>
-      <h2 className="panel__heading" id="align-heading">
-        Arrange
-      </h2>
-
       <p className="alignment__hint">
         {selectionCount < 2
           ? "Select two or more devices to align them. Hold Ctrl or Cmd to add to the selection."

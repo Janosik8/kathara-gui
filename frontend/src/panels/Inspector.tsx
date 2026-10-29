@@ -53,16 +53,13 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
       // No tint with nothing selected: the coloured block means "these
       // controls act on one device", so showing it empty would be a promise
       // with nothing behind it.
-      <section className="inspector" aria-labelledby="inspector-heading">
-        <h2 className="panel__heading" id="inspector-heading">
-          Details
-        </h2>
+      <div className="inspector">
         <p className="inspector__empty">
           {selected.length > 1
             ? `${selected.length} devices selected. Editing applies to one device at a time; use Arrange to align them.`
             : "Select a device to edit its settings."}
         </p>
-      </section>
+      </div>
     );
   }
 
@@ -92,11 +89,9 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
   return (
     // A tinted rectangle around everything belonging to the selected device —
     // its name, image, interfaces and daemons — so it is obvious at a glance
-    // that these controls act on one device and not on the laboratory.
-    <section className="inspector inspector--device" aria-labelledby="inspector-heading">
-      <h2 className="panel__heading" id="inspector-heading">
-        Details
-      </h2>
+    // that these controls act on one device and not on the laboratory. The
+    // tint itself is on the panel section, so it takes in the heading too.
+    <div className="inspector">
 
       <CommittedInput
         id="inspector-name"
@@ -230,7 +225,7 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
       {/* Keyed by device, so empty rows opened on one device do not follow
           the selection to the next. */}
       <LoopbackRows key={node.name} loopbacks={loopbacks} onChange={setLoopbacks} />
-    </section>
+    </div>
   );
 }
 

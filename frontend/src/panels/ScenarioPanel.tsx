@@ -54,10 +54,7 @@ export function ScenarioPanel({
   onCapture,
 }: Props) {
   return (
-    <section className="scenario" aria-labelledby="scenario-heading">
-      <h2 className="panel__heading" id="scenario-heading">
-        Scenario
-      </h2>
+    <div className="scenario">
 
       <p className="field__hint">
         {folder ? (
@@ -148,6 +145,6 @@ export function ScenarioPanel({
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
