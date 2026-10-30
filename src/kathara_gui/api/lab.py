@@ -300,6 +300,10 @@ class FeaturesResponse(BaseModel):
     infrastructure_verification: bool = Field(
         description="Whether link diagnostics are available in this scenario."
     )
+    interface_addresses: bool = Field(
+        default=False,
+        description="Whether the canvas shows each interface's host part (FR-49).",
+    )
 
 
 @router.get("/features", response_model=FeaturesResponse)

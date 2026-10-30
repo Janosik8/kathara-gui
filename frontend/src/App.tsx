@@ -287,16 +287,21 @@ export default function App() {
   const [environment, setEnvironment] = useState<EnvironmentCheck[]>([]);
   const [canDeploy, setCanDeploy] = useState(false);
   const [canVerify, setCanVerify] = useState(true);
+  // Off until the scenario says otherwise, like the server's default (FR-49).
+  const [showAddresses, setShowAddresses] = useState(false);
   const [examBusy, setExamBusy] = useState(false);
   const features: Features = {
     subnet_calculator: canAllocate,
     addressing_validation: canValidate,
     infrastructure_verification: canVerify,
+    interface_addresses: showAddresses,
   };
   const applyFeatures = useCallback((f: Features) => {
     setCanAllocate(f.subnet_calculator);
     setCanValidate(f.addressing_validation);
     setCanVerify(f.infrastructure_verification);
+    // A server from before FR-49 sends no such key.
+    setShowAddresses(f.interface_addresses ?? false);
   }, []);
   const [labBusy, setLabBusy] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Conflicts | null>(null);
@@ -1779,6 +1784,7 @@ export default function App() {
             locked={locked}
             onLockedEdit={() => setNotice(lockNotice)}
             onDropDevice={addDevice}
+            showAddresses={showAddresses}
           />
         </main>
 

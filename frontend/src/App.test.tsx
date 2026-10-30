@@ -39,11 +39,14 @@ vi.mock("./canvas/TopologyCanvas", () => ({
   // on its own, and the whole in a browser).
   TopologyCanvas: ({
     onDropDevice,
+    showAddresses,
   }: {
     onDropDevice?: (kind: string, position: { x: number; y: number }) => void;
+    showAddresses?: boolean;
   }) => (
     <div
       data-testid="canvas"
+      data-show-addresses={String(Boolean(showAddresses))}
       aria-hidden="true"
       onDrop={(event) =>
         onDropDevice?.(event.dataTransfer.getData("application/x-kgui-device"), { x: 160, y: 272 })
@@ -120,6 +123,7 @@ const {
     subnet_calculator: true,
     addressing_validation: true,
     infrastructure_verification: true,
+    interface_addresses: false,
   });
   return {
     MockApiError,
@@ -140,6 +144,7 @@ const {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       }),
     ),
     deploy: vi.fn(async (_topology: Topology): Promise<StatusResponse> => idleStatus()),
@@ -189,6 +194,7 @@ const {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: `/workspace/${name}`,
       warnings: [],
@@ -204,6 +210,7 @@ const {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: `/workspace/${file.name}`,
       warnings: [],
@@ -316,6 +323,7 @@ beforeEach(() => {
     subnet_calculator: true,
     addressing_validation: true,
     infrastructure_verification: true,
+    interface_addresses: false,
   });
   deploy.mockReset().mockResolvedValue(idleStatus);
   // Verify links reads the lab's status first. A real server reports what the
@@ -1256,6 +1264,7 @@ describe("deploying and verifying", () => {
       subnet_calculator: true,
       addressing_validation: true,
       infrastructure_verification: false,
+      interface_addresses: false,
     });
     const user = await renderApp();
     await addRouter(user);
@@ -2083,6 +2092,24 @@ describe("the scenario as a folder", () => {
     );
   });
 
+  it("shows the addresses on the canvas once switched on (FR-49)", async () => {
+    preferences.mockResolvedValueOnce({
+      panels: {
+        left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+        right: {
+          order: ["details", "addressing", "arrange", "scenario", "exam", "lab"],
+          collapsed: [],
+        },
+      },
+    });
+    const user = await renderApp();
+    expect(screen.getByTestId("canvas")).toHaveAttribute("data-show-addresses", "false");
+    await user.click(await screen.findByRole("checkbox", { name: "Addresses on the canvas" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("canvas")).toHaveAttribute("data-show-addresses", "true"),
+    );
+  });
+
   it("seals an export with a password typed twice (note 1)", async () => {
     Object.defineProperty(URL, "createObjectURL", { value: vi.fn(() => "blob:x"), writable: true });
     Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), writable: true });
@@ -2176,6 +2203,7 @@ describe("the scenario as a folder", () => {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: "/workspace/partial",
       warnings: ["r1[99]=nonsense"],
@@ -2198,6 +2226,7 @@ describe("the scenario as a folder", () => {
         subnet_calculator: false,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: "/workspace/exam",
       warnings: [],
@@ -3228,6 +3257,7 @@ describe("a deployed lab locks the design", () => {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: "/workspace/lab a",
       warnings: [],
@@ -3262,6 +3292,7 @@ describe("a deployed lab locks the design", () => {
         subnet_calculator: true,
         addressing_validation: true,
         infrastructure_verification: true,
+        interface_addresses: false,
       },
       folder: "/workspace/lab a",
       warnings: [],

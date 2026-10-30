@@ -631,6 +631,32 @@ button:disabled {
   pointer-events: none;
 }
 
+/* An interface's host part (FR-49), in the accent so it reads apart from the
+   name; the accent is measured as text on --bg in test_contrast.py. */
+.iface__host {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* The host part on the label's far side from the device: below a label under
+   it, above one over it, outside one beside it. Interfaces on the top or
+   bottom sit side by side, so there the label grows in height, not width,
+   and neighbours' addresses cannot run into each other. */
+.iface__label {
+  display: flex;
+  align-items: center;
+  gap: 1px 4px;
+}
+.iface__label[data-side="left"] {
+  flex-direction: row-reverse;
+}
+.iface__label[data-side="top"] {
+  flex-direction: column-reverse;
+}
+.iface__label[data-side="bottom"] {
+  flex-direction: column;
+}
+
 .iface__label[data-side="left"] {
   right: 100%;
   margin-right: 7px;

@@ -19,6 +19,7 @@ const SWITCHES: [keyof Features, string][] = [
   ["subnet_calculator", "Subnet calculator"],
   ["addressing_validation", "Addressing checks"],
   ["infrastructure_verification", "Link verification"],
+  ["interface_addresses", "Addresses on the canvas"],
 ];
 
 interface Props {
@@ -31,7 +32,9 @@ export function ExamPanel({ features, busy, onSetFeatures }: Props) {
   return (
     <div className="exam">
       <Explanation>
-        Switched off, a feature is refused by the application, not only hidden, and the
+        Switched off, the calculator, the checks and link verification are refused by the
+        application, not only hidden. Addresses on the canvas shows the end of each
+        interface&apos;s address beside its name, such as .1; it only changes the view. The
         switches travel with the scenario when it is exported. They are kept in the
         scenario&apos;s kgui.json, so whoever has the scenario on their own computer can edit
         them: they guide an exam, they do not police it.

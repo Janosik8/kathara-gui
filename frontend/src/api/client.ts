@@ -200,6 +200,8 @@ export interface Features {
   subnet_calculator: boolean;
   addressing_validation: boolean;
   infrastructure_verification: boolean;
+  /** Host parts beside the interface labels on the canvas (FR-49); a view only. */
+  interface_addresses: boolean;
 }
 
 export interface ProjectState {
@@ -289,6 +291,7 @@ export interface FeaturesResponse {
   subnet_calculator: boolean;
   addressing_validation: boolean;
   infrastructure_verification: boolean;
+  interface_addresses: boolean;
 }
 
 export interface ImportResponse {

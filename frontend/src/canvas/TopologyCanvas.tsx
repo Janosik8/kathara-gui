@@ -34,6 +34,7 @@ import { DEVICE_KINDS, type DeviceKind, type PendingEnd, type Topology, type Zon
 import { DeviceNode } from "./DeviceNode";
 import { SegmentEdge } from "./SegmentEdge";
 import { ZoneNode } from "./ZoneNode";
+import { hostPart } from "./addresses";
 import { type Placement, computePlacements, domainPosition, segmentPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
@@ -90,6 +91,8 @@ interface Props {
   onLockedEdit?: () => void;
   /** A device was dragged from the palette and dropped here (FR-48). */
   onDropDevice?: (kind: DeviceKind, position: { x: number; y: number }) => void;
+  /** Show each interface's host part beside its label (FR-49). */
+  showAddresses?: boolean;
 }
 
 /** From a device's top-left corner to the middle of its picture, measured in Chrome. */
@@ -223,6 +226,7 @@ function CanvasInner({
   locked = false,
   onLockedEdit,
   onDropDevice,
+  showAddresses = false,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
@@ -254,6 +258,7 @@ function CanvasInner({
       },
     }));
 
+    const subnets = new Map(topology.collision_domains.map((cd) => [cd.name, cd.subnet]));
     const deviceNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       type: "device",
@@ -266,6 +271,14 @@ function CanvasInner({
         loopbacks: node.loopbacks ?? [],
         placements: placements.get(node.name) ?? new Map(),
         pending: node.name === pendingDevice,
+        hosts: showAddresses
+          ? new Map(
+              node.interfaces.map((iface) => [
+                iface.number,
+                hostPart(iface.ip, subnets.get(iface.collision_domain)),
+              ]),
+            )
+          : undefined,
       },
     }));
     const flowNodes = [...zoneNodes, ...deviceNodes];
@@ -343,6 +356,7 @@ function CanvasInner({
     selectedZone,
     locked,
     onZoneChange,
+    showAddresses,
   ]);
 
   /**

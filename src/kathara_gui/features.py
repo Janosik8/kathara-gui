@@ -37,6 +37,13 @@ class Features(BaseModel):
         default=True,
         description="Automated link diagnostics (Capability 4).",
     )
+    interface_addresses: bool = Field(
+        default=False,
+        description="The host part of each interface's address beside its label on the "
+        "canvas (FR-49). Only a view: the addresses are in the details panel either way, "
+        "so there is nothing for the server to refuse. Off by default, so a canvas looks "
+        "as it did until someone asks for it.",
+    )
 
     def require(self, name: str) -> None:
         """Refuse the request when ``name`` is disabled for this scenario.

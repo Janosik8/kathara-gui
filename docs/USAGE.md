@@ -566,11 +566,19 @@ outside has no such settings, so everything is on.
 
 ### Feature switches and the sealed export
 
-The **Feature switches** section of the right panel, collapsed until you open it, has three switches
-under **Features allowed**: **Subnet calculator**, **Addressing checks** and **Link
-verification**. Unticking one withdraws that feature for this scenario. The switch is
-written to `kgui.json` at once, without a Save, and the server enforces it: the calculator
-is refused even to a request that does not come from the page.
+The **Feature switches** section of the right panel, collapsed until you open it, has four switches
+under **Features allowed**: **Subnet calculator**, **Addressing checks**, **Link
+verification** and **Addresses on the canvas**. Unticking one of the first three withdraws
+that feature for this scenario. The switch is written to `kgui.json` at once, without a
+Save, and the server enforces it: the calculator is refused even to a request that does
+not come from the page.
+
+**Addresses on the canvas** is off until you tick it, and only changes the view: each
+interface label gets the end of its address, in blue, on its far side from the device:
+under a label below the device, over one above it, outside one beside it. The part shown starts at
+the first octet the prefix does not wholly cover: `eth0 .1` for `192.168.0.1/24`,
+`eth0 .0.1` for `192.168.0.1/16`, `eth0 .17.5` for `10.1.17.5/20`. An interface without an
+address shows its name alone.
 
 **What the switches do not do.** They are kept in the scenario's `kgui.json`, and a
 student's copy is on the student's machine, so the student can edit them, or the

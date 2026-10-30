@@ -757,6 +757,7 @@ OFF = {
     "subnet_calculator": False,
     "addressing_validation": False,
     "infrastructure_verification": True,
+    "interface_addresses": True,
 }
 
 
@@ -790,6 +791,22 @@ def test_a_lock_left_by_an_earlier_build_is_ignored_and_dropped(
     assert body["features"] == OFF
     assert client.put("/api/project/features", json={"features": OFF}).status_code == 200
     assert "exam_lock" not in json.loads((folder / "kgui.json").read_text())
+
+
+def test_a_scenario_from_before_the_address_switch_opens_with_it_off(
+    client: TestClient, session: Session
+) -> None:
+    """FR-49: kgui.json written before the switch existed has no key for it."""
+    name = save(client)["name"]
+    folder = Path(client.get("/api/project").json()["folder"])
+    stored = json.loads((folder / "kgui.json").read_text())
+    del stored["features"]["interface_addresses"]
+    (folder / "kgui.json").write_text(json.dumps(stored))
+    session.reset()
+
+    body = client.post("/api/project/open", json={"folder": name}).json()
+    assert body["features"]["interface_addresses"] is False
+    assert body["features"]["subnet_calculator"] is True
 
 
 def test_a_short_seal_password_is_refused(client: TestClient) -> None:

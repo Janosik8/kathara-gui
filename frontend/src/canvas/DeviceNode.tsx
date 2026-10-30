@@ -26,6 +26,8 @@ export interface DeviceNodeData extends Record<string, unknown> {
   /** Which side each interface sits on, decided by `computePlacements`. */
   placements: DevicePlacements;
   pending?: boolean;
+  /** Each interface's host part, by number, when the canvas shows them (FR-49). */
+  hosts?: Map<number, string | null>;
 }
 
 /**
@@ -45,7 +47,7 @@ function alongBorder(position: Position, offset: string): React.CSSProperties {
 }
 
 export function DeviceNode({ data, selected }: NodeProps) {
-  const { label, kind, interfaces, loopbacks, placements, pending } = data as DeviceNodeData;
+  const { label, kind, interfaces, loopbacks, placements, pending, hosts } = data as DeviceNodeData;
 
   return (
     <div
@@ -71,6 +73,7 @@ export function DeviceNode({ data, selected }: NodeProps) {
         };
         const along = alongBorder(position, offset);
         const id = `eth${iface.number}`;
+        const host = hosts?.get(iface.number);
 
         return (
           <Fragment key={iface.number}>
@@ -78,9 +81,12 @@ export function DeviceNode({ data, selected }: NodeProps) {
                 direction, so either end may begin or finish a connection. */}
             <Handle type="source" position={position} id={id} style={along} className="iface__point" />
             <Handle type="target" position={position} id={id} style={along} className="iface__point" />
-            {/* The label sits outside the border; the handle stays on it. */}
+            {/* The label sits outside the border; the handle stays on it. The
+                host part goes on the label's far side from the device, so
+                labels side by side grow outwards, not into each other. */}
             <span className="iface__label" data-side={position} style={along}>
-              {id}
+              <span>{id}</span>
+              {host && <span className="iface__host">{host}</span>}
             </span>
           </Fragment>
         );
