@@ -186,7 +186,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 
 | Action | How |
 |---|---|
-| Add a device | **Add router / switch / pc / server** in the left panel. The button names the device it will create. On the canvas each kind is drawn as its own picture (router, switch, computer, server tower) with the name under it. |
+| Add a device | Drag **Add router / switch / pc / server** from the left panel onto the canvas, and the device lands where you drop it. Or press the button, and it is placed for you. The button names the device it will create. On the canvas each kind is drawn as its own picture (router, switch, computer, server tower) with the name under it. |
 | Select | Click a device in the tree or on the canvas. |
 | Select several | **Ctrl/Cmd + click**, or Ctrl/Cmd + Enter in the tree. |
 | Connect two devices | Turn on **Connect mode** (the button above the collision domain list, or press `C`; it is filled blue, with ◉, while on), click one device, then click another. A link appears. `C` can be switched off with **Single-key shortcuts (C)** in the top bar. |

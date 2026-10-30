@@ -34,7 +34,22 @@ import { useTopologyStore } from "./store/topology";
 import { emptyTopology } from "./types";
 
 vi.mock("./canvas/TopologyCanvas", () => ({
-  TopologyCanvas: () => <div data-testid="canvas" aria-hidden="true" />,
+  // A drop is passed on with a fixed place: where on the canvas a point
+  // falls needs a layout, which jsdom has not got (dropPosition is tested
+  // on its own, and the whole in a browser).
+  TopologyCanvas: ({
+    onDropDevice,
+  }: {
+    onDropDevice?: (kind: string, position: { x: number; y: number }) => void;
+  }) => (
+    <div
+      data-testid="canvas"
+      aria-hidden="true"
+      onDrop={(event) =>
+        onDropDevice?.(event.dataTransfer.getData("application/x-kgui-device"), { x: 160, y: 272 })
+      }
+    />
+  ),
 }));
 
 // vi.mock is hoisted above the file, so anything it closes over must be
@@ -360,6 +375,26 @@ describe("building a topology", () => {
     const user = await renderApp();
     await addRouter(user);
     expect(screen.getByRole("treeitem", { name: /r1, router/ })).toBeInTheDocument();
+  });
+
+  it("adds a device where it is dropped from the palette (FR-48)", async () => {
+    await renderApp();
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? "",
+      get types() {
+        return [...data.keys()];
+      },
+      effectAllowed: "",
+      dropEffect: "",
+    };
+    fireEvent.dragStart(screen.getByRole("button", { name: /Add switch/ }), { dataTransfer });
+    fireEvent.drop(screen.getByTestId("canvas"), { dataTransfer });
+
+    const sw1 = useTopologyStore.getState().topology.nodes.find((n) => n.name === "sw1");
+    expect(sw1?.position).toEqual({ x: 160, y: 272 });
+    expect(screen.getByRole("treeitem", { name: /sw1, switch/ })).toBeInTheDocument();
   });
 
   it("names successive devices predictably", async () => {

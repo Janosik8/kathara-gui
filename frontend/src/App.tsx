@@ -868,14 +868,15 @@ export default function App() {
     [topology, leaveConnectMode, refreshEverything, markSaved],
   );
 
+  /** Placed where it was dropped on the canvas (FR-48), or else automatically. */
   const addDevice = useCallback(
-    (kind: DeviceKind) => {
+    (kind: DeviceKind, position?: { x: number; y: number }) => {
       const name = suggestName(topology, kind);
-      edit({
+      const added = edit({
         type: "addNode",
-        node: newNode(name, kind, placeNew(topology.nodes)),
+        node: newNode(name, kind, position ?? placeNew(topology.nodes)),
       });
-      setSelected([name]);
+      if (added) setSelected([name]);
     },
     [edit, topology],
   );
@@ -1691,7 +1692,7 @@ export default function App() {
               title: "Add device",
               headingId: "palette-heading",
               lockable: true,
-              content: <Palette topology={topology} onAdd={addDevice} />,
+              content: <Palette topology={topology} onAdd={(kind) => addDevice(kind)} />,
             },
             // Above the collision domains by default (bug 36): add devices,
             // connect them, then name the segments — the order the work is
@@ -1777,6 +1778,7 @@ export default function App() {
             connectMode={connectMode}
             locked={locked}
             onLockedEdit={() => setNotice(lockNotice)}
+            onDropDevice={addDevice}
           />
         </main>
 

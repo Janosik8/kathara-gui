@@ -1,9 +1,11 @@
 /**
  * Adding devices.
  *
- * Buttons rather than drag-only: dragging from a palette onto a canvas is
+ * Each button can be dragged onto the canvas, and the device lands where it
+ * is dropped, as the specification's Scenario 1A has it. Pressing it adds the
+ * device too, placed automatically: dragging from a palette onto a canvas is
  * unusable without a pointer, and "add a router" is the single most common
- * action in the application. Placement is automatic and can be adjusted after.
+ * action in the application.
  */
 
 import { DEVICE_ICONS } from "../canvas/icons";
@@ -14,6 +16,9 @@ interface Props {
   onAdd: (kind: DeviceKind) => void;
   disabled?: boolean;
 }
+
+/** What a device dragged from here carries, read by the canvas on drop. */
+export const DEVICE_DRAG_TYPE = "application/x-kgui-device";
 
 /** Conventional prefixes, so generated names read like a network diagram. */
 const PREFIX: Record<DeviceKind, string> = {
@@ -44,6 +49,11 @@ export function Palette({ topology, onAdd, disabled }: Props) {
             className="palette__button"
             onClick={() => onAdd(kind)}
             disabled={disabled}
+            draggable={!disabled}
+            onDragStart={(event) => {
+              event.dataTransfer.setData(DEVICE_DRAG_TYPE, kind);
+              event.dataTransfer.effectAllowed = "copy";
+            }}
           >
             {/* The picture the device will have on the canvas (UX-08); the
                 words carry the name, so it is decoration here. */}

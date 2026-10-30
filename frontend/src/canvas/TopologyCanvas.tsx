@@ -24,11 +24,13 @@ import {
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
+  useReactFlow,
   useUpdateNodeInternals,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PendingEnd, Topology, Zone } from "../types";
+import { DEVICE_DRAG_TYPE } from "../panels/Palette";
+import { DEVICE_KINDS, type DeviceKind, type PendingEnd, type Topology, type Zone } from "../types";
 import { DeviceNode } from "./DeviceNode";
 import { SegmentEdge } from "./SegmentEdge";
 import { ZoneNode } from "./ZoneNode";
@@ -86,6 +88,27 @@ interface Props {
   locked?: boolean;
   /** A device was dragged while locked: say why it does not move (test step 3A.3). */
   onLockedEdit?: () => void;
+  /** A device was dragged from the palette and dropped here (FR-48). */
+  onDropDevice?: (kind: DeviceKind, position: { x: number; y: number }) => void;
+}
+
+/** From a device's top-left corner to the middle of its picture, measured in Chrome. */
+const DROP_OFFSET = { x: 36, y: 24 };
+const GRID = 16;
+
+/**
+ * Where a device dropped at `point` goes: its picture centred under the
+ * pointer, on the grid the canvas snaps drags to.
+ */
+export function dropPosition(point: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.round((point.x - DROP_OFFSET.x) / GRID) * GRID,
+    y: Math.round((point.y - DROP_OFFSET.y) / GRID) * GRID,
+  };
+}
+
+function isDeviceKind(value: string): value is DeviceKind {
+  return (DEVICE_KINDS as readonly string[]).includes(value);
 }
 
 /**
@@ -199,6 +222,7 @@ function CanvasInner({
   connectMode,
   locked = false,
   onLockedEdit,
+  onDropDevice,
 }: Props) {
   const pendingDevice = pending?.kind === "device" ? pending.name : null;
   const pendingDomain = pending?.kind === "domain" ? pending.name : null;
@@ -368,6 +392,8 @@ function CanvasInner({
     [onMove, onMoveMany, onMoveDomain, onZoneChange, topology.zones, locked],
   );
 
+  const { screenToFlowPosition } = useReactFlow();
+
   return (
     <div className="canvas" aria-hidden="true">
       <ReactFlow
@@ -403,6 +429,19 @@ function CanvasInner({
           onSelect(null, false);
           onSelectLink?.(null);
           onSelectZone?.(null);
+        }}
+        // Only a device from the palette may be dropped; anything else,
+        // a file say, is left to the browser.
+        onDragOver={(event) => {
+          if (!onDropDevice || !event.dataTransfer.types.includes(DEVICE_DRAG_TYPE)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={(event) => {
+          const kind = event.dataTransfer.getData(DEVICE_DRAG_TYPE);
+          if (!onDropDevice || !isDeviceKind(kind)) return;
+          event.preventDefault();
+          onDropDevice(kind, dropPosition(screenToFlowPosition({ x: event.clientX, y: event.clientY })));
         }}
         // Two defaults made clicking on a device unreliable (test step 1A.5,
         // "I often have to click a router 2 or 3 times"). React Flow hands

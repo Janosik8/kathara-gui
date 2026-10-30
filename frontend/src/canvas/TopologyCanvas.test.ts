@@ -10,7 +10,12 @@
 
 import type { Node as FlowNode, NodeChange } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
-import { committedMoves, placementSignature, mergeMeasurements } from "./TopologyCanvas";
+import {
+  committedMoves,
+  dropPosition,
+  placementSignature,
+  mergeMeasurements,
+} from "./TopologyCanvas";
 
 const node = (id: string, measured?: { width: number; height: number }): FlowNode => ({
   id,
@@ -189,5 +194,16 @@ describe("committedMoves (UX-03)", () => {
     const { devices, domains } = committedMoves([end("r1", 10), end("cd:A", 40)]);
     expect(devices).toEqual({ r1: { x: 10, y: 0 } });
     expect(domains).toEqual({ A: { x: 40, y: 0 } });
+  });
+});
+
+describe("dropPosition", () => {
+  it("puts the picture under the pointer, on the grid (FR-48)", () => {
+    expect(dropPosition({ x: 230, y: 220 })).toEqual({ x: 192, y: 192 });
+    expect(dropPosition({ x: 240, y: 230 })).toEqual({ x: 208, y: 208 });
+  });
+
+  it("works left of and above the origin", () => {
+    expect(dropPosition({ x: 0, y: 0 })).toEqual({ x: -32, y: -16 });
   });
 });

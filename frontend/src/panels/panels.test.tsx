@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axeCore from "axe-core";
 import { useState } from "react";
@@ -7,7 +7,7 @@ import type { Operation } from "../store/operations";
 import { type Topology, newNode, suggestCollisionDomain } from "../types";
 import { Inspector, validateLoopback } from "./Inspector";
 import { CollisionDomainsPanel, validateSubnet } from "./CollisionDomainsPanel";
-import { Palette, suggestName } from "./Palette";
+import { DEVICE_DRAG_TYPE, Palette, suggestName } from "./Palette";
 import { ExplainContext } from "./Explain";
 
 function twoRouters(): Topology {
@@ -78,6 +78,20 @@ describe("Palette", () => {
     render(<Palette topology={twoRouters()} onAdd={onAdd} />);
     await user.click(screen.getByRole("button", { name: /Add pc/ }));
     expect(onAdd).toHaveBeenCalledWith("pc");
+  });
+
+  it("lets each button be dragged, carrying its kind (FR-48)", () => {
+    render(<Palette topology={twoRouters()} onAdd={vi.fn()} />);
+    const button = screen.getByRole("button", { name: /Add server/ });
+    expect(button).toHaveAttribute("draggable", "true");
+    const setData = vi.fn();
+    fireEvent.dragStart(button, { dataTransfer: { setData, effectAllowed: "" } });
+    expect(setData).toHaveBeenCalledWith(DEVICE_DRAG_TYPE, "server");
+  });
+
+  it("cannot be dragged while disabled", () => {
+    render(<Palette topology={twoRouters()} onAdd={vi.fn()} disabled />);
+    expect(screen.getByRole("button", { name: /Add server/ })).toHaveAttribute("draggable", "false");
   });
 });
 

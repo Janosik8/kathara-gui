@@ -46,7 +46,7 @@ tool removes the transcription.
 
 | # | Capability | Mechanism |
 |---|---|---|
-| 1 | Visual topology & addressing | Canvas editor over a typed model; subnet allocation and seven conflict checks in `domain/addressing.py` |
+| 1 | Visual topology & addressing | Canvas editor over a typed model, devices dragged onto it from the palette or added by its buttons; subnet allocation and seven conflict checks in `domain/addressing.py` |
 | 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified; zones (`canvas/ZoneNode.tsx`) group devices visually without binding them |
 | 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API, and restarts chosen devices alone |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
