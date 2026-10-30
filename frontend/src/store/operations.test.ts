@@ -177,6 +177,35 @@ describe("moving a shared segment", () => {
   });
 });
 
+describe("moveLabel (FR-50)", () => {
+  const linked = () =>
+    apply(base(), { type: "link", a: "r1", b: "r2", collisionDomain: "A" });
+
+  it("records where along the link the label was put, as one undoable edit", () => {
+    const next = apply(linked(), { type: "moveLabel", collisionDomain: "A", at: 0.3 });
+    expect(next.collision_domains.find((cd) => cd.name === "A")?.label_at).toBe(0.3);
+    expect(label({ type: "moveLabel", collisionDomain: "A", at: 0.3 })).toBe(
+      "Moved the label of A",
+    );
+  });
+
+  it("keeps the label short of the devices, and null puts it back in the middle", () => {
+    const far = apply(linked(), { type: "moveLabel", collisionDomain: "A", at: 1.4 });
+    expect(far.collision_domains[0]!.label_at).toBe(0.95);
+    const back = apply(far, { type: "moveLabel", collisionDomain: "A", at: null });
+    expect(back.collision_domains[0]!.label_at).toBeNull();
+    expect(label({ type: "moveLabel", collisionDomain: "A", at: null })).toBe(
+      "Put the label of A back in the middle",
+    );
+  });
+
+  it("rejects a link that is not there", () => {
+    expect(() =>
+      apply(base(), { type: "moveLabel", collisionDomain: "Z", at: 0.5 }),
+    ).toThrow(OperationError);
+  });
+});
+
 describe("removeLink and interface numbering", () => {
   // Test step 1B.3: r2 linked to r1 (eth0) and r3 (eth1); deleting the r1–r2
   // link left r2 with eth1 alone, and Kathará refused the whole deploy with

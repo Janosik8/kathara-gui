@@ -215,6 +215,27 @@ def test_an_unreadable_segment_position_is_reported_not_fatal() -> None:
     assert any("could not read position" in w for w in result.warnings)
 
 
+def test_a_slid_link_label_keeps_its_place() -> None:
+    """FR-50: a link label moved along its link travels in the cd record."""
+    topo = parse(serialize(_positioned())).topology
+    topo.collision_domain("A").label_at = 0.3
+
+    text = serialize(topo)
+    assert "# kgui:cd A label=0.3" in text
+    reread = parse(text).topology
+    assert reread.collision_domain("A").label_at == 0.3
+    # A label never slid writes nothing and stays in the middle.
+    assert all(cd.label_at is None for cd in reread.collision_domains if cd.name != "A")
+
+
+@pytest.mark.parametrize("bad", ["middle", "0.99", "-1"])
+def test_an_unreadable_label_place_is_reported_not_fatal(bad: str) -> None:
+    text = serialize(_positioned()) + f"# kgui:cd A label={bad}\n"
+    result = parse(text)
+    assert result.topology.collision_domain("A").label_at is None
+    assert any("could not read label place" in w for w in result.warnings)
+
+
 def test_privileged_round_trips_as_a_typed_field() -> None:
     """Bug 31: a typed switch, not an opaque extra option."""
     topology = Topology(

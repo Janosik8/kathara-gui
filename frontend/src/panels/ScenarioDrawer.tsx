@@ -18,9 +18,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioSummary } from "../api/client";
-
-/** The shortest seal password the server accepts. */
-export const MIN_PASSWORD = 4;
+import { MIN_PASSWORD } from "./ExamPanel";
 
 export type ScenarioDialog = "new" | "saveAs" | "open" | "export" | "import";
 

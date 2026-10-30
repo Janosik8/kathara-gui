@@ -32,6 +32,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DEVICE_DRAG_TYPE } from "../panels/Palette";
 import { DEVICE_KINDS, type DeviceKind, type PendingEnd, type Topology, type Zone } from "../types";
 import { DeviceNode } from "./DeviceNode";
+import { type LinkLabelActions, LinkEdge, LinkLabelContext } from "./LinkEdge";
 import { SegmentEdge } from "./SegmentEdge";
 import { ZoneNode } from "./ZoneNode";
 import { hostPart } from "./addresses";
@@ -40,7 +41,7 @@ import { type Placement, computePlacements, domainPosition, segmentPosition } fr
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
 const NODE_TYPES = { device: DeviceNode, zone: ZoneNode };
-const EDGE_TYPES = { segment: SegmentEdge };
+const EDGE_TYPES = { segment: SegmentEdge, link: LinkEdge };
 
 /**
  * How far, in pixels, the pointer may move between press and release and the
@@ -62,6 +63,8 @@ interface Props {
   onMoveMany?: (positions: Record<string, { x: number; y: number }>) => void;
   /** A shared segment's node was dragged to a new place. */
   onMoveDomain?: (name: string, position: { x: number; y: number }) => void;
+  /** A two-device link's label was slid along its link (FR-50). */
+  onSlideLabel?: (collisionDomain: string, at: number) => void;
   /** A zone was moved or resized on the canvas (FR-10). */
   onZoneChange?: (id: string, changes: Partial<Omit<Zone, "id">>, label: string) => void;
   /** A zone was clicked, or null when the selection left it. */
@@ -216,6 +219,7 @@ function CanvasInner({
   onMove,
   onMoveMany,
   onMoveDomain,
+  onSlideLabel,
   onZoneChange,
   onSelectZone,
   selectedZone = null,
@@ -304,9 +308,11 @@ function CanvasInner({
           sourceHandle: `eth${a.iface.number}`,
           targetHandle: `eth${b.iface.number}`,
           label: cd.subnet ? `${cd.name} · ${cd.subnet}` : cd.name,
+          // Its label slides along it (FR-50).
+          type: "link",
           // Carried in data so a click can resolve the domain without
           // having to parse it back out of the id.
-          data: { collisionDomain: cd.name },
+          data: { collisionDomain: cd.name, labelAt: cd.label_at ?? null },
           className: `link${cd.name === pendingDomain ? " link--pending" : ""}${
             cd.name === selectedLink ? " link--selected" : ""
           }`,
@@ -408,8 +414,26 @@ function CanvasInner({
 
   const { screenToFlowPosition } = useReactFlow();
 
+  const linkLabels = useMemo<LinkLabelActions>(
+    () => ({
+      locked,
+      onSlide: (domain, at) => {
+        if (locked) onLockedEdit?.();
+        else onSlideLabel?.(domain, at);
+      },
+      // The same as clicking the link itself, below.
+      onClick: (domain) => {
+        onSelectZone?.(null);
+        if (connectMode) onSelectCollisionDomain?.(domain);
+        else onSelectLink?.(domain);
+      },
+    }),
+    [locked, onLockedEdit, onSlideLabel, onSelectZone, connectMode, onSelectCollisionDomain, onSelectLink],
+  );
+
   return (
     <div className="canvas" aria-hidden="true">
+      <LinkLabelContext.Provider value={linkLabels}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -491,6 +515,7 @@ function CanvasInner({
           nodeColor={(node) => (node.type === "zone" ? "transparent" : "var(--fg-muted)")}
         />
       </ReactFlow>
+      </LinkLabelContext.Provider>
     </div>
   );
 }

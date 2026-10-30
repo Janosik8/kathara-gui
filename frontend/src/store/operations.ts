@@ -13,6 +13,7 @@
  * The reducer is pure and returns a new topology; it never edits in place.
  */
 
+import { clampLabelAt } from "../canvas/linkLabel";
 import {
   type CollisionDomain,
   type Interface,
@@ -41,6 +42,9 @@ export type Operation =
   // drawn between its members, so it followed them, and a drag of it was
   // thrown away on the next render (test step 1D.1).
   | { type: "moveDomain"; name: string; position: Position }
+  // A two-device link's label slid along its link; null puts it back in the
+  // middle (FR-50).
+  | { type: "moveLabel"; collisionDomain: string; at: number | null }
   | { type: "renameNode"; from: string; to: string }
   | { type: "updateNode"; name: string; changes: Partial<Omit<Node, "name">> }
   // One router's daemons onto every router, as one undo step (test step 3B.1:
@@ -232,6 +236,19 @@ export function apply(topology: Topology, op: Operation): Topology {
       };
     }
 
+    case "moveLabel": {
+      if (!topology.collision_domains.some((cd) => cd.name === op.collisionDomain)) {
+        throw new OperationError(`No collision domain named "${op.collisionDomain}".`);
+      }
+      const at = op.at === null ? null : clampLabelAt(op.at);
+      return {
+        ...topology,
+        collision_domains: topology.collision_domains.map((cd) =>
+          cd.name === op.collisionDomain ? { ...cd, label_at: at } : cd,
+        ),
+      };
+    }
+
     case "renameNode": {
       if (op.from === op.to) return topology;
       const problem = deviceNameProblem(op.to);
@@ -410,6 +427,10 @@ export function describe(op: Operation): string {
     }
     case "moveDomain":
       return `Moved ${op.name}`;
+    case "moveLabel":
+      return op.at === null
+        ? `Put the label of ${op.collisionDomain} back in the middle`
+        : `Moved the label of ${op.collisionDomain}`;
     case "renameNode":
       return `Renamed ${op.from} to ${op.to}`;
     case "updateNode":

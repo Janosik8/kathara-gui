@@ -40,8 +40,9 @@ from kathara_gui.domain.model import Topology
 from kathara_gui.domain.naming import lab_name_problem, suggest_lab_name
 from kathara_gui.features import Features
 from kathara_gui.kathara import runner, state
-from kathara_gui.project import scenario, sealing
+from kathara_gui.project import examlock, scenario
 from kathara_gui.project.session import (
+    ExamLocked,
     Persisted,
     ScenarioNameError,
     Session,
@@ -59,8 +60,15 @@ MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _STAGING = ".import"
 
 
-#: The shortest password accepted for a sealed export.
+#: The shortest password accepted for an exam lock or a sealed export.
 MIN_PASSWORD = 4
+
+
+class ExamState(BaseModel):
+    """Whether the exam's switches are locked, and opened in this session (note 1)."""
+
+    locked: bool = False
+    unlocked: bool = False
 
 
 class ProjectState(BaseModel):
@@ -71,6 +79,7 @@ class ProjectState(BaseModel):
     dirty: bool
     features: Features
     workspace: str
+    exam: ExamState = ExamState()
 
 
 class SaveRequest(BaseModel):
@@ -116,10 +125,23 @@ class OpenResponse(BaseModel):
     folder: str
     warnings: list[str] = []
     foreign: bool = False
+    exam: ExamState = ExamState()
 
 
 class FeaturesRequest(BaseModel):
     features: Features
+
+
+class PasswordRequest(BaseModel):
+    password: str
+
+
+class UnlockResponse(BaseModel):
+    state: ProjectState
+    intact: bool = Field(
+        description="Whether the switches are as the author locked them. False means they "
+        "were changed outside this application."
+    )
 
 
 class CaptureRequest(BaseModel):
@@ -149,7 +171,12 @@ def _state(session: Session) -> ProjectState:
         dirty=session.dirty,
         features=session.features,
         workspace=str(session.workspace_root),
+        exam=_exam(session),
     )
+
+
+def _exam(session: Session) -> ExamState:
+    return ExamState(locked=session.exam_lock is not None, unlocked=session.exam_unlocked)
 
 
 def _folder_in_workspace(session: Session, name: str) -> Path:
@@ -272,9 +299,9 @@ def export(request: SaveRequest, session: Session = Depends(get_session)) -> Res
             headers={"Content-Disposition": f'attachment; filename="{folder.name}.zip"'},
         )
     # Sealed: no longer a zip anyone can unzip, so not named like one.
-    filename = f"{folder.name}{sealing.SEAL_EXTENSION}"
+    filename = f"{folder.name}{examlock.SEAL_EXTENSION}"
     return Response(
-        content=sealing.seal(payload, request.password),
+        content=examlock.seal(payload, request.password),
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -288,7 +315,11 @@ def _check_password(password: str) -> None:
         )
 
 
-def _wrong(exc: sealing.WrongPassword) -> HTTPException:
+def _locked(exc: ExamLocked) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(exc))
+
+
+def _wrong(exc: examlock.WrongPassword) -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 
@@ -298,10 +329,58 @@ def set_features(
 ) -> ProjectState:
     """Switch the assistive features on or off for this scenario (FR-28).
 
-    Written into ``kgui.json`` at once. Nothing here can stop the owner of the
-    machine editing that file, or this application (F51).
+    Refused while the exam's switches are locked and not unlocked in this
+    session (note 1). Written into ``kgui.json`` at once.
     """
-    session.set_features(request.features)
+    try:
+        session.set_features(request.features)
+    except ExamLocked as exc:
+        raise _locked(exc) from exc
+    return _state(session)
+
+
+@router.post("/exam/lock", response_model=ProjectState)
+def lock_exam(request: PasswordRequest, session: Session = Depends(get_session)) -> ProjectState:
+    """Lock the switches as they are with the exam author's password."""
+    _check_password(request.password)
+    try:
+        session.lock_exam(request.password)
+    except ExamLocked as exc:
+        raise _locked(exc) from exc
+    return _state(session)
+
+
+@router.post("/exam/unlock", response_model=UnlockResponse)
+def unlock_exam(
+    request: PasswordRequest, session: Session = Depends(get_session)
+) -> UnlockResponse:
+    """Open the lock for this session, and say whether the switches are as locked.
+
+    ``intact`` false is the evidence the lock exists for: a switch was changed
+    in ``kgui.json`` outside the application. A lock removed or replaced shows
+    instead as the author's password not opening it.
+    """
+    try:
+        intact = session.unlock_exam(request.password)
+    except examlock.WrongPassword as exc:
+        raise _wrong(exc) from exc
+    return UnlockResponse(state=_state(session), intact=intact)
+
+
+@router.post("/exam/relock", response_model=ProjectState)
+def relock_exam(session: Session = Depends(get_session)) -> ProjectState:
+    """Forget the author's password: the switches are locked again."""
+    session.relock_exam()
+    return _state(session)
+
+
+@router.delete("/exam/lock", response_model=ProjectState)
+def remove_exam_lock(session: Session = Depends(get_session)) -> ProjectState:
+    """Remove the lock altogether; only once unlocked."""
+    try:
+        session.remove_exam_lock()
+    except ExamLocked as exc:
+        raise _locked(exc) from exc
     return _state(session)
 
 
@@ -352,7 +431,7 @@ async def import_scenario(
     # "ćwiczenie.zip" is an ordinary name for a scenario here.
     filename = unquote(request.headers.get("X-KGUI-Filename", "imported"))
     stem = Path(Path(filename.replace("\\", "/")).name).stem or "imported"
-    if sealing.is_sealed(payload):
+    if examlock.is_sealed(payload):
         # In a header, percent-encoded like the name, never in the URL.
         password = unquote(request.headers.get("X-KGUI-Password", ""))
         if not password:
@@ -361,8 +440,8 @@ async def import_scenario(
                 detail="This file is sealed with a password. Enter it to open the file.",
             )
         try:
-            payload = sealing.unseal(payload, password)
-        except sealing.WrongPassword as exc:
+            payload = examlock.unseal(payload, password)
+        except examlock.WrongPassword as exc:
             raise _wrong(exc) from exc
     is_archive = payload[:2] == b"PK"
 
@@ -483,7 +562,8 @@ def _adopt(session: Session, folder: Path) -> OpenResponse:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     session.replace(loaded.topology, dirty=False)
-    session.adopt_settings(loaded.features)
+    # Adopted as found, still locked: opening a scenario is not changing it.
+    session.adopt_settings(loaded.features, loaded.exam_lock)
     session.mark_saved(folder)
     return OpenResponse(
         topology=loaded.topology,
@@ -491,6 +571,7 @@ def _adopt(session: Session, folder: Path) -> OpenResponse:
         folder=str(folder),
         warnings=loaded.warnings,
         foreign=loaded.foreign,
+        exam=_exam(session),
     )
 
 
@@ -517,7 +598,9 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
     # Regenerate so the .startup files match what was just learned, and the
     # scenario on disk is consistent with the model.
     if folder.is_dir():
-        scenario.save(topology, folder, features=session.features)
+        scenario.save(
+            topology, folder, features=session.features, exam_lock=session.exam_lock
+        )
 
     # Capturing *is* adopting the containers' state, so what was just learned
     # becomes the baseline the running lab is compared against. Without this

@@ -751,7 +751,7 @@ def test_feature_toggles_travel_with_the_scenario(client: TestClient, session: S
     assert session.features.subnet_calculator is False
 
 
-# -- the exam switches (FR-28) --------------------------------------------------
+# -- the exam lock (FR-28, note 1) ----------------------------------------------
 
 OFF = {
     "subnet_calculator": False,
@@ -774,23 +774,135 @@ def test_the_switches_can_be_set_and_are_written_at_once(client: TestClient) -> 
     assert client.post("/api/topology/addressing/allocate", json={}).status_code == 403
 
 
-def test_a_lock_left_by_an_earlier_build_is_ignored_and_dropped(
+def test_locked_switches_cannot_be_changed_without_the_password(client: TestClient) -> None:
+    folder = Path(save(client)["folder"])
+    client.put("/api/project/features", json={"features": OFF})
+    locked = client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    assert locked.status_code == 200, locked.text
+    assert locked.json()["exam"] == {"locked": True, "unlocked": False}
+
+    refused = client.put("/api/project/features", json={"features": {}})
+    assert refused.status_code == 423
+    assert client.delete("/api/project/exam/lock").status_code == 423
+    assert json.loads((folder / "kgui.json").read_text())["features"] == OFF
+
+    # Never the password itself, in any form it could be read back from.
+    assert "author-pw" not in (folder / "kgui.json").read_text()
+
+
+def test_a_wrong_password_does_not_unlock(client: TestClient) -> None:
+    save(client)
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    response = client.post("/api/project/exam/unlock", json={"password": "guess"})
+    assert response.status_code == 403
+    assert client.put("/api/project/features", json={"features": {}}).status_code == 423
+
+
+def test_the_author_can_unlock_change_and_lock_again(client: TestClient) -> None:
+    save(client)
+    client.put("/api/project/features", json={"features": OFF})
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+
+    opened = client.post("/api/project/exam/unlock", json={"password": "author-pw"}).json()
+    assert opened["intact"] is True
+    assert opened["state"]["exam"] == {"locked": True, "unlocked": True}
+    changed = {**OFF, "infrastructure_verification": False}
+    assert client.put("/api/project/features", json={"features": changed}).status_code == 200
+
+    client.post("/api/project/exam/relock")
+    assert client.put("/api/project/features", json={"features": OFF}).status_code == 423
+    # Changed by the author, so re-signed: still intact.
+    again = client.post("/api/project/exam/unlock", json={"password": "author-pw"}).json()
+    assert again["intact"] is True
+    assert again["state"]["features"] == changed
+
+
+def test_the_lock_travels_with_the_scenario_and_opens_locked(
     client: TestClient, session: Session
 ) -> None:
-    """F51: the author's lock was removed. A scenario that still carries one
-    opens with its switches as they are, and the next write leaves it out."""
     name = save(client)["name"]
-    folder = Path(client.get("/api/project").json()["folder"])
-    stored = json.loads((folder / "kgui.json").read_text())
-    stored["features"] = OFF
-    stored["exam_lock"] = {"version": 1, "salt": "00", "verifier": "x", "signature": "y"}
-    (folder / "kgui.json").write_text(json.dumps(stored))
+    client.put("/api/project/features", json={"features": OFF})
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    client.post("/api/project/exam/unlock", json={"password": "author-pw"})
     session.reset()
 
     body = client.post("/api/project/open", json={"folder": name}).json()
-    assert body["features"] == OFF
-    assert client.put("/api/project/features", json={"features": OFF}).status_code == 200
-    assert "exam_lock" not in json.loads((folder / "kgui.json").read_text())
+    assert body["exam"] == {"locked": True, "unlocked": False}
+    assert client.put("/api/project/features", json={"features": {}}).status_code == 423
+
+
+def test_a_switch_changed_on_disk_is_reported_to_the_author(
+    client: TestClient, session: Session
+) -> None:
+    """The tamper evidence: a student edits kgui.json by hand."""
+    saved = save(client)
+    folder, name = Path(saved["folder"]), saved["name"]
+    client.put("/api/project/features", json={"features": OFF})
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    session.reset()
+
+    settings = folder / "kgui.json"
+    stored = json.loads(settings.read_text())
+    stored["features"]["subnet_calculator"] = True
+    settings.write_text(json.dumps(stored))
+
+    # The student's application believes the file: the calculator is on.
+    assert client.post("/api/project/open", json={"folder": name}).json()["features"][
+        "subnet_calculator"
+    ]
+    # The author's password exposes it.
+    opened = client.post("/api/project/exam/unlock", json={"password": "author-pw"}).json()
+    assert opened["intact"] is False
+
+
+def test_a_lock_removed_or_replaced_on_disk_does_not_open_with_the_authors_password(
+    client: TestClient, session: Session
+) -> None:
+    saved = save(client)
+    folder, name = Path(saved["folder"]), saved["name"]
+    client.put("/api/project/features", json={"features": OFF})
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    session.reset()
+
+    # Replaced by a lock of the student's own, over switches all on.
+    from kathara_gui.project import examlock
+
+    stored = json.loads((folder / "kgui.json").read_text())
+    stored["features"] = {}
+    stored["exam_lock"] = examlock.lock("student-pw", {}).model_dump()
+    (folder / "kgui.json").write_text(json.dumps(stored))
+    client.post("/api/project/open", json={"folder": name})
+    unlock = client.post("/api/project/exam/unlock", json={"password": "author-pw"})
+    assert unlock.status_code == 403
+
+    # Removed outright: nothing is locked, which the author sees at once.
+    del stored["exam_lock"]
+    (folder / "kgui.json").write_text(json.dumps(stored))
+    body = client.post("/api/project/open", json={"folder": name}).json()
+    assert body["exam"]["locked"] is False
+
+
+def test_a_damaged_lock_is_refused_rather_than_ignored(client: TestClient) -> None:
+    saved = save(client)
+    folder = Path(saved["folder"])
+    stored = json.loads((folder / "kgui.json").read_text())
+    stored["exam_lock"] = {"salt": 5}
+    (folder / "kgui.json").write_text(json.dumps(stored))
+    response = client.post("/api/project/open", json={"folder": saved["name"]})
+    assert response.status_code == 400
+    assert "exam lock" in response.json()["detail"]
+
+
+def test_a_short_password_is_refused(client: TestClient) -> None:
+    save(client)
+    assert client.post("/api/project/exam/lock", json={"password": "abc"}).status_code == 400
+
+
+def test_a_new_scenario_starts_unlocked(client: TestClient, session: Session) -> None:
+    save(client)
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    client.post("/api/topology/reset")
+    assert client.get("/api/project").json()["exam"] == {"locked": False, "unlocked": False}
 
 
 def test_a_scenario_from_before_the_address_switch_opens_with_it_off(
@@ -809,6 +921,16 @@ def test_a_scenario_from_before_the_address_switch_opens_with_it_off(
     assert body["features"]["subnet_calculator"] is True
 
 
+def test_the_address_switch_is_locked_with_the_others(client: TestClient) -> None:
+    """FR-49 under the lock: a view setting, but the author's like the rest."""
+    save(client)
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
+    response = client.put(
+        "/api/project/features", json={"features": {**OFF, "interface_addresses": False}}
+    )
+    assert response.status_code == 423
+
+
 def test_a_short_seal_password_is_refused(client: TestClient) -> None:
     response = client.post("/api/project/export", json={"topology": TRIANGLE, "password": "abc"})
     assert response.status_code == 400
@@ -820,7 +942,7 @@ def test_a_short_seal_password_is_refused(client: TestClient) -> None:
 def test_a_sealed_export_is_not_a_zip_and_opens_only_with_its_password(
     client: TestClient, session: Session
 ) -> None:
-    from kathara_gui.project import sealing
+    from kathara_gui.project import examlock
 
     response = client.post(
         "/api/project/export", json={"topology": TRIANGLE, "password": "open-sesame"}
@@ -828,7 +950,7 @@ def test_a_sealed_export_is_not_a_zip_and_opens_only_with_its_password(
     assert response.status_code == 200, response.text
     assert 'filename="ospf triangle.kgx"' in response.headers["content-disposition"]
     blob = response.content
-    assert sealing.is_sealed(blob)
+    assert examlock.is_sealed(blob)
     assert not zipfile.is_zipfile(io.BytesIO(blob))
     assert b"lab.conf" not in blob and b"10.0.0.1" not in blob
 
@@ -866,10 +988,13 @@ def test_a_damaged_sealed_file_is_refused(client: TestClient) -> None:
     assert response.status_code == 403
 
 
-def test_a_sealed_exam_keeps_its_switches(client: TestClient, session: Session) -> None:
-    """What an instructor hands out: restrictions inside a file sealed until the exam."""
+def test_a_locked_exam_sealed_and_opened_is_still_locked(
+    client: TestClient, session: Session
+) -> None:
+    """The two halves together: what an instructor hands out."""
     save(client)
     client.put("/api/project/features", json={"features": OFF})
+    client.post("/api/project/exam/lock", json={"password": "author-pw"})
     blob = client.post(
         "/api/project/export", json={"topology": TRIANGLE, "password": "open-sesame"}
     ).content
@@ -880,7 +1005,9 @@ def test_a_sealed_exam_keeps_its_switches(client: TestClient, session: Session) 
         content=blob,
         headers={"X-KGUI-Filename": "exam.kgx", "X-KGUI-Password": "open-sesame"},
     ).json()
+    assert body["exam"] == {"locked": True, "unlocked": False}
     assert body["features"] == OFF
+    assert client.put("/api/project/features", json={"features": {}}).status_code == 423
 
 
 # -- project state ------------------------------------------------------

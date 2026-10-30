@@ -11,6 +11,7 @@ state travels in a small, greppable comment block::
     # kgui:v1
     # kgui:node r1 pos=120,340 kind=router daemons=zebra,ospfd
     # kgui:cd A subnet=10.0.0.0/24 pos=300,120
+    # kgui:cd B label=0.3
     # kgui:iface r1:0 ip=10.0.0.1/24
     # kgui:lo r1 ip=10.255.0.1/32,10.255.0.11/32
     # kgui:zone z1 shape=ellipse pos=40,20 size=420,260 name=Area%200
@@ -248,8 +249,21 @@ def parse(text: str) -> ParseResult:
                 warnings.append(
                     f"Collision domain {cd_name!r}: could not read position {cd_hints['pos']!r}."
                 )
+        label_at = None
+        if "label" in cd_hints:
+            label_at = _parse_label_at(cd_hints["label"])
+            if label_at is None:
+                warnings.append(
+                    f"Collision domain {cd_name!r}: could not read label place "
+                    f"{cd_hints['label']!r}; the label is in the middle."
+                )
         topology.collision_domains.append(
-            CollisionDomain(name=cd_name, subnet=cd_hints.get("subnet"), position=cd_position)
+            CollisionDomain(
+                name=cd_name,
+                subnet=cd_hints.get("subnet"),
+                position=cd_position,
+                label_at=label_at,
+            )
         )
 
     for zone_id, hints in kgui_zones.items():
@@ -339,6 +353,15 @@ def serialize(topology: Topology) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def _parse_label_at(text: str) -> float | None:
+    """A link label's place along its link: a fraction from 0.05 to 0.95 (FR-50)."""
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return value if 0.05 <= value <= 0.95 else None
+
+
 def _format_number(value: float) -> str:
     """Render 2.0 as '2' but keep 1.5 intact, so round trips stay stable."""
     return str(int(value)) if value == int(value) else str(value)
@@ -365,6 +388,8 @@ def _render_kgui_block(topology: Topology) -> list[str]:
             cd_parts.append(
                 f"pos={_format_number(cd.position.x)},{_format_number(cd.position.y)}"
             )
+        if cd.label_at is not None:
+            cd_parts.append(f"label={_format_number(round(cd.label_at, 3))}")
         if cd_parts:
             records.append(f"# {MARKER}:cd {cd.name} {' '.join(cd_parts)}")
 

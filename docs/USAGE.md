@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-10-30 (the lock on the exam switches removed, D12; zones, sealed export, restarting one device)
+- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; zones, sealed export, restarting one device)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -14,7 +14,7 @@ A living document — update it when behaviour changes.
 |---|---|---|
 | Python 3.12–3.14 | the backend | `python3 --version` |
 | [uv](https://docs.astral.sh/uv/) | installs Python and dependencies | `uv --version` |
-| Node 20+ | **only** to build the UI from source | `node --version` |
+| Node 20.19+ or 22.12+ (what Vite 8 needs) | **only** to build the UI from source | `node --version` |
 | Docker, running | Kathará deploys containers | `docker info` |
 
 A published release would carry the interface pre-built, so its users would need only
@@ -109,7 +109,7 @@ Open the Vite URL (usually `http://localhost:5173`) but **append the token** fro
 `http://localhost:5173/?token=<token>`. Without it every API call returns 401.
 
 Point the proxy elsewhere with `KGUI_BACKEND=http://127.0.0.1:9000 npm run dev` in a Unix
-shell, or `$env:KGUI_BACKEND="http://127.0.0.1:9000"; npm --prefix frontend run dev` in
+shell, or `$env:KGUI_BACKEND="http://127.0.0.1:9000"; npm.cmd --prefix frontend run dev` in
 PowerShell.
 
 ### Installed as a command, in one step
@@ -181,8 +181,8 @@ rebuild rather than reuse its cached copy, so a `git pull` reaches the installed
 ## 3. What you can do in the UI today
 
 The editor, addressing, deployment, verification, saving and capturing running
-configuration all work. What is still missing is listed under *Not built yet* below and in
-[PLAN.md](../PLAN.md).
+configuration all work. What was left out is listed under *Not built, by decision* below and
+in [PLAN.md](../PLAN.md).
 
 | Action | How |
 |---|---|
@@ -206,6 +206,7 @@ configuration all work. What is still missing is listed under *Not built yet* be
 | Delete a device | Select it, then the **Delete** button or the Delete key. |
 | Delete a link | Click the link on the canvas — it thickens — then Delete. Both ends are detached and the collision domain goes with them. A segment shared by three or more devices is deleted the same way: click its oval node, then Delete. |
 | Move a shared segment | Drag its oval node. It stays where you put it, also when its devices move, and is saved with the scenario. **Tidy layout** puts it back between its devices. |
+| Move a link's label | Drag the label along its link: it stays on the line wherever you let go, so labels of crossing links need not cover each other. Or, from the keyboard, **Collision domains** → **Label of A along the link**, 5% to 95% from the first device; **Middle** puts it back. Saved with the scenario. |
 | Detach one end only | **Details** → Interfaces → Disconnect ethN, or Delete on an interface row in the tree. The far device stays attached. |
 | Undo / redo | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, or the toolbar. |
 | Pin a subnet to a collision domain | Left panel → **Collision domains** → type the network for that domain, e.g. `192.168.1.0/24`, then Enter. |
@@ -384,7 +385,7 @@ router ID, deliberate for anycast.
 ```
 kathara-labs/untitled/
   lab.conf                 the topology, its layout and its metadata
-  kgui.json                feature toggles and a format version
+  kgui.json                feature toggles, their lock if any, and a format version
   r1.startup               addressing
   r1/etc/frr/frr.conf      configuration captured from the running router
 ```
@@ -564,7 +565,7 @@ records the old name — correctly. Ordinary routing configuration typed in `vty
 calculator, opening that scenario withdraws it on your machine too. A lab imported from
 outside has no such settings, so everything is on.
 
-### Feature switches and the sealed export
+### Feature switches, their lock, and the sealed export
 
 The **Feature switches** section of the right panel, collapsed until you open it, has four switches
 under **Features allowed**: **Subnet calculator**, **Addressing checks**, **Link
@@ -580,18 +581,28 @@ the first octet the prefix does not wholly cover: `eth0 .1` for `192.168.0.1/24`
 `eth0 .0.1` for `192.168.0.1/16`, `eth0 .17.5` for `10.1.17.5/20`. An interface without an
 address shows its name alone.
 
-**What the switches do not do.** They are kept in the scenario's `kgui.json`, and a
-student's copy is on the student's machine, so the student can edit them, or the
-application itself. They guide an exam; they do not police it. An exam that must be
-policed needs computers the students do not control. (A password on the switches was
-built and removed, because putting back a copy of the original file before handing in
-defeated it without trace: F51 in [PLAN.md](../PLAN.md).)
+**Locking.** Type an author's password twice and press **Lock the switches**. From then on
+the switches change only after **Unlock** with that password, for this session; **Lock
+again** locks them before you hand the scenario out, and **Remove the lock** removes it.
+The scenario reopens locked, and so does a sealed export of it. The password is not stored
+and cannot be recovered: forget it and the lock can only be removed by hand, by deleting
+`exam_lock` from `kgui.json`.
+
+**What the lock does not do.** A student's copy is on the student's machine, and a file
+there can be edited; no application can stop that. `kgui.json` carries a signature over the
+switches, so when the instructor unlocks a copy whose switches were edited in place, the
+section says they were changed outside the application. It **cannot** tell a copy of the
+original `kgui.json` put back before handing in from one never touched (F51 in
+[PLAN.md](../PLAN.md)). The lock keeps the switches in the application and makes an edit in
+place show; it does not police an exam. An exam that must be policed needs computers the
+students do not control.
 
 **A sealed export.** In **Export**, tick **Seal it with a password**, type an opening
 password twice and press **Download sealed .kgx**. The file is the scenario's zip,
 encrypted (AES-256-GCM), so it cannot be unzipped or read without the password. **Import…**
 takes it, asks for the password, and refuses a wrong one. Send the file ahead of the exam
-and give out the password when it starts.
+and give out the password when it starts. The opening password and the author's password
+are separate: give students the first, keep the second.
 
 ### Zones
 
@@ -817,8 +828,12 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | GET | `/api/lab/everything` | how many devices, in how many labs, **Stop every lab** would stop |
 | POST | `/api/lab/wipe` | stop every lab of this user, capturing nothing (`kathara wipe`) |
 | POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
-| GET | `/api/project` | scenario name, folder, feature toggles |
-| PUT | `/api/project/features` | set the exam switches; written to `kgui.json` at once |
+| GET | `/api/project` | scenario name, folder, feature toggles, and `exam`: whether they are locked, and unlocked for this session |
+| PUT | `/api/project/features` | set the exam switches; written to `kgui.json` at once; 423 while locked |
+| POST | `/api/project/exam/lock` | lock the switches with the author's `password` (at least 4 characters) |
+| POST | `/api/project/exam/unlock` | unlock them for this session; `intact` is false if `kgui.json` was edited outside the application; 403 for a wrong password |
+| POST | `/api/project/exam/relock` | lock them again after an unlock |
+| DELETE | `/api/project/exam/lock` | remove the lock; only while unlocked |
 | GET | `/api/project/scenarios` | scenario folders in the workspace, each with `running` when its lab has a running container |
 | POST | `/api/project/save` | write the scenario folder into the workspace |
 | POST | `/api/project/export` | the scenario folder as a zip, for download; with a `password` (at least 4 characters), sealed as a `.kgx` |
@@ -833,7 +848,9 @@ rather than acting on the stored one, because the browser normally holds newer w
 server does. `GET /api/topology/addressing/issues` is the exception and reports on the
 stored topology.
 
-Interactive docs while the server runs: `http://127.0.0.1:8150/docs?token=<token>`
+The OpenAPI schema while the server runs: `http://127.0.0.1:8150/openapi.json?token=<token>`.
+The interactive page at `/docs?token=<token>` opens but shows no endpoints: it fetches the
+schema without the token, and the server refuses that with 401.
 
 ---
 

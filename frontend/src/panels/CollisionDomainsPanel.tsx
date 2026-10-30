@@ -10,8 +10,13 @@
  * now they existed only as edge labels on the canvas and as text inside the
  * tree's interface rows, which left them unreachable for anyone not using a
  * pointer.
+ *
+ * A link between two devices also gets the keyboard's way to slide its label
+ * along the link, which a pointer does on the canvas (FR-50).
  */
 
+import { useState } from "react";
+import { clampLabelAt } from "../canvas/linkLabel";
 import type { Operation } from "../store/operations";
 import type { Topology } from "../types";
 import { CommittedInput } from "./CommittedInput";
@@ -58,7 +63,7 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
       </Explanation>
 
       <ul className="domain-list">
-        {domains.map(({ name, members, subnet }) => (
+        {domains.map(({ name, members, subnet, labelAt }) => (
           <li key={name} className="domain-list__item">
             <div className="domain-list__title">
               {name}
@@ -81,6 +86,9 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
                 });
               }}
             />
+            {members === 2 && (
+              <LabelSlider name={name} at={labelAt} onDispatch={onDispatch} />
+            )}
           </li>
         ))}
       </ul>
@@ -88,10 +96,68 @@ export function CollisionDomainsPanel({ topology, onDispatch }: Props) {
   );
 }
 
+/**
+ * Where the link's label sits, in percent of the way from its first device.
+ * Committed when the slider is let go, so one slide is one undo step.
+ */
+function LabelSlider({
+  name,
+  at,
+  onDispatch,
+}: {
+  name: string;
+  at: number | null;
+  onDispatch: (op: Operation) => void;
+}) {
+  const stored = Math.round((at ?? 0.5) * 100);
+  const [value, setValue] = useState<number | null>(null);
+  const shown = value ?? stored;
+  const commit = () => {
+    if (value !== null && value !== stored) {
+      onDispatch({ type: "moveLabel", collisionDomain: name, at: clampLabelAt(value / 100) });
+    }
+    setValue(null);
+  };
+  const id = `domain-label-${name}`;
+  return (
+    <div className="field">
+      <label className="field__label" htmlFor={id}>
+        Label of {name} along the link
+      </label>
+      <div className="domain-list__slider">
+        <input
+          id={id}
+          type="range"
+          min={5}
+          max={95}
+          step={5}
+          value={shown}
+          aria-valuetext={`${shown}% of the way from the first device`}
+          onChange={(e) => setValue(Number(e.target.value))}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+        />
+        <span className="field__hint">{shown}%</span>
+        {at !== null && (
+          <button
+            type="button"
+            onClick={() => onDispatch({ type: "moveLabel", collisionDomain: name, at: null })}
+          >
+            Middle
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface DomainRow {
   name: string;
   members: number;
   subnet: string | null;
+  /** A two-device link's label place, if slid (FR-50). */
+  labelAt: number | null;
 }
 
 /** Domains something is actually attached to, in first-seen order. */
@@ -102,9 +168,8 @@ export function referencedDomains(topology: Topology): DomainRow[] {
       counts.set(iface.collision_domain, (counts.get(iface.collision_domain) ?? 0) + 1);
     }
   }
-  return [...counts].map(([name, members]) => ({
-    name,
-    members,
-    subnet: topology.collision_domains.find((cd) => cd.name === name)?.subnet ?? null,
-  }));
+  return [...counts].map(([name, members]) => {
+    const cd = topology.collision_domains.find((d) => d.name === name);
+    return { name, members, subnet: cd?.subnet ?? null, labelAt: cd?.label_at ?? null };
+  });
 }

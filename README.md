@@ -11,17 +11,17 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 ## Status
 
-Every requirement is built (84 of 89) or dropped by decision (5). You can design a
+Every requirement is built (85 of 90) or dropped by decision (5). You can design a
 topology on a canvas or from the keyboard, group it into named zones, plan the addressing
 with conflict detection, deploy it with one click, restart a single device, verify every
 link, capture what was configured inside the containers, and save, export, import and
 reopen scenarios, including labs made without this application; a BGP lab is laid out by
-autonomous system. An instructor can withdraw assistive features for an exam and send the
-scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
+autonomous system. An instructor can withdraw assistive features for an exam, lock them
+with a password, and send the scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
 (D9).
 
-It has passed a manual procedure on Windows, now 133 steps: 122 passed, 2 describe features
-dropped by decision, and 9, for the features added since 2026-10-29, are not yet run by hand.
+It has passed a manual procedure on Windows, now 136 steps: 122 passed, 2 describe features
+dropped by decision, and 12, for the features added since 2026-10-29, are not yet run by hand.
 The installer has been run on a clean Windows 11 machine, and an EN 301 549 conformance
 table states partial conformance, by decision: screen readers are out of scope (D10 in
 `PLAN.md`).
@@ -36,10 +36,12 @@ autosave. No release is published yet. `docs/REQUIREMENTS.md` has the full list.
   served, and the reasoning behind every significant technology choice.
 - **[docs/USAGE.md](docs/USAGE.md)** — how to run it, every command, what the UI can do
   today, keyboard shortcuts, the API, and troubleshooting.
-- **[PLAN.md](PLAN.md)** — development plan, phase status, capability traceability and the
-  decision log.
+- **[docs/CONFORMANCE.md](docs/CONFORMANCE.md)** — the EN 301 549 accessibility
+  conformance table, criterion by criterion.
+- **[PLAN.md](PLAN.md)** — development plan, phase status, capability traceability, the
+  decision log and the findings.
 
-All four are living documents kept in step with the code.
+All five are living documents kept in step with the code.
 
 ## Requirements
 

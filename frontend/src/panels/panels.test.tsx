@@ -405,6 +405,35 @@ describe("CollisionDomainsPanel", () => {
     expect(screen.getByText("1 device")).toBeInTheDocument();
   });
 
+  it("slides a two-device link's label from the keyboard, one step per release (FR-50)", () => {
+    const onDispatch = vi.fn();
+    render(<CollisionDomainsPanel topology={withDomains()} onDispatch={onDispatch} />);
+    // C has one device, so no link and no label to slide.
+    expect(screen.queryByLabelText("Label of C along the link")).not.toBeInTheDocument();
+    const slider = screen.getByLabelText("Label of A along the link");
+    expect(slider).toHaveValue("50");
+
+    // jsdom does not move a range on arrow keys, so the value is set as the
+    // browser would set it; the arrow keys themselves were tried in Chrome.
+    fireEvent.change(slider, { target: { value: "45" } });
+    fireEvent.change(slider, { target: { value: "40" } });
+    expect(onDispatch).not.toHaveBeenCalled();
+    fireEvent.keyUp(slider, { key: "ArrowLeft" });
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith({ type: "moveLabel", collisionDomain: "A", at: 0.4 });
+  });
+
+  it("puts a slid label back in the middle", async () => {
+    const user = userEvent.setup();
+    const onDispatch = vi.fn();
+    const topology = withDomains();
+    topology.collision_domains[0]!.label_at = 0.3;
+    render(<CollisionDomainsPanel topology={topology} onDispatch={onDispatch} />);
+    expect(screen.getByLabelText("Label of A along the link")).toHaveValue("30");
+    await user.click(screen.getByRole("button", { name: "Middle" }));
+    expect(onDispatch).toHaveBeenCalledWith({ type: "moveLabel", collisionDomain: "A", at: null });
+  });
+
   it("shows a subnet that has already been pinned", () => {
     render(<CollisionDomainsPanel topology={withDomains()} onDispatch={vi.fn()} />);
     expect(screen.getByLabelText("Subnet for C")).toHaveValue("192.168.1.0/24");

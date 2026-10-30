@@ -19,7 +19,12 @@ from pathlib import Path
 from kathara_gui.domain.model import Topology
 from kathara_gui.domain.naming import lab_name_problem, safe_dir_name
 from kathara_gui.features import Features
-from kathara_gui.project import scenario
+from kathara_gui.project import examlock, scenario
+from kathara_gui.project.examlock import ExamLock
+
+
+class ExamLocked(PermissionError):
+    """The exam's switches are locked, and the author's password has not been given."""
 
 
 class ScenarioNameError(ValueError):
@@ -65,6 +70,11 @@ class Session:
         self._deployed: dict[Path, Topology] = {}
         self._dirty = False
         self._features = Features()
+        # The exam author's lock on the switches, and the key that opens it
+        # once the author has given the password in this session (note 1).
+        # The key is held in memory only, never written anywhere.
+        self._exam_lock: ExamLock | None = None
+        self._author_key: bytes | None = None
         # Resolved once, at construction. Re-reading the process's working
         # directory later would mean the answer could change under us.
         root = Path(workspace_root) if workspace_root else default_workspace_root()
@@ -150,7 +160,9 @@ class Session:
                     ) from exc
                 renamed_from = current.name
 
-            scenario.save(topology, target, features=self._features)
+            scenario.save(
+                topology, target, features=self._features, exam_lock=self._exam_lock
+            )
             self._topology = topology
             self._path = target
             self._dirty = False
@@ -162,25 +174,89 @@ class Session:
         with self._lock:
             return self._features
 
-    def adopt_settings(self, features: Features) -> None:
-        """The switches of a scenario just opened."""
+    def adopt_settings(self, features: Features, exam_lock: ExamLock | None) -> None:
+        """The switches and their lock of a scenario just opened, still locked."""
         with self._lock:
             self._features = features
+            self._exam_lock = exam_lock
+            self._author_key = None
+
+    @property
+    def exam_lock(self) -> ExamLock | None:
+        with self._lock:
+            return self._exam_lock
+
+    @property
+    def exam_unlocked(self) -> bool:
+        """Whether the author's password has been given in this session."""
+        with self._lock:
+            return self._author_key is not None
 
     def set_features(self, features: Features) -> Features:
-        """Change the switches (FR-28), and write them at once."""
+        """Change the switches; refused while they are locked (note 1).
+
+        Unlocked, the lock is signed again over the new switches, so it stays
+        on them and they stay intact.
+        """
         with self._lock:
+            if self._exam_lock is not None:
+                if self._author_key is None:
+                    raise ExamLocked(
+                        "The exam's switches are locked. Unlock them with the author's "
+                        "password to change them."
+                    )
+                self._exam_lock = examlock.resign(
+                    self._exam_lock, self._author_key, features.model_dump()
+                )
             self._features = features
             self._write_settings()
             return self._features
 
+    def lock_exam(self, password: str) -> None:
+        """Lock the switches as they are with ``password``, the exam author's."""
+        with self._lock:
+            if self._exam_lock is not None and self._author_key is None:
+                raise ExamLocked("The switches are already locked.")
+            self._exam_lock = examlock.lock(password, self._features.model_dump())
+            self._author_key = None
+            self._write_settings()
+
+    def unlock_exam(self, password: str) -> bool:
+        """Open the lock for this session; whether the switches are as signed.
+
+        Raises :class:`examlock.WrongPassword`. A switch changed outside the
+        application is reported, not repaired: the old signature stays on disk
+        until the author changes a switch, so the evidence is not erased by
+        merely looking at it.
+        """
+        with self._lock:
+            if self._exam_lock is None:
+                return True
+            key = examlock.open_lock(self._exam_lock, password)
+            self._author_key = key
+            return examlock.intact(self._exam_lock, key, self._features.model_dump())
+
+    def relock_exam(self) -> None:
+        """Forget the author's key: locked again, as the student will see it."""
+        with self._lock:
+            self._author_key = None
+
+    def remove_exam_lock(self) -> None:
+        """Remove the lock altogether, which only the author may do."""
+        with self._lock:
+            if self._exam_lock is not None and self._author_key is None:
+                raise ExamLocked("Unlock the switches with the author's password first.")
+            self._exam_lock = None
+            self._author_key = None
+            self._write_settings()
+
     def _write_settings(self) -> None:
         # The switches are the scenario's, not the design's, so they are
-        # written at once rather than waiting for the next Save: a switch that
-        # waited for Save would look set and not be. A scenario with no
+        # written at once rather than waiting for the next Save: an exam
+        # locked and then exported must carry its lock. A scenario with no
         # folder yet gets them with its first save.
         if self._path is not None and self._path.is_dir():
-            scenario.write_settings(self._path, self._features)
+            scenario.write_settings(self._path, self._features, self._exam_lock)
 
     @property
     def topology(self) -> Topology:
@@ -266,6 +342,8 @@ class Session:
             # from the permissive default rather than inheriting an exam's
             # restrictions.
             self._features = Features()
+            self._exam_lock = None
+            self._author_key = None
             return self._topology
 
 

@@ -105,6 +105,12 @@ export interface CollisionDomain {
    * hand. Absent means between its members, following them as they move.
    */
   position?: Position | null;
+  /**
+   * Where a two-device link's label sits along the link, from 0.05 to 0.95,
+   * from its first device's end, once slid by hand (FR-50). Absent means the
+   * middle.
+   */
+  label_at?: number | null;
 }
 
 export type ZoneShape = "rectangle" | "ellipse" | "cloud";

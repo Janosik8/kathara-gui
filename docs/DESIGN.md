@@ -46,14 +46,14 @@ tool removes the transcription.
 
 | # | Capability | Mechanism |
 |---|---|---|
-| 1 | Visual topology & addressing | Canvas editor over a typed model, devices dragged onto it from the palette or added by its buttons; subnet allocation and seven conflict checks in `domain/addressing.py` |
+| 1 | Visual topology & addressing | Canvas editor over a typed model, devices dragged onto it from the palette or added by its buttons; subnet allocation and eight conflict checks in `domain/addressing.py` |
 | 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified; zones (`canvas/ZoneNode.tsx`) group devices visually without binding them |
 | 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API, and restarts chosen devices alone |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
 | 5 | State extraction | `vtysh -c "show running-config"` captures a router's live routing state, and `ip addr` its interface addresses; the scenario folder holds both and exports as a zip |
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; every pointer control has a keyboard equivalent, including the panel dividers and the movable panel sections; contrast and reflow asserted against the real stylesheet in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
-| 8 | Exam mode | `features.py`, enforced server-side against the page, and carrying one view setting besides, the host parts on the canvas (FR-49); the sealed export in `project/sealing.py`. Not enforced against the owner of the machine, by design (D12) |
+| 8 | Exam mode | `features.py`, enforced server-side against the page, and carrying one view setting besides, the host parts on the canvas (FR-49); the author's lock and the sealed export in `project/examlock.py`. The lock deters and records edits made in place; it is not enforced against the owner of the machine (F51, D13) |
 | 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so; a BGP lab is laid out by autonomous system, each in its own zone (`domain/asgroups.py`) |
 
 ### The idea that ties it together
@@ -160,7 +160,10 @@ would show when the instructor unlocked the submission (F48). It was defeated th
 by the simplest possible move: keep a copy of the original `kgui.json`, sit the exam with
 the switches on, and put the copy back before handing in (F51). It was removed (D12),
 because a check that reports "intact" on a file that was tampered with is worse than no
-check.
+check. The user restored it the same day (D13), because the specification asks for the
+capabilities to be locked when students open the exam: it stops a switch being changed in
+the application without the author's password and shows an edit made to the file in place,
+and the interface says beside it what it cannot see.
 
 What the application does guarantee is narrower and true. A switched-off feature is
 refused by the server, not only hidden, so the page's developer tools do not bring it back
@@ -250,7 +253,7 @@ removed the contradiction and, incidentally, a whole module.
 
 What remains is a Kathará lab directory: `lab.conf`, the startup scripts, the configuration
 captured from running containers, and one small `kgui.json` for the scenario's feature
-toggles. The driving case is an exam — a student submits to an e-learning platform, an
+toggles and their lock. The driving case is an exam — a student submits to an e-learning platform, an
 instructor opens the submission — which is why saving in place is confined to the workspace
 while anything crossing the machine boundary goes through the browser's own download and
 upload. Letting the page name a path for the server to write to would serve those flows no
@@ -339,10 +342,11 @@ dragged node stays put, whether a message reaches the screen. So the application
 by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It had 121 steps in
 eleven sections when it was accepted (128 until the seven screen-reader steps were dropped
 by D10), one per capability of the specification, and each step states its expected
-result before it is run. Steps added since for later features bring it to 126. The tester ticks a step or writes down, in their own words, what
-happened instead.
+result before it is run. Steps added since for later features bring it to 136. The tester
+ticks a step or writes down, in their own words, what happened instead.
 
-It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 steps
+It has been run on two Windows machines, Windows 10 and Windows 11; a macOS machine used in
+the same weeks raised reports of its own (bugs 23–31). By 2026-10-24, 56 steps
 had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 112 of 121 had
 passed, with the keyboard steps left untested by choice, and on 2026-10-27, with the keyboard
 steps passed too, 117 of 121, which the tester accepted as the Windows run NFR-01 asks for.
@@ -461,7 +465,7 @@ genuinely efficient way to handle a common need.
 | The topology preview stays blank until enough fields are filled, so the drawing follows the form rather than leading it | **FR-01**, **FR-30** — the diagram is the document, and its layout persists |
 | No connection to Docker at all: the output is a ZIP the user must unpack and start by hand | **FR-16**, **FR-17** — deploy and stop from the application |
 | No way to recover configuration typed inside a running container | **FR-24** — pull running configuration back out |
-| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-15**, **FR-21** — iterate on a saved project, derive variants, and be told when the running lab has drifted from the design (read-only while deployed, D9) |
+| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-21** — iterate on a saved project, and be told when the running lab has drifted from the design (read-only while deployed, D9); deriving variants, **FR-15**, was dropped (D11), since Save as makes one |
 
 The last is the important one. The tool is not *wrong*; it simply assumes a scenario is
 written once. The observed reality — an exam judged too easy, a link that creates an

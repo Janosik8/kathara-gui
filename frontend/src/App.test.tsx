@@ -17,6 +17,7 @@ import { api } from "./api/client";
 import type {
   AllocateResponse,
   DiagnosticsResponse,
+  ExamState,
   Features,
   FeaturesResponse,
   IssuesResponse,
@@ -28,6 +29,7 @@ import type {
   SaveResponse,
   CaptureResponse,
   StatusResponse,
+  UnlockResponse,
 } from "./api/client";
 import type { Topology } from "./types";
 import { useTopologyStore } from "./store/topology";
@@ -79,6 +81,10 @@ const {
   savePreferences,
   projectState,
   setFeatures,
+  lockExam,
+  unlockExam,
+  relockExam,
+  removeExamLock,
   restart,
 } = vi.hoisted(() => {
   class MockApiError extends Error {
@@ -112,12 +118,16 @@ const {
     conflicts: null,
   });
   // What the server answers about the scenario: switches as `features` says.
-  const state = (f: Features): ProjectState => ({
+  const state = (
+    f: Features,
+    exam: ExamState = { locked: false, unlocked: false },
+  ): ProjectState => ({
     name: "untitled",
     folder: null,
     dirty: false,
     features: f,
     workspace: "/workspace",
+    exam,
   });
   const allOn = (): Features => ({
     subnet_calculator: true,
@@ -129,6 +139,20 @@ const {
     MockApiError,
     projectState: vi.fn(async (): Promise<ProjectState> => state(allOn())),
     setFeatures: vi.fn(async (f: Features): Promise<ProjectState> => state(f)),
+    lockExam: vi.fn(
+      async (_password: string): Promise<ProjectState> =>
+        state(allOn(), { locked: true, unlocked: false }),
+    ),
+    unlockExam: vi.fn(
+      async (_password: string): Promise<UnlockResponse> => ({
+        state: state(allOn(), { locked: true, unlocked: true }),
+        intact: true,
+      }),
+    ),
+    relockExam: vi.fn(
+      async (): Promise<ProjectState> => state(allOn(), { locked: true, unlocked: false }),
+    ),
+    removeExamLock: vi.fn(async (): Promise<ProjectState> => state(allOn())),
     restart: vi.fn(
       async (_topology: Topology, devices: string[]): Promise<StatusResponse> => ({
         ...idleStatus(),
@@ -199,6 +223,7 @@ const {
       folder: `/workspace/${name}`,
       warnings: [],
       foreign: false,
+      exam: { locked: false, unlocked: false },
     })),
     importProject: vi.fn(async (file: File): Promise<OpenResponse> => ({
       topology: {
@@ -215,6 +240,7 @@ const {
       folder: `/workspace/${file.name}`,
       warnings: [],
       foreign: true,
+      exam: { locked: false, unlocked: false },
     })),
     exportProject: vi.fn(async () => new Blob(["PK"], { type: "application/zip" })),
     scenarios: vi.fn(async (): Promise<ScenarioSummary[]> => []),
@@ -290,6 +316,10 @@ vi.mock("./api/client", () => ({
     // one there sees it withdrawn from the start.
     projectState: vi.fn(async () => ({ ...(await projectState()), features: await features() })),
     setFeatures,
+    lockExam,
+    unlockExam,
+    relockExam,
+    removeExamLock,
     restart,
   },
   initialiseToken: vi.fn(),
@@ -2068,7 +2098,7 @@ describe("the scenario as a folder", () => {
     expect(screen.getByRole("button", { name: "Import…" })).toHaveFocus();
   });
 
-  it("sets the feature switches from their section (FR-28)", async () => {
+  it("sets the feature switches and locks them from their section (FR-28)", async () => {
     preferences.mockResolvedValueOnce({
       panels: {
         left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
@@ -2090,6 +2120,17 @@ describe("the scenario as a folder", () => {
     await waitFor(() =>
       expect(screen.getByRole("checkbox", { name: "Subnet calculator" })).not.toBeChecked(),
     );
+
+    await user.type(screen.getByLabelText("Author's password"), "author-pw");
+    await user.type(screen.getByLabelText("The password again"), "author-pw");
+    await user.click(screen.getByRole("button", { name: "Lock the switches" }));
+    await waitFor(() => expect(lockExam).toHaveBeenCalledWith("author-pw"));
+    expect(await screen.findByRole("button", { name: "Unlock" })).toBeInTheDocument();
+    for (const box of within(
+      screen.getByRole("group", { name: "Features allowed" }),
+    ).getAllByRole("checkbox")) {
+      expect(box).toBeDisabled();
+    }
   });
 
   it("shows the addresses on the canvas once switched on (FR-49)", async () => {
@@ -2208,6 +2249,7 @@ describe("the scenario as a folder", () => {
       folder: "/workspace/partial",
       warnings: ["r1[99]=nonsense"],
       foreign: true,
+      exam: { locked: false, unlocked: false },
     });
     const user = await renderApp();
     await user.upload(
@@ -2231,6 +2273,7 @@ describe("the scenario as a folder", () => {
       folder: "/workspace/exam",
       warnings: [],
       foreign: false,
+      exam: { locked: false, unlocked: false },
     });
     scenarios.mockResolvedValue([
       { folder: "exam", name: "exam", devices: 1, modified: 1, foreign: false },
@@ -3262,6 +3305,7 @@ describe("a deployed lab locks the design", () => {
       folder: "/workspace/lab a",
       warnings: [],
       foreign: false,
+      exam: { locked: false, unlocked: false },
     });
     scenarios.mockResolvedValue([
       { folder: "lab a", name: "lab a", devices: 1, modified: 1, foreign: false },
@@ -3297,6 +3341,7 @@ describe("a deployed lab locks the design", () => {
       folder: "/workspace/lab a",
       warnings: [],
       foreign: false,
+      exam: { locked: false, unlocked: false },
     });
     scenarios.mockResolvedValue([
       { folder: "lab a", name: "lab a", devices: 1, modified: 1, foreign: false },

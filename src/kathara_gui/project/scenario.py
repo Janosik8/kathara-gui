@@ -49,6 +49,7 @@ from kathara_gui.domain.model import (
 )
 from kathara_gui.features import Features
 from kathara_gui.fsutil import write_text_lf
+from kathara_gui.project.examlock import ExamLock
 from kathara_gui.project.labdir import write_lab
 
 __all__ = [
@@ -96,6 +97,8 @@ class Scenario:
     warnings: list[str] = field(default_factory=list)
     #: True when the folder carried no ``kgui.json`` — someone else's lab.
     foreign: bool = False
+    #: The exam author's lock on ``features``, if the scenario has one (note 1).
+    exam_lock: ExamLock | None = None
 
 
 #: Naming conventions common in published Kathará and Netkit labs. Only used
@@ -257,7 +260,7 @@ def is_scenario(folder: Path) -> bool:
     return (Path(folder) / LAB_CONF).is_file()
 
 
-def _settings(features: Features) -> str:
+def _settings(features: Features, exam_lock: ExamLock | None = None) -> str:
     """The scenario's settings file.
 
     Deliberately carries no timestamp. One was here, and it quietly defeated
@@ -272,12 +275,14 @@ def _settings(features: Features) -> str:
         "application": __version__,
         "features": features.model_dump(),
     }
+    if exam_lock is not None:
+        settings["exam_lock"] = exam_lock.model_dump()
     return json.dumps(settings, indent=2) + "\n"
 
 
-def write_settings(folder: Path, features: Features) -> None:
-    """Write only ``kgui.json``: the switches, not the design."""
-    write_text_lf(Path(folder) / SETTINGS_NAME, _settings(features))
+def write_settings(folder: Path, features: Features, exam_lock: ExamLock | None = None) -> None:
+    """Write only ``kgui.json``: the switches and their lock, not the design."""
+    write_text_lf(Path(folder) / SETTINGS_NAME, _settings(features, exam_lock))
 
 
 def save(
@@ -285,6 +290,7 @@ def save(
     folder: Path,
     *,
     features: Features | None = None,
+    exam_lock: ExamLock | None = None,
 ) -> Path:
     """Write ``topology`` into ``folder`` as a complete scenario.
 
@@ -294,7 +300,7 @@ def save(
     """
     folder = Path(folder)
     write_lab(topology, folder)
-    write_settings(folder, features or Features())
+    write_settings(folder, features or Features(), exam_lock)
     return folder
 
 
@@ -315,7 +321,7 @@ def load(folder: Path) -> Scenario:
         raise ScenarioError(f"{LAB_CONF} could not be read: {exc}") from exc
 
     settings_file = folder / SETTINGS_NAME
-    features, foreign = Features(), True
+    features, foreign, exam_lock = Features(), True, None
     if settings_file.is_file():
         foreign = False
         try:
@@ -329,9 +335,16 @@ def load(folder: Path) -> Scenario:
                 f"This scenario was written by a newer version of Kathara GUI "
                 f"(format {version}, this version reads {FORMAT_VERSION}). Update to open it."
             )
-        # Anything else in it, such as the ``exam_lock`` an earlier build
-        # wrote (F48, removed by F51), is ignored and dropped by the next write.
         features = Features(**stored.get("features", {}))
+        if stored.get("exam_lock") is not None:
+            try:
+                exam_lock = ExamLock(**stored["exam_lock"])
+            except (TypeError, ValueError) as exc:
+                # Damaged rather than missing: still evidence, so not ignored.
+                raise ScenarioError(
+                    f"The exam lock in {SETTINGS_NAME} is damaged, so the scenario cannot "
+                    "be opened as it was locked."
+                ) from exc
 
     # The folder's own name is the better title when lab.conf carries none:
     # Kathará's LAB_NAME is optional, and "lab" tells the user nothing.
@@ -370,6 +383,7 @@ def load(folder: Path) -> Scenario:
         folder=folder,
         warnings=[*result.warnings, *renumbered],
         foreign=foreign,
+        exam_lock=exam_lock,
     )
 
 

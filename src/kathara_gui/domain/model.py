@@ -226,6 +226,16 @@ class CollisionDomain(BaseModel):
             "moved it. None means between its members, following them as they move."
         ),
     )
+    label_at: float | None = Field(
+        default=None,
+        ge=0.05,
+        le=0.95,
+        description=(
+            "Where a two-device link's label sits along the link, as a fraction of its "
+            "length from the first device, once the user has slid it (FR-50). None means "
+            "the middle."
+        ),
+    )
 
     @field_validator("subnet")
     @classmethod

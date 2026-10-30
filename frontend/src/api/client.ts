@@ -204,6 +204,13 @@ export interface Features {
   interface_addresses: boolean;
 }
 
+/** The exam author's lock on the switches (note 1). */
+export interface ExamState {
+  locked: boolean;
+  /** The author's password was given in this session. */
+  unlocked: boolean;
+}
+
 export interface ProjectState {
   name: string;
   /** Absolute path of the scenario folder, or null if never saved. */
@@ -211,6 +218,13 @@ export interface ProjectState {
   dirty: boolean;
   features: Features;
   workspace: string;
+  exam: ExamState;
+}
+
+export interface UnlockResponse {
+  state: ProjectState;
+  /** False: the switches were changed outside this application. */
+  intact: boolean;
 }
 
 export interface ScenarioSummary {
@@ -240,6 +254,7 @@ export interface OpenResponse {
   /** Lines of lab.conf that could not be understood. Import is forgiving. */
   warnings: string[];
   foreign: boolean;
+  exam: ExamState;
 }
 
 export interface CapturedFile {
@@ -427,6 +442,22 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ features }),
     }),
+
+  lockExam: (password: string) =>
+    request<ProjectState>("/api/project/exam/lock", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  unlockExam: (password: string) =>
+    request<UnlockResponse>("/api/project/exam/unlock", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  relockExam: () => request<ProjectState>("/api/project/exam/relock", { method: "POST" }),
+
+  removeExamLock: () => request<ProjectState>("/api/project/exam/lock", { method: "DELETE" }),
 
   /**
    * Open a scenario from outside the workspace: a zip, or a bare lab.conf.

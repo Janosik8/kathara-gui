@@ -10,8 +10,10 @@ import {
   type Conflicts,
   type EnvironmentCheck,
   type EverythingResponse,
+  type ExamState,
   type Features,
   type Preferences,
+  type ProjectState,
   type ScenarioSummary,
   type StatusResponse,
   api,
@@ -60,6 +62,8 @@ import {
  * sits within half a cell of it, so devices the user has dragged elsewhere
  * free their old slot, and one dragged near a slot claims it.
  */
+const UNLOCKED: ExamState = { locked: false, unlocked: false };
+
 export function placeNew(nodes: readonly { position: { x: number; y: number } }[]) {
   const COLUMNS = 4;
   const WIDTH = 180;
@@ -289,6 +293,10 @@ export default function App() {
   const [canVerify, setCanVerify] = useState(true);
   // Off until the scenario says otherwise, like the server's default (FR-49).
   const [showAddresses, setShowAddresses] = useState(false);
+  // The exam author's lock on those switches (note 1), and what the last
+  // unlock found: false when they were changed outside the application.
+  const [exam, setExam] = useState<ExamState>(UNLOCKED);
+  const [examIntact, setExamIntact] = useState<boolean | null>(null);
   const [examBusy, setExamBusy] = useState(false);
   const features: Features = {
     subnet_calculator: canAllocate,
@@ -787,11 +795,14 @@ export default function App() {
       })
       .catch(() => setCanDeploy(false));
 
-    // All three switches, for a page reloaded over a scenario already open;
-    // not only the one a refusal would otherwise reveal.
+    // All three switches and their lock, for a page reloaded over a scenario
+    // already open; not only the one a refusal would otherwise reveal.
     api
       .projectState()
-      .then((state) => applyFeatures(state.features))
+      .then((state) => {
+        applyFeatures(state.features);
+        setExam(state.exam ?? UNLOCKED);
+      })
       .catch(() => undefined);
 
     api
@@ -1129,6 +1140,8 @@ export default function App() {
       // Feature toggles belong to the scenario, so opening one adopts its
       // restrictions rather than keeping the previous scenario's.
       applyFeatures(result.features);
+      setExam(result.exam ?? UNLOCKED);
+      setExamIntact(null);
       setStatus(
         result.foreign
           ? `Opened ${result.topology.name}, imported from outside this application.`
@@ -1178,6 +1191,8 @@ export default function App() {
       setCanAllocate(true);
       setCanValidate(true);
       setCanVerify(true);
+      setExam(UNLOCKED);
+      setExamIntact(null);
       setStatus("Started a new scenario.");
     } catch (err) {
       fail(err);
@@ -1186,14 +1201,37 @@ export default function App() {
     }
   }, [load]);
 
-  /** Change the switches; the server answers with where they stand (FR-28). */
-  const setExamFeatures = useCallback(
-    async (next: Features) => {
+  /** Change the switches or the lock; the server answers with where they stand. */
+  const examAction = useCallback(
+    async (action: () => Promise<ProjectState>, done: string) => {
       setExamBusy(true);
       try {
-        const state = await api.setFeatures(next);
+        const state = await action();
         applyFeatures(state.features);
-        setStatus("Feature switches changed.");
+        setExam(state.exam);
+        setStatus(done);
+      } catch (err) {
+        fail(err);
+      } finally {
+        setExamBusy(false);
+      }
+    },
+    [applyFeatures],
+  );
+
+  const unlockExam = useCallback(
+    async (password: string) => {
+      setExamBusy(true);
+      try {
+        const result = await api.unlockExam(password);
+        applyFeatures(result.state.features);
+        setExam(result.state.exam);
+        setExamIntact(result.intact);
+        setStatus(
+          result.intact
+            ? "Unlocked. The switches are as the author locked them."
+            : "Unlocked. The switches were changed outside this application.",
+        );
       } catch (err) {
         fail(err);
       } finally {
@@ -1770,6 +1808,7 @@ export default function App() {
             onMove={(name, position) => edit({ type: "moveNode", name, position })}
             onMoveMany={(positions) => edit({ type: "moveNodes", positions })}
             onMoveDomain={(name, position) => edit({ type: "moveDomain", name, position })}
+            onSlideLabel={(collisionDomain, at) => edit({ type: "moveLabel", collisionDomain, at })}
             onZoneChange={changeZone}
             onSelectZone={selectZone}
             selectedZone={selectedZone}
@@ -1871,11 +1910,29 @@ export default function App() {
               // where the user put it; named for what it holds, not one use of it.
               title: "Feature switches",
               headingId: "switches-heading",
+              // A warning that the switches were tampered with must be seen.
+              attention: examIntact === false,
               content: (
                 <ExamPanel
                   features={features}
+                  exam={exam}
+                  intact={examIntact}
                   busy={examBusy}
-                  onSetFeatures={(f) => void setExamFeatures(f)}
+                  onSetFeatures={(f) =>
+                    void examAction(() => api.setFeatures(f), "Feature switches changed.")
+                  }
+                  onLock={(password) =>
+                    void examAction(() => api.lockExam(password), "Feature switches locked.")
+                  }
+                  onUnlock={(password) => void unlockExam(password)}
+                  onRelock={() => {
+                    setExamIntact(null);
+                    void examAction(() => api.relockExam(), "Feature switches locked again.");
+                  }}
+                  onRemoveLock={() => {
+                    setExamIntact(null);
+                    void examAction(() => api.removeExamLock(), "Exam lock removed.");
+                  }}
                 />
               ),
             },
