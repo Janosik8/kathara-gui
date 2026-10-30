@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; zones, sealed export, restarting one device)
+- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; zones, sealed export, restarting one device)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -619,11 +619,28 @@ is one undo step.
 
 Zones are saved in `lab.conf` as `# kgui:zone` comments, which Kathará ignores.
 
+A zone's name sits in its top-left corner. To put a title anywhere else, inside the zone or
+outside it, leave the **Zone name** empty and add a text label.
+
 **A BGP lab imported without a layout** is laid out by autonomous system. The application
 reads `router bgp <number>` from each router's `frr.conf` or `bgpd.conf`; with two systems
 or more, each is laid out on its own, side by side, inside a zone called `AS <number>`.
 Hosts and switches join the system their routers belong to. The zones are ordinary ones:
 rename them, move them or delete them.
+
+### Text labels
+
+The **Text labels** section of the left panel puts words anywhere on the canvas, at a size
+of your choosing: a zone's title, a note beside a link, a heading over the lab. Drag **Add
+text label** onto the canvas and the label appears where you drop it; or press it, and one
+appears above the selected devices, or above the lab with none selected. Either way its
+words are selected in the panel, ready to type over.
+
+Each label has **Text**, **Font size (8–96 px)** (16 to start with), **Move above selected
+devices** and a delete button. On the canvas, drag a label wherever you want it. Click it
+to select it, then press Delete to remove it. Each change is one undo step.
+
+Text labels are saved in `lab.conf` as `# kgui:text` comments, which Kathará ignores.
 
 ### Not built, by decision
 

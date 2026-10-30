@@ -180,7 +180,8 @@ and a device dragged to tidy a link should not change what it is annotated as. S
 a shape behind the devices with no membership at all, stored as a comment in `lab.conf`.
 The one place zones are computed is the import of a BGP lab with no layout, where the
 autonomous systems are a fact of the configuration; even then the result is ordinary zones
-that the user can change.
+that the user can change. Text labels (FR-51) follow the same rule: a line of text placed
+anywhere, at a size of its own, belonging to nothing, stored as a `# kgui:text` comment.
 
 **Edits are discrete operations over a pure reducer.** This costs nothing now, buys undo and
 a fully testable edit model, and is the one decision that makes collaboration additive

@@ -19,6 +19,7 @@ import {
   type Interface,
   type Node,
   type Position,
+  type TextLabel,
   type Topology,
   type Zone,
   compactInterfaces,
@@ -61,10 +62,13 @@ export type Operation =
   | { type: "removeLink"; collisionDomain: string }
   | { type: "updateInterface"; node: string; number: number; changes: Partial<Interface> }
   | { type: "setSubnet"; collisionDomain: string; subnet: string | null }
-  | { type: "setLabMetadata"; changes: Partial<Omit<Topology, "nodes" | "collision_domains" | "zones">> }
+  | { type: "setLabMetadata"; changes: Partial<Omit<Topology, "nodes" | "collision_domains" | "zones" | "texts">> }
   | { type: "addZone"; zone: Zone }
   | { type: "updateZone"; id: string; changes: Partial<Omit<Zone, "id">>; label?: string }
   | { type: "removeZone"; id: string }
+  | { type: "addText"; text: TextLabel }
+  | { type: "updateText"; id: string; changes: Partial<Omit<TextLabel, "id">>; label?: string }
+  | { type: "removeText"; id: string }
   | { type: "replaceTopology"; topology: Topology };
 
 /** Thrown when an operation refers to something that is not there. */
@@ -398,6 +402,29 @@ export function apply(topology: Topology, op: Operation): Topology {
       return { ...topology, zones: zones.filter((z) => z.id !== op.id) };
     }
 
+    case "addText": {
+      const texts = topology.texts ?? [];
+      if (texts.some((t) => t.id === op.text.id)) {
+        throw new OperationError(`A text label with the id "${op.text.id}" already exists.`);
+      }
+      return { ...topology, texts: [...texts, op.text] };
+    }
+
+    case "updateText": {
+      const texts = topology.texts ?? [];
+      if (!texts.some((t) => t.id === op.id)) throw new OperationError("No such text label.");
+      return {
+        ...topology,
+        texts: texts.map((t) => (t.id === op.id ? { ...t, ...op.changes } : t)),
+      };
+    }
+
+    case "removeText": {
+      const texts = topology.texts ?? [];
+      if (!texts.some((t) => t.id === op.id)) throw new OperationError("No such text label.");
+      return { ...topology, texts: texts.filter((t) => t.id !== op.id) };
+    }
+
     case "replaceTopology":
       return op.topology;
   }
@@ -464,6 +491,12 @@ export function describe(op: Operation): string {
       return op.label ?? "Changed a zone";
     case "removeZone":
       return "Removed a zone";
+    case "addText":
+      return `Added the text ${op.text.text}`;
+    case "updateText":
+      return op.label ?? "Changed a text label";
+    case "removeText":
+      return "Removed a text label";
     case "replaceTopology":
       return "Replaced the topology";
   }

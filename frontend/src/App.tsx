@@ -19,6 +19,7 @@ import {
   api,
 } from "./api/client";
 import { TopologyCanvas } from "./canvas/TopologyCanvas";
+import { newText } from "./canvas/texts";
 import { AddressingPanel } from "./panels/AddressingPanel";
 import { CollisionDomainsPanel, referencedDomains } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
@@ -39,6 +40,7 @@ import {
 } from "./panels/PanelSection";
 import { type ScenarioDialog, ScenarioDrawer } from "./panels/ScenarioDrawer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
+import { TextLabelsPanel } from "./panels/TextLabelsPanel";
 import { ZonesPanel } from "./panels/ZonesPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
@@ -47,6 +49,7 @@ import { useTopologyStore } from "./store/topology";
 import {
   type DeviceKind,
   type PendingEnd,
+  type TextLabel,
   type Topology,
   type Zone,
   newNode,
@@ -183,7 +186,7 @@ const PANEL_MIN = 208;
  * repairs a stored layout against it, so the two must name the same ids.
  */
 const DEFAULT_LAYOUT: Preferences["panels"] = {
-  left: { order: ["palette", "connect", "domains", "zones", "topology"], collapsed: [] },
+  left: { order: ["palette", "connect", "domains", "zones", "texts", "topology"], collapsed: [] },
   right: {
     order: ["details", "addressing", "arrange", "scenario", "exam", "lab"],
     // The exam switches matter to an instructor, rarely to anyone else.
@@ -242,13 +245,27 @@ export default function App() {
   // A zone selected on the canvas or in the Zones panel (FR-10). One thing is
   // selected at a time, so Delete is never ambiguous.
   const [selectedZone, setSelectedZoneState] = useState<string | null>(null);
+  // And a text label (FR-51), on the same terms.
+  const [selectedText, setSelectedTextState] = useState<string | null>(null);
   const selectZone = useCallback((id: string | null) => {
     setSelectedZoneState(id);
     if (id !== null) {
       setSelected([]);
       setSelectedLink(null);
+      setSelectedTextState(null);
     }
   }, []);
+  const selectText = useCallback((id: string | null) => {
+    setSelectedTextState(id);
+    if (id !== null) {
+      setSelected([]);
+      setSelectedLink(null);
+      setSelectedZoneState(null);
+    }
+  }, []);
+  // A label just dropped on the canvas, whose words the panel makes ready to type.
+  const [focusText, setFocusText] = useState<string | null>(null);
+  const clearFocusText = useCallback(() => setFocusText(null), []);
 
   // Connect mode: click one device, then another, and a link appears — the
   // interaction people expect from a topology editor.
@@ -905,6 +922,11 @@ export default function App() {
       setSelectedZoneState(null);
       return;
     }
+    if (selectedText) {
+      edit({ type: "removeText", id: selectedText });
+      setSelectedTextState(null);
+      return;
+    }
     if (selectedLink) {
       edit({ type: "removeLink", collisionDomain: selectedLink });
       setSelectedLink(null);
@@ -912,7 +934,7 @@ export default function App() {
     }
     for (const name of selected) edit({ type: "removeNode", name });
     setSelected([]);
-  }, [edit, selected, selectedLink, selectedZone]);
+  }, [edit, selected, selectedLink, selectedZone, selectedText]);
 
   /** Restart devices of the running lab, leaving the rest running (FR-19). */
   const restartDevices = useCallback(
@@ -937,6 +959,24 @@ export default function App() {
     (id: string, changes: Partial<Omit<Zone, "id">>, label: string) =>
       edit({ type: "updateZone", id, changes, label }),
     [edit],
+  );
+
+  const changeText = useCallback(
+    (id: string, changes: Partial<Omit<TextLabel, "id">>, label: string) =>
+      edit({ type: "updateText", id, changes, label }),
+    [edit],
+  );
+
+  /** Dropped on the canvas from the Text labels panel (FR-51). */
+  const dropText = useCallback(
+    (position: { x: number; y: number }) => {
+      const text = newText(topology, [], position);
+      if (edit({ type: "addText", text })) {
+        selectText(text.id);
+        setFocusText(text.id);
+      }
+    },
+    [edit, topology, selectText],
   );
 
   const align = useCallback(
@@ -1418,7 +1458,10 @@ export default function App() {
         (event.key === "Delete" || event.key === "Backspace") &&
         // A selected link counts too; requiring a selected *device* meant
         // Delete silently did nothing when only a link was chosen.
-        (selected.length > 0 || selectedLink !== null || selectedZone !== null) &&
+        (selected.length > 0 ||
+          selectedLink !== null ||
+          selectedZone !== null ||
+          selectedText !== null) &&
         !isTreeItem(event.target)
       ) {
         event.preventDefault();
@@ -1437,6 +1480,7 @@ export default function App() {
     selected,
     selectedLink,
     selectedZone,
+    selectedText,
     connectMode,
     leaveConnectMode,
     toggleConnectMode,
@@ -1774,6 +1818,22 @@ export default function App() {
                 />
               ),
             },
+            texts: {
+              title: "Text labels",
+              headingId: "texts-heading",
+              lockable: true,
+              content: (
+                <TextLabelsPanel
+                  topology={topology}
+                  selected={selected}
+                  selectedText={selectedText}
+                  onSelectText={selectText}
+                  onDispatch={edit}
+                  focusText={focusText}
+                  onFocused={clearFocusText}
+                />
+              ),
+            },
             topology: {
               title: "Topology",
               headingId: "topology",
@@ -1812,6 +1872,10 @@ export default function App() {
             onZoneChange={changeZone}
             onSelectZone={selectZone}
             selectedZone={selectedZone}
+            onTextChange={changeText}
+            onSelectText={selectText}
+            selectedText={selectedText}
+            onDropText={dropText}
             onSelectLink={(domain) => {
               // Exactly one thing is selected at a time, so Delete is never
               // ambiguous about what it will remove.

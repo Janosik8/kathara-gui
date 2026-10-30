@@ -15,6 +15,7 @@ state travels in a small, greppable comment block::
     # kgui:iface r1:0 ip=10.0.0.1/24
     # kgui:lo r1 ip=10.255.0.1/32,10.255.0.11/32
     # kgui:zone z1 shape=ellipse pos=40,20 size=420,260 name=Area%200
+    # kgui:text t1 pos=60,-40 size=24 text=Backbone%20area
 
     r1[0]="A"
 
@@ -37,6 +38,7 @@ from kathara_gui.domain.model import (
     Interface,
     Node,
     Position,
+    TextLabel,
     Topology,
     Zone,
 )
@@ -117,6 +119,7 @@ def parse(text: str) -> ParseResult:
     kgui_cds: dict[str, dict[str, str]] = {}
     kgui_los: dict[str, dict[str, str]] = {}
     kgui_zones: dict[str, dict[str, str]] = {}
+    kgui_texts: dict[str, dict[str, str]] = {}
 
     def device(name: str) -> dict:
         return devices.setdefault(name, {"interfaces": {}, "options": {}})
@@ -145,6 +148,8 @@ def parse(text: str) -> ParseResult:
                 kgui_los[subject] = _parse_kv(kv)
             elif record == "zone":
                 kgui_zones[subject] = _parse_kv(kv)
+            elif record == "text":
+                kgui_texts[subject] = _parse_kv(kv)
             continue
 
         lab_match = _LAB_META.match(line)
@@ -275,6 +280,15 @@ def parse(text: str) -> ParseResult:
         else:
             topology.zones.append(zone)
 
+    for text_id, hints in kgui_texts.items():
+        label = _parse_text(text_id, hints)
+        if label is None:
+            warnings.append(f"Text label {text_id!r}: could not be read, left out.")
+        elif any(t.id == label.id for t in topology.texts):
+            warnings.append(f"Text label {text_id!r} appears twice; the first is kept.")
+        else:
+            topology.texts.append(label)
+
     return ParseResult(topology=topology, warnings=warnings)
 
 
@@ -289,6 +303,18 @@ def _parse_zone(zone_id: str, hints: dict[str, str]) -> Zone | None:
             position=position or Position(),
             width=float(width_text),
             height=float(height_text),
+        )
+    except ValueError:
+        return None
+
+
+def _parse_text(text_id: str, hints: dict[str, str]) -> TextLabel | None:
+    try:
+        return TextLabel(
+            id=text_id,
+            text=unquote(hints.get("text", "")),
+            position=_parse_position(hints.get("pos", "")) or Position(),
+            size=int(hints.get("size", "16")),
         )
     except ValueError:
         return None
@@ -410,6 +436,13 @@ def _render_kgui_block(topology: Topology) -> list[str]:
             f"pos={_format_number(zone.position.x)},{_format_number(zone.position.y)} "
             f"size={_format_number(zone.width)},{_format_number(zone.height)} "
             f"name={quote(zone.name, safe='')}"
+        )
+
+    for label in topology.texts:
+        records.append(
+            f"# {MARKER}:text {label.id} "
+            f"pos={_format_number(label.position.x)},{_format_number(label.position.y)} "
+            f"size={label.size} text={quote(label.text, safe='')}"
         )
 
     if not records:

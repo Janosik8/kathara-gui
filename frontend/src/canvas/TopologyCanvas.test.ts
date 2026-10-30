@@ -15,6 +15,7 @@ import {
   dropPosition,
   placementSignature,
   mergeMeasurements,
+  textDropPosition,
 } from "./TopologyCanvas";
 
 const node = (id: string, measured?: { width: number; height: number }): FlowNode => ({
@@ -181,13 +182,20 @@ describe("committedMoves (UX-03)", () => {
 
   it("ignores the frames of a drag still in progress", () => {
     const moving: NodeChange = { type: "position", id: "r1", position: { x: 5, y: 5 }, dragging: true };
-    expect(committedMoves([moving])).toEqual({ devices: {}, domains: {}, zones: {} });
+    expect(committedMoves([moving])).toEqual({ devices: {}, domains: {}, zones: {}, texts: {} });
   });
 
   it("keeps a zone apart from the devices, so moving it moves none of them (FR-10)", () => {
     const { devices, zones } = committedMoves([end("zone:z1", 30), end("r1", 10)]);
     expect(zones).toEqual({ z1: { x: 30, y: 0 } });
     expect(devices).toEqual({ r1: { x: 10, y: 0 } });
+  });
+
+  it("keeps a text label apart from the devices and zones (FR-51)", () => {
+    const { devices, zones, texts } = committedMoves([end("text:t1", 50), end("zone:z1", 30)]);
+    expect(texts).toEqual({ t1: { x: 50, y: 0 } });
+    expect(zones).toEqual({ z1: { x: 30, y: 0 } });
+    expect(devices).toEqual({});
   });
 
   it("keeps a shared segment's node apart from the devices", () => {
@@ -205,5 +213,12 @@ describe("dropPosition", () => {
 
   it("works left of and above the origin", () => {
     expect(dropPosition({ x: 0, y: 0 })).toEqual({ x: -32, y: -16 });
+  });
+});
+
+describe("textDropPosition", () => {
+  it("starts the words at the pointer, on the grid (FR-51)", () => {
+    expect(textDropPosition({ x: 230, y: 220 })).toEqual({ x: 224, y: 208 });
+    expect(textDropPosition({ x: -20, y: 40 })).toEqual({ x: -16, y: 32 });
   });
 });

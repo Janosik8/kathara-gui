@@ -32,7 +32,7 @@ FILE_NAME = ".kgui-preferences.json"
 # The sections of each side panel, in their default order. The frontend names
 # the same ids; an id outside these is dropped on the way in.
 SECTIONS: dict[str, tuple[str, ...]] = {
-    "left": ("palette", "connect", "domains", "zones", "topology"),
+    "left": ("palette", "connect", "domains", "zones", "texts", "topology"),
     "right": ("details", "addressing", "arrange", "scenario", "exam", "lab"),
 }
 

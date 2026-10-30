@@ -129,6 +129,23 @@ export interface Zone {
   height: number;
 }
 
+/**
+ * A line of text placed anywhere on the canvas, at a size of its own (FR-51).
+ * For the reader only, like a zone, and it belongs to nothing.
+ */
+export interface TextLabel {
+  id: string;
+  text: string;
+  /** Top-left corner. */
+  position: Position;
+  /** Font size, in canvas pixels: TEXT_SIZE_MIN to TEXT_SIZE_MAX. */
+  size: number;
+}
+
+/** The font sizes a text label may have; the server holds the same bounds. */
+export const TEXT_SIZE_MIN = 8;
+export const TEXT_SIZE_MAX = 96;
+
 export interface Topology {
   name: string;
   description?: string | null;
@@ -140,6 +157,8 @@ export interface Topology {
   collision_domains: CollisionDomain[];
   /** Optional: a topology from before zones has none. */
   zones?: Zone[];
+  /** Optional, likewise: from before text labels (FR-51). */
+  texts?: TextLabel[];
 }
 
 export interface TopologyState {

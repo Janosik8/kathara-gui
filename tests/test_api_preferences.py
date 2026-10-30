@@ -88,8 +88,10 @@ def test_unknown_ids_are_dropped_and_missing_ones_return_in_place(
     )
     panels = client.get("/api/preferences").json()["panels"]
     # A missing id goes after the one that precedes it by default: connect
-    # after palette, zones and topology after domains.
-    assert panels["left"]["order"] == ["domains", "zones", "topology", "palette", "connect"]
+    # after palette, zones, texts and topology after domains.
+    assert panels["left"]["order"] == [
+        "domains", "zones", "texts", "topology", "palette", "connect"
+    ]
     assert panels["right"]["order"] == [
         "details", "addressing", "arrange", "scenario", "exam", "lab"
     ]

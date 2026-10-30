@@ -270,6 +270,20 @@ class Zone(BaseModel):
     height: float = Field(default=200.0, gt=0)
 
 
+class TextLabel(BaseModel):
+    """A line of text placed anywhere on the canvas, at a size of its own (FR-51).
+
+    Like a zone, it is for the reader and Kathará never sees it. It belongs to
+    nothing: a zone's title placed outside the zone, a note beside a link, a
+    heading over the lab.
+    """
+
+    id: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    text: str = Field(min_length=1, max_length=200)
+    position: Position = Field(default_factory=Position, description="Top-left corner.")
+    size: int = Field(default=16, ge=8, le=96, description="Font size, in canvas pixels.")
+
+
 class Topology(BaseModel):
     """A complete network scenario."""
 
@@ -282,6 +296,7 @@ class Topology(BaseModel):
     nodes: list[Node] = Field(default_factory=list)
     collision_domains: list[CollisionDomain] = Field(default_factory=list)
     zones: list[Zone] = Field(default_factory=list)
+    texts: list[TextLabel] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _names_are_portable_together(self) -> Topology:
@@ -294,6 +309,9 @@ class Topology(BaseModel):
         ids = [zone.id for zone in self.zones]
         if len(set(ids)) != len(ids):
             raise ValueError("Two zones share an id.")
+        ids = [text.id for text in self.texts]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Two text labels share an id.")
         return self
 
     # -- lookups -------------------------------------------------------

@@ -30,17 +30,26 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DEVICE_DRAG_TYPE } from "../panels/Palette";
-import { DEVICE_KINDS, type DeviceKind, type PendingEnd, type Topology, type Zone } from "../types";
+import { TEXT_DRAG_TYPE } from "../panels/TextLabelsPanel";
+import {
+  DEVICE_KINDS,
+  type DeviceKind,
+  type PendingEnd,
+  type TextLabel,
+  type Topology,
+  type Zone,
+} from "../types";
 import { DeviceNode } from "./DeviceNode";
 import { type LinkLabelActions, LinkEdge, LinkLabelContext } from "./LinkEdge";
 import { SegmentEdge } from "./SegmentEdge";
+import { TextNode } from "./TextNode";
 import { ZoneNode } from "./ZoneNode";
 import { hostPart } from "./addresses";
 import { type Placement, computePlacements, domainPosition, segmentPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
-const NODE_TYPES = { device: DeviceNode, zone: ZoneNode };
+const NODE_TYPES = { device: DeviceNode, zone: ZoneNode, text: TextNode };
 const EDGE_TYPES = { segment: SegmentEdge, link: LinkEdge };
 
 /**
@@ -71,6 +80,14 @@ interface Props {
   onSelectZone?: (id: string | null) => void;
   /** The zone currently selected, if any. */
   selectedZone?: string | null;
+  /** A text label was moved on the canvas (FR-51). */
+  onTextChange?: (id: string, changes: Partial<Omit<TextLabel, "id">>, label: string) => void;
+  /** A text label was clicked, or null when the selection left it. */
+  onSelectText?: (id: string | null) => void;
+  /** The text label currently selected, if any. */
+  selectedText?: string | null;
+  /** **Add text label** was dragged from its panel and dropped here (FR-51). */
+  onDropText?: (position: { x: number; y: number }) => void;
   /** The first end of a link being drawn in connect mode, if any. */
   pending?: PendingEnd | null;
   /**
@@ -110,6 +127,17 @@ export function dropPosition(point: { x: number; y: number }): { x: number; y: n
   return {
     x: Math.round((point.x - DROP_OFFSET.x) / GRID) * GRID,
     y: Math.round((point.y - DROP_OFFSET.y) / GRID) * GRID,
+  };
+}
+
+/**
+ * Where a text label dropped at `point` goes: its first letter at the
+ * pointer, centred on it vertically, on the grid.
+ */
+export function textDropPosition(point: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.round(point.x / GRID) * GRID,
+    y: Math.round((point.y - GRID / 2) / GRID) * GRID,
   };
 }
 
@@ -193,23 +221,29 @@ export function committedMoves(changes: NodeChange[]): {
   devices: Record<string, { x: number; y: number }>;
   domains: Record<string, { x: number; y: number }>;
   zones: Record<string, { x: number; y: number }>;
+  texts: Record<string, { x: number; y: number }>;
 } {
   const devices: Record<string, { x: number; y: number }> = {};
   const domains: Record<string, { x: number; y: number }> = {};
   const zones: Record<string, { x: number; y: number }> = {};
+  const texts: Record<string, { x: number; y: number }> = {};
   for (const change of changes) {
     if (change.type === "position" && change.dragging === false && change.position) {
       if (change.id.startsWith("cd:")) domains[change.id.slice(3)] = change.position;
       else if (change.id.startsWith(ZONE_PREFIX)) {
         zones[change.id.slice(ZONE_PREFIX.length)] = change.position;
+      } else if (change.id.startsWith(TEXT_PREFIX)) {
+        texts[change.id.slice(TEXT_PREFIX.length)] = change.position;
       } else devices[change.id] = change.position;
     }
   }
-  return { devices, domains, zones };
+  return { devices, domains, zones, texts };
 }
 
 /** Zones' node ids carry this prefix; a device name cannot contain ":". */
 export const ZONE_PREFIX = "zone:";
+/** And text labels' (FR-51). */
+export const TEXT_PREFIX = "text:";
 
 function CanvasInner({
   topology,
@@ -223,6 +257,10 @@ function CanvasInner({
   onZoneChange,
   onSelectZone,
   selectedZone = null,
+  onTextChange,
+  onSelectText,
+  selectedText = null,
+  onDropText,
   onSelectCollisionDomain,
   onSelectLink,
   selectedLink,
@@ -262,6 +300,17 @@ function CanvasInner({
       },
     }));
 
+    // Above the zones, so a zone's title can sit inside it, but behind the
+    // devices and links.
+    const textNodes: FlowNode[] = (topology.texts ?? []).map((label) => ({
+      id: `${TEXT_PREFIX}${label.id}`,
+      type: "text",
+      position: label.position,
+      zIndex: 0,
+      selected: label.id === selectedText,
+      data: { text: label.text, size: label.size },
+    }));
+
     const subnets = new Map(topology.collision_domains.map((cd) => [cd.name, cd.subnet]));
     const deviceNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
@@ -285,7 +334,7 @@ function CanvasInner({
           : undefined,
       },
     }));
-    const flowNodes = [...zoneNodes, ...deviceNodes];
+    const flowNodes = [...zoneNodes, ...textNodes, ...deviceNodes];
 
     const flowEdges: Edge[] = [];
 
@@ -360,6 +409,7 @@ function CanvasInner({
     pendingDomain,
     selectedLink,
     selectedZone,
+    selectedText,
     locked,
     onZoneChange,
     showAddresses,
@@ -399,17 +449,30 @@ function CanvasInner({
       if (locked) changes = changes.filter((change) => change.type !== "position");
       setNodes((current) => applyNodeChanges(changes, current));
 
-      const { devices, domains, zones } = committedMoves(changes);
+      const { devices, domains, zones, texts } = committedMoves(changes);
       for (const [name, position] of Object.entries(domains)) onMoveDomain?.(name, position);
       for (const [id, position] of Object.entries(zones)) {
         const zone = topology.zones?.find((z) => z.id === id);
         onZoneChange?.(id, { position }, `Moved ${zone?.name || "a zone"}`);
       }
+      for (const [id, position] of Object.entries(texts)) {
+        const label = topology.texts?.find((t) => t.id === id);
+        onTextChange?.(id, { position }, label ? `Moved the text ${label.text}` : "Moved a text label");
+      }
       const names = Object.keys(devices);
       if (names.length > 1 && onMoveMany) onMoveMany(devices);
       else for (const name of names) onMove(name, devices[name]!);
     },
-    [onMove, onMoveMany, onMoveDomain, onZoneChange, topology.zones, locked],
+    [
+      onMove,
+      onMoveMany,
+      onMoveDomain,
+      onZoneChange,
+      onTextChange,
+      topology.zones,
+      topology.texts,
+      locked,
+    ],
   );
 
   const { screenToFlowPosition } = useReactFlow();
@@ -424,11 +487,21 @@ function CanvasInner({
       // The same as clicking the link itself, below.
       onClick: (domain) => {
         onSelectZone?.(null);
+        onSelectText?.(null);
         if (connectMode) onSelectCollisionDomain?.(domain);
         else onSelectLink?.(domain);
       },
     }),
-    [locked, onLockedEdit, onSlideLabel, onSelectZone, connectMode, onSelectCollisionDomain, onSelectLink],
+    [
+      locked,
+      onLockedEdit,
+      onSlideLabel,
+      onSelectZone,
+      onSelectText,
+      connectMode,
+      onSelectCollisionDomain,
+      onSelectLink,
+    ],
   );
 
   return (
@@ -446,7 +519,12 @@ function CanvasInner({
             if (!connectMode) onSelectZone?.(node.id.slice(ZONE_PREFIX.length));
             return;
           }
+          if (node.id.startsWith(TEXT_PREFIX)) {
+            if (!connectMode) onSelectText?.(node.id.slice(TEXT_PREFIX.length));
+            return;
+          }
           onSelectZone?.(null);
+          onSelectText?.(null);
           const domain = node.data?.collisionDomain;
           if (typeof domain !== "string") onSelect(node.id, event.ctrlKey || event.metaKey);
           // The same rule as a link: in connect mode it is an end to join,
@@ -467,19 +545,29 @@ function CanvasInner({
           onSelect(null, false);
           onSelectLink?.(null);
           onSelectZone?.(null);
+          onSelectText?.(null);
         }}
-        // Only a device from the palette may be dropped; anything else,
-        // a file say, is left to the browser.
+        // Only a device from the palette or a text label may be dropped;
+        // anything else, a file say, is left to the browser.
         onDragOver={(event) => {
-          if (!onDropDevice || !event.dataTransfer.types.includes(DEVICE_DRAG_TYPE)) return;
+          const types = event.dataTransfer.types;
+          const device = onDropDevice && types.includes(DEVICE_DRAG_TYPE);
+          const text = onDropText && types.includes(TEXT_DRAG_TYPE);
+          if (!device && !text) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
         }}
         onDrop={(event) => {
+          const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+          if (onDropText && event.dataTransfer.types.includes(TEXT_DRAG_TYPE)) {
+            event.preventDefault();
+            onDropText(textDropPosition(point));
+            return;
+          }
           const kind = event.dataTransfer.getData(DEVICE_DRAG_TYPE);
           if (!onDropDevice || !isDeviceKind(kind)) return;
           event.preventDefault();
-          onDropDevice(kind, dropPosition(screenToFlowPosition({ x: event.clientX, y: event.clientY })));
+          onDropDevice(kind, dropPosition(point));
         }}
         // Two defaults made clicking on a device unreliable (test step 1A.5,
         // "I often have to click a router 2 or 3 times"). React Flow hands
@@ -512,7 +600,9 @@ function CanvasInner({
           nodeBorderRadius={3}
           // A zone filled in would bury the devices it surrounds; outlined,
           // it still shows where the areas are.
-          nodeColor={(node) => (node.type === "zone" ? "transparent" : "var(--fg-muted)")}
+          nodeColor={(node) =>
+            node.type === "zone" || node.type === "text" ? "transparent" : "var(--fg-muted)"
+          }
         />
       </ReactFlow>
       </LinkLabelContext.Provider>

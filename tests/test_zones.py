@@ -1,8 +1,9 @@
-"""Zones (FR-10) and autonomous systems drawn as clusters (9B.2).
+"""Zones (FR-10), autonomous systems drawn as clusters (9B.2), and text labels (FR-51).
 
 A zone is a named area drawn behind devices. It travels in ``lab.conf`` as a
 ``# kgui:zone`` comment, so Kathará never sees it; and a BGP lab opened from
-elsewhere gets one per autonomous system, around that system's devices.
+elsewhere gets one per autonomous system, around that system's devices. A
+text label is a line of text placed anywhere, in a ``# kgui:text`` comment.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pydantic import ValidationError
 
 from kathara_gui.domain.asgroups import as_groups, asn_from_config, clustered_layout
 from kathara_gui.domain.codec.labconf import parse, serialize
-from kathara_gui.domain.model import Interface, Node, Position, Topology, Zone
+from kathara_gui.domain.model import Interface, Node, Position, TextLabel, Topology, Zone
 from kathara_gui.project import scenario
 
 
@@ -66,6 +67,53 @@ def test_two_zones_cannot_share_an_id() -> None:
 
 def test_a_lab_without_zones_writes_no_zone_records() -> None:
     assert "kgui:zone" not in serialize(Topology(name="lab"))
+
+
+# -- text labels in lab.conf ------------------------------------------------------
+
+
+def text_label(**changes: object) -> TextLabel:
+    return TextLabel(
+        **{"id": "t1", "text": "Area 0", "position": Position(x=60, y=-40.5), "size": 24, **changes}
+    )
+
+
+@pytest.mark.parametrize("text", ["Area 0", "AS 65001 — ISP", "a=b c%d", "x"])
+def test_a_text_label_round_trips_through_lab_conf(text: str) -> None:
+    topology = Topology(name="lab", texts=[text_label(text=text)])
+    written = serialize(topology)
+    assert "# kgui:text t1 pos=60,-40.5 size=24 text=" in written
+    assert all(line.startswith("#") for line in written.splitlines() if "kgui:text" in line)
+    assert parse(written).topology.texts == topology.texts
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        "pos=0,0 size=24",
+        "pos=0,0 size=big text=A",
+        "pos=0,0 size=4 text=A",
+        "pos=0,0 size=200 text=A",
+    ],
+)
+def test_a_damaged_text_label_is_reported_and_left_out(record: str) -> None:
+    result = parse(f"# kgui:v1\n# kgui:text t1 {record}\nr1[0]=\"A\"\n")
+    assert result.topology.texts == []
+    assert any("t1" in warning for warning in result.warnings)
+
+
+def test_a_text_label_without_a_size_takes_the_default() -> None:
+    result = parse("# kgui:v1\n# kgui:text t1 pos=0,0 text=A\nr1[0]=\"A\"\n")
+    assert result.topology.texts[0].size == 16
+
+
+def test_two_text_labels_cannot_share_an_id() -> None:
+    with pytest.raises(ValidationError):
+        Topology(texts=[text_label(), text_label(text="other")])
+
+
+def test_a_lab_without_text_labels_writes_no_text_records() -> None:
+    assert "kgui:text" not in serialize(Topology(name="lab"))
 
 
 # -- autonomous systems ---------------------------------------------------------
