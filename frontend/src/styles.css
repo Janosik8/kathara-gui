@@ -723,15 +723,64 @@ button:disabled {
   transform: translateX(-50%);
 }
 
-.zone__resize-handle {
-  width: 10px;
-  height: 10px;
+/* The handles are hard to aim at when drawn at their visible size, so each
+   catches the pointer over a 32px square around it (WCAG 2.2's 2.5.8 asks
+   24px), and each edge over a 16px band. React Flow keeps the handles one
+   size on screen at any zoom; the edges are kept so by --zone-px, one screen
+   pixel in the canvas's units, set by ZoneNode. */
+.react-flow__resize-control.zone__resize-handle {
+  width: 14px;
+  height: 14px;
   border: 2px solid var(--accent);
+  border-radius: 2px;
   background: var(--bg);
 }
 
-.zone__resize-line {
-  border-color: var(--accent);
+.zone__resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.react-flow__resize-control.zone__resize-line {
+  border-width: 0;
+}
+
+.react-flow__resize-control.zone__resize-line {
+  --band: calc(16 * var(--zone-px, 1px));
+  --from: calc(7 * var(--zone-px, 1px));
+  --to: calc(9 * var(--zone-px, 1px));
+}
+
+.react-flow__resize-control.zone__resize-line.left,
+.react-flow__resize-control.zone__resize-line.right {
+  width: var(--band);
+  background: linear-gradient(
+    to right,
+    transparent var(--from),
+    var(--accent) var(--from) var(--to),
+    transparent var(--to)
+  );
+}
+
+.react-flow__resize-control.zone__resize-line.top,
+.react-flow__resize-control.zone__resize-line.bottom {
+  height: var(--band);
+  background: linear-gradient(
+    to bottom,
+    transparent var(--from),
+    var(--accent) var(--from) var(--to),
+    transparent var(--to)
+  );
+}
+
+/* The edge is drawn as a gradient, which a contrast theme may drop; drawn
+   in the theme's own text colour, it stays. */
+@media (forced-colors: active) {
+  .react-flow__resize-control.zone__resize-line {
+    forced-color-adjust: none;
+    --accent: CanvasText;
+  }
 }
 
 .zone-list__item--selected {

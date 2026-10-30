@@ -2,13 +2,15 @@
  * A zone on the canvas: a rectangle, an ellipse or a cloud, named, behind the
  * devices (FR-10).
  *
- * Moved by dragging it and resized by its corner handles once selected. Each
- * ends as one edit, reported through `data.onResize`; a drag goes through the
- * canvas like a device's. The Zones panel names, reshapes and fits zones from
+ * Moved by dragging it and resized by its corner handles or edges once
+ * selected; both catch the pointer well beyond what is drawn, at any zoom.
+ * Each resize ends as one edit, reported through `data.onResize`; a drag goes
+ * through the canvas like a device's. The Zones panel names, reshapes and fits zones from
  * the keyboard.
  */
 
-import { type NodeProps, NodeResizer } from "@xyflow/react";
+import type { CSSProperties } from "react";
+import { type NodeProps, NodeResizer, useStore } from "@xyflow/react";
 import type { ZoneShape } from "../types";
 
 export interface ZoneData extends Record<string, unknown> {
@@ -25,8 +27,14 @@ const CLOUD =
 
 export function ZoneNode({ data, selected }: NodeProps) {
   const zone = data as ZoneData;
+  // React Flow keeps the corner handles one size on screen whatever the zoom,
+  // but not the edges; the stylesheet sizes those by this.
+  const zoom = useStore((s) => s.transform[2]);
   return (
-    <div className={`zone zone--${zone.shape}`}>
+    <div
+      className={`zone zone--${zone.shape}`}
+      style={{ "--zone-px": `${1 / zoom}px` } as CSSProperties}
+    >
       <NodeResizer
         isVisible={selected && !zone.locked}
         minWidth={80}

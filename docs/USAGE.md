@@ -594,7 +594,9 @@ nothing selected, **Add zone** puts one above the lab. Each zone has a **Zone na
 
 A zone is independent of the devices in it. Dragging a zone moves no device, and dragging a
 device out of a zone leaves the zone where it is. Click a zone on the canvas to select it,
-then drag its corners to resize it, or press Delete. Each change is one undo step.
+then drag a corner or an edge to resize it, or press Delete. The corners and edges catch
+the pointer a little outside what is drawn, so you need not hit them exactly. Each change
+is one undo step.
 
 Zones are saved in `lab.conf` as `# kgui:zone` comments, which Kathará ignores.
 
