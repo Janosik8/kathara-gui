@@ -664,6 +664,81 @@ button:disabled {
   text-align: center;
 }
 
+/* Zones (FR-10): named areas behind the devices. The outline is what tells
+   the area apart, so it is drawn in --border-strong, held at 3:1 against the
+   canvas (WCAG 1.4.11), and dashed so it never reads as a device or a link.
+   The fill is a faint wash of the accent, only an aid. */
+.react-flow__node-zone {
+  /* Not React Flow's default node box: the shape is the SVG. */
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.zone {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.zone__shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.zone__shape > * {
+  fill: color-mix(in srgb, var(--accent) 7%, transparent);
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+}
+
+.react-flow__node-zone.selected .zone__shape > * {
+  stroke: var(--accent);
+}
+
+.zone__name {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  /* Opaque, so the dotted grid does not run through the name. */
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* An ellipse and a cloud are narrower at the top, so the name sits lower. */
+.zone--ellipse .zone__name,
+.zone--cloud .zone__name {
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.zone__resize-handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+}
+
+.zone__resize-line {
+  border-color: var(--accent);
+}
+
+.zone-list__item--selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Links meet the outline wherever they arrive (SegmentEdge), so the default
    node's top and bottom handles are only anchors and are not drawn. */
 .react-flow__node.collision-domain .react-flow__handle {
@@ -1074,12 +1149,18 @@ select {
   border-left-width: 6px;
 }
 
+/* At least 18 px and centred by flex, not a fixed box with an 18 px line: that
+   line overran the box's 16 px inside its border by 2 px, and WCAG 1.4.12's
+   spacing must be able to grow it rather than spill it (measured, 2026-10-29). */
 .issue__badge {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  line-height: 18px;
-  text-align: center;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  min-height: 18px;
+  line-height: 1;
   border-radius: 50%;
   font-weight: 700;
   font-size: 0.75rem;

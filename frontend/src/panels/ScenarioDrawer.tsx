@@ -19,6 +19,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioSummary } from "../api/client";
 
+/** The shortest seal password the server accepts. */
+export const MIN_PASSWORD = 4;
+
 export type ScenarioDialog = "new" | "saveAs" | "open" | "export" | "import";
 
 interface Props {
@@ -38,8 +41,15 @@ interface Props {
   importConflict?: string | null;
   /** Import the held file, replacing the scenario of the same name. */
   onReplace?: () => void;
-  /** Download the scenario as a zip. */
-  onExport?: () => void;
+  /**
+   * The held file is sealed, and this says why it waits: no password yet, or
+   * a wrong one (note 1).
+   */
+  importPassword?: string | null;
+  /** Open the held sealed file with this password. */
+  onImportPassword?: (password: string) => void;
+  /** Download the scenario as a zip, or sealed with a password. */
+  onExport?: (password?: string) => void;
   /** Open the browser's file chooser for an import. */
   onChooseFile?: () => void;
   onClose: () => void;
@@ -57,11 +67,17 @@ export function ScenarioDrawer({
   onNew,
   importConflict = null,
   onReplace,
+  importPassword = null,
+  onImportPassword,
   onExport,
   onChooseFile,
   onClose,
 }: Props) {
   const [newName, setNewName] = useState("");
+  // Sealing the export, and the password a sealed import is opened with.
+  const [seal, setSeal] = useState(false);
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
   const openHeading = useRef<HTMLHeadingElement>(null);
   const newHeading = useRef<HTMLHeadingElement>(null);
@@ -77,13 +93,21 @@ export function ScenarioDrawer({
     } else if (dialog === "new") {
       newHeading.current?.focus();
     } else if (dialog === "import") {
+      setPassword("");
       importHeading.current?.focus();
     } else if (dialog === "export") {
+      setSeal(false);
+      setPassword("");
+      setRepeat("");
       exportHeading.current?.focus();
     } else {
       openHeading.current?.focus();
     }
-  }, [dialog, importConflict]);
+  }, [dialog, importConflict, importPassword]);
+
+  const short = seal && password.length > 0 && password.length < MIN_PASSWORD;
+  const mismatch = seal && repeat.length > 0 && repeat !== password;
+  const canExport = !seal || (password.length >= MIN_PASSWORD && repeat === password);
 
   // Shown once something is typed: an empty field is not yet a mistake.
   const problem = newName.trim() ? (validateName?.(newName.trim()) ?? null) : null;
@@ -115,17 +139,103 @@ export function ScenarioDrawer({
             scripts and any captured configuration. Anyone can unzip and read it, and anyone
             with Kathará can run it. The scenario is saved first.
           </p>
+          <label className="checkbox" htmlFor="export-seal">
+            <input
+              id="export-seal"
+              type="checkbox"
+              checked={seal}
+              onChange={(e) => setSeal(e.target.checked)}
+            />
+            Seal it with a password
+          </label>
+          {seal && (
+            <>
+              <p className="field__hint">
+                A sealed <code>.kgx</code> file opens only in this application, and only with
+                the password: for an exam handed out before it starts.
+              </p>
+              <label className="field" htmlFor="export-password">
+                <span className="field__label">Password</span>
+                <input
+                  id="export-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  aria-invalid={short ? true : undefined}
+                  aria-describedby={short ? "export-password-error" : undefined}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+              {short && (
+                <p className="field__error" id="export-password-error">
+                  <strong>Invalid:</strong> at least {MIN_PASSWORD} characters.
+                </p>
+              )}
+              <label className="field" htmlFor="export-password-repeat">
+                <span className="field__label">The password again</span>
+                <input
+                  id="export-password-repeat"
+                  type="password"
+                  autoComplete="new-password"
+                  value={repeat}
+                  aria-invalid={mismatch ? true : undefined}
+                  aria-describedby={mismatch ? "export-password-repeat-error" : undefined}
+                  onChange={(e) => setRepeat(e.target.value)}
+                />
+              </label>
+              {mismatch && (
+                <p className="field__error" id="export-password-repeat-error">
+                  <strong>Invalid:</strong> the two passwords differ.
+                </p>
+              )}
+            </>
+          )}
           <div className="lab__actions">
             <button
               type="button"
               onClick={() => {
-                onExport?.();
+                onExport?.(seal ? password : undefined);
                 onClose();
               }}
-              disabled={busy !== null}
+              disabled={busy !== null || !canExport}
             >
               {/* Not "Export": the header already has one (see Save scenario). */}
-              Download .zip
+              {seal ? "Download sealed .kgx" : "Download .zip"}
+            </button>
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : dialog === "import" && importPassword ? (
+        <div className="scenario-drawer__body">
+          <h2 className="confirm__heading" ref={importHeading} tabIndex={-1}>
+            Open a sealed scenario
+          </h2>
+          <p className="field__hint" id="import-password-why">
+            {importPassword}
+          </p>
+          <label className="field" htmlFor="import-password">
+            <span className="field__label">Password</span>
+            <input
+              id="import-password"
+              type="password"
+              autoComplete="off"
+              value={password}
+              aria-describedby="import-password-why"
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && password) onImportPassword?.(password);
+              }}
+            />
+          </label>
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => onImportPassword?.(password)}
+              disabled={busy !== null || !password}
+            >
+              Open it
             </button>
             <button type="button" onClick={onClose}>
               Cancel
@@ -138,8 +248,9 @@ export function ScenarioDrawer({
             Import a scenario
           </h2>
           <p className="field__hint">
-            Opens a <code>.zip</code> exported from here, a folder zipped by hand, or a plain{" "}
-            <code>lab.conf</code>, including labs made without this application. The lab
+            Opens a <code>.zip</code> exported from here, a folder zipped by hand, a sealed{" "}
+            <code>.kgx</code>, or a plain <code>lab.conf</code>, including labs made without
+            this application. The lab
             takes the zip&apos;s name, so <code>student.zip</code> opens as{" "}
             <code>student</code>.
           </p>

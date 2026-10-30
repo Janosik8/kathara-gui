@@ -378,6 +378,13 @@ export const api = {
   /** Stop every lab of the current user, capturing nothing: `kathara wipe`. */
   wipeLabs: () => request<EverythingResponse>("/api/lab/wipe", { method: "POST" }),
 
+  /** Restart these devices of the running lab, from their files (FR-19). */
+  restart: (topology: Topology, devices: string[]) =>
+    request<StatusResponse>("/api/lab/restart", {
+      method: "POST",
+      body: JSON.stringify({ topology, devices }),
+    }),
+
   verify: (topology: Topology) =>
     request<DiagnosticsResponse>("/api/lab/verify", {
       method: "POST",
@@ -403,12 +410,19 @@ export const api = {
       body: JSON.stringify({ folder }),
     }),
 
-  /** The scenario as a zip, for the browser to hand to the user. */
-  exportProject: (topology: Topology, name?: string) =>
+  /** The scenario as a zip, or sealed with `password` (note 1). */
+  exportProject: (topology: Topology, name?: string, password?: string) =>
     requestBlob("/api/project/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topology, name: name ?? null }),
+      body: JSON.stringify({ topology, name: name ?? null, password: password ?? null }),
+    }),
+
+  /** Switch the assistive features for this scenario (FR-28). */
+  setFeatures: (features: Features) =>
+    request<ProjectState>("/api/project/features", {
+      method: "PUT",
+      body: JSON.stringify({ features }),
     }),
 
   /**
@@ -419,12 +433,17 @@ export const api = {
    * Import a zip or a bare `lab.conf`. A scenario of the same name already in
    * the workspace is answered with 409 unless `replace` (test 5C.1).
    */
-  importProject: (file: File, replace = false) =>
+  /**
+   * A sealed file needs its password, sent in a header and never in the URL;
+   * without one the answer is 428.
+   */
+  importProject: (file: File, replace = false, password?: string) =>
     request<OpenResponse>(`/api/project/import${replace ? "?replace=true" : ""}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/octet-stream",
         "X-KGUI-Filename": encodeURIComponent(file.name),
+        ...(password ? { "X-KGUI-Password": encodeURIComponent(password) } : {}),
       },
       body: file,
     }),

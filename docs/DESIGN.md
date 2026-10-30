@@ -47,14 +47,14 @@ tool removes the transcription.
 | # | Capability | Mechanism |
 |---|---|---|
 | 1 | Visual topology & addressing | Canvas editor over a typed model; subnet allocation and seven conflict checks in `domain/addressing.py` |
-| 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified |
-| 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API |
+| 2 | Iteration and variants | The model is the source of truth, so an edit is a model change and regeneration; import is non-destructive, so an existing lab can be loaded and modified; zones (`canvas/ZoneNode.tsx`) group devices visually without binding them |
+| 3 | Configuration & deployment | `domain/codec/` generates the lab; `kathara/runner.py` deploys it through the Kathará Python API, and restarts chosen devices alone |
 | 4 | Verification & diagnostics | `kathara/diagnostics.py` pings pairwise within each collision domain against the running lab |
 | 5 | State extraction | `vtysh -c "show running-config"` captures a router's live routing state, and `ip addr` its interface addresses; the scenario folder holds both and exports as a zip |
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; every pointer control has a keyboard equivalent, including the panel dividers and the movable panel sections; contrast and reflow asserted against the real stylesheet in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
-| 8 | Exam mode | `features.py`, enforced server-side |
-| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so |
+| 8 | Exam mode | `features.py`, enforced server-side against the page; the sealed export in `project/sealing.py`. Not enforced against the owner of the machine, by design (D12) |
+| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so; a BGP lab is laid out by autonomous system, each in its own zone (`domain/asgroups.py`) |
 
 ### The idea that ties it together
 
@@ -93,8 +93,8 @@ is not worth discarding the single best integration asset the platform offers.
 
 This is the decision the accessibility requirement forces. Capability 6 is a graded
 deliverable measured against **EN 301 549** — the instrument Polish law actually binds public
-bodies to, which maps to WCAG 2.1 AA. In a browser engine that is testable: ARIA, screen
-reader support, `axe-core` in CI, the user's own zoom and contrast settings. In Qt or Tkinter
+bodies to, which maps to WCAG 2.1 AA. In a browser engine that is testable: ARIA,
+`axe-core` in CI, the user's own zoom and contrast settings. In Qt or Tkinter
 there is no equivalent audit tooling, and "we followed WCAG" becomes an unverifiable claim.
 The reasoning holds even with screen readers since put out of scope (D10 in `PLAN.md`):
 contrast, reflow, the system's contrast theme and the automated audit still need a browser.
@@ -113,7 +113,8 @@ capability is a property of the architecture, and it is the clearest avenue for 
 development.
 
 *Rejected:* PySide6/Tkinter. Single language and trivial packaging, but the canvas would be
-hand-built, the terminal and PDF viewer painful, and the accessibility claim unevidenced.
+hand-built, an embedded terminal and PDF viewer (both planned then, FR-32 and FR-34,
+since dropped, D11) painful, and the accessibility claim unevidenced.
 
 ### Distributed as a Python package, not a binary
 
@@ -148,6 +149,35 @@ minted at startup, and rejects cross-origin requests.
 bypassed from developer tools in seconds — and this is a browser application, so a student
 sitting an exam has those tools one keystroke away. Hiding the control is a courtesy;
 refusing the request is the enforcement.
+
+**Exam restrictions guide; they do not police.** The request was for a password that
+keeps a student from turning the exam's restrictions off. A local application cannot keep
+that promise. The scenario is a folder on the student's machine, and the application is
+open-source code on it too; anything the application reads, the student can edit, and
+anything it writes as evidence, the student can delete or restore from a copy. A first
+version signed the switches with a key derived from the author's password, so that an edit
+would show when the instructor unlocked the submission (F48). It was defeated the next day
+by the simplest possible move: keep a copy of the original `kgui.json`, sit the exam with
+the switches on, and put the copy back before handing in (F51). It was removed (D12),
+because a check that reports "intact" on a file that was tampered with is worse than no
+check.
+
+What the application does guarantee is narrower and true. A switched-off feature is
+refused by the server, not only hidden, so the page's developer tools do not bring it back
+(D3); and the **sealed export** encrypts the scenario (AES-256-GCM, the key from a password
+by scrypt), so an exam sent ahead of time cannot be read before the password is given out.
+Enforcing an exam against its candidate needs a machine the candidate does not control:
+the lab room's computers, or a server. That is outside a local application, and it is the
+honest answer for the thesis.
+
+**Zones are drawn, not inferred.** A zone could have been a property of the devices in it,
+so that moving a zone moved them. The supervisor asked for the opposite, and it is the
+better design: an area such as "Area 0" or "the backbone" is an annotation of the author's,
+and a device dragged to tidy a link should not change what it is annotated as. So a zone is
+a shape behind the devices with no membership at all, stored as a comment in `lab.conf`.
+The one place zones are computed is the import of a BGP lab with no layout, where the
+autonomous systems are a fact of the configuration; even then the result is ordinary zones
+that the user can change.
 
 **Edits are discrete operations over a pure reducer.** This costs nothing now, buys undo and
 a fully testable edit model, and is the one decision that makes collaboration additive
@@ -306,23 +336,26 @@ needed for hearing.
 
 The three automated layers cannot see what a person sees: whether a click lands, whether a
 dragged node stays put, whether a message reaches the screen. So the application is also run
-by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It has 121 steps in
-eleven sections (128 until the seven screen-reader steps were dropped by D10), one per capability of the specification, and each step states its expected
-result before it is run. The tester ticks a step or writes down, in their own words, what
+by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It had 121 steps in
+eleven sections when it was accepted (128 until the seven screen-reader steps were dropped
+by D10), one per capability of the specification, and each step states its expected
+result before it is run. Steps added since for later features bring it to 126. The tester ticks a step or writes down, in their own words, what
 happened instead.
 
 It has been run on three machines: Windows 10, Windows 11 and macOS. By 2026-10-24, 56 steps
 had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 112 of 121 had
 passed, with the keyboard steps left untested by choice, and on 2026-10-27, with the keyboard
 steps passed too, 117 of 121, which the tester accepted as the Windows run NFR-01 asks for.
-The four not ticked are features that are not built. Every defect it
+The four not ticked are features that are not built. The five steps added afterwards
+(F43–F46) were run as they came; four passed by 2026-10-29, among them the installer on a
+clean Windows 11 machine. Every defect it
 reported is traced in three places. The tester's words go on the step's `Notes:` line or in
 `bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.
 
-The striking result is how much the automated suite missed. Every finding from F20 to F29,
-and F32 to F35, fourteen in all, came from this run, and in each case every test passed
-beforehand:
+The striking result is how much the automated suite missed. Every finding from F20 to F41,
+twenty-two in all, came from this run or from the tester's reports during it, and in each
+case every test passed beforehand:
 
 - **Platform behaviour no test could reproduce.** The documented commands did not run in a
   PowerShell with the default execution policy (F21, F22), and the "open a shell" command
@@ -386,7 +419,11 @@ than an omission in the automated ones.
 
 ## 7. Scope, and what was left out
 
-Capability 7 and the AI assistant are deliberately unimplemented. The supervisor judged the
+Capability 7 and the AI assistant are deliberately unimplemented. So, by the user's
+decision of 2026-10-29 (D11), are variants of a scenario, a terminal inside the
+application, shipped example labs, a PDF viewer and autosave: each was weighed against the
+time left for the thesis, and each has a workaround that already works (Save as, the copied
+`docker exec` command, the system's own PDF viewer). The supervisor judged the
 original requirement list too large for an engineering thesis and directed the work toward
 capabilities 1–5 plus usability. The value here is a refined, reliable, accessible core
 rather than a broad set of unfinished features.

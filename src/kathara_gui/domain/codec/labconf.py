@@ -13,6 +13,7 @@ state travels in a small, greppable comment block::
     # kgui:cd A subnet=10.0.0.0/24 pos=300,120
     # kgui:iface r1:0 ip=10.0.0.1/24
     # kgui:lo r1 ip=10.255.0.1/32,10.255.0.11/32
+    # kgui:zone z1 shape=ellipse pos=40,20 size=420,260 name=Area%200
 
     r1[0]="A"
 
@@ -28,6 +29,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from urllib.parse import quote, unquote
 
 from kathara_gui.domain.model import (
     CollisionDomain,
@@ -35,6 +37,7 @@ from kathara_gui.domain.model import (
     Node,
     Position,
     Topology,
+    Zone,
 )
 
 MARKER = "kgui"
@@ -112,6 +115,7 @@ def parse(text: str) -> ParseResult:
     kgui_ifaces: dict[str, dict[str, str]] = {}
     kgui_cds: dict[str, dict[str, str]] = {}
     kgui_los: dict[str, dict[str, str]] = {}
+    kgui_zones: dict[str, dict[str, str]] = {}
 
     def device(name: str) -> dict:
         return devices.setdefault(name, {"interfaces": {}, "options": {}})
@@ -138,6 +142,8 @@ def parse(text: str) -> ParseResult:
                 kgui_cds[subject] = _parse_kv(kv)
             elif record == "lo":
                 kgui_los[subject] = _parse_kv(kv)
+            elif record == "zone":
+                kgui_zones[subject] = _parse_kv(kv)
             continue
 
         lab_match = _LAB_META.match(line)
@@ -246,7 +252,32 @@ def parse(text: str) -> ParseResult:
             CollisionDomain(name=cd_name, subnet=cd_hints.get("subnet"), position=cd_position)
         )
 
+    for zone_id, hints in kgui_zones.items():
+        zone = _parse_zone(zone_id, hints)
+        if zone is None:
+            warnings.append(f"Zone {zone_id!r}: could not be read, left out.")
+        elif any(z.id == zone.id for z in topology.zones):
+            warnings.append(f"Zone {zone_id!r} appears twice; the first is kept.")
+        else:
+            topology.zones.append(zone)
+
     return ParseResult(topology=topology, warnings=warnings)
+
+
+def _parse_zone(zone_id: str, hints: dict[str, str]) -> Zone | None:
+    position = _parse_position(hints.get("pos", ""))
+    width_text, _, height_text = hints.get("size", "").partition(",")
+    try:
+        return Zone(
+            id=zone_id,
+            name=unquote(hints.get("name", "")),
+            shape=hints.get("shape", "rectangle"),  # type: ignore[arg-type]
+            position=position or Position(),
+            width=float(width_text),
+            height=float(height_text),
+        )
+    except ValueError:
+        return None
 
 
 def _parse_position(text: str) -> Position | None:
@@ -345,6 +376,16 @@ def _render_kgui_block(topology: Topology) -> list[str]:
     for node in topology.nodes:
         if node.loopbacks:
             records.append(f"# {MARKER}:lo {node.name} ip={','.join(node.loopbacks)}")
+
+    for zone in topology.zones:
+        # The name is percent-encoded: "Area 0" has a space, and a record is
+        # split on spaces.
+        records.append(
+            f"# {MARKER}:zone {zone.id} shape={zone.shape} "
+            f"pos={_format_number(zone.position.x)},{_format_number(zone.position.y)} "
+            f"size={_format_number(zone.width)},{_format_number(zone.height)} "
+            f"name={quote(zone.name, safe='')}"
+        )
 
     if not records:
         return []

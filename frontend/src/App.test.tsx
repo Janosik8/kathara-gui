@@ -17,10 +17,12 @@ import { api } from "./api/client";
 import type {
   AllocateResponse,
   DiagnosticsResponse,
+  Features,
   FeaturesResponse,
   IssuesResponse,
   OpenResponse,
   Preferences,
+  ProjectState,
   ScenarioSummary,
   ProbeResponse,
   SaveResponse,
@@ -57,6 +59,9 @@ const {
   wipeLabs,
   preferences,
   savePreferences,
+  projectState,
+  setFeatures,
+  restart,
 } = vi.hoisted(() => {
   class MockApiError extends Error {
     status: number;
@@ -71,7 +76,10 @@ const {
   const defaultPreferences = (): Preferences => ({
     panels: {
       left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
-      right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
+      right: {
+        order: ["details", "addressing", "arrange", "scenario", "exam", "lab"],
+        collapsed: ["exam"],
+      },
     },
   });
   const idleStatus = (): StatusResponse => ({
@@ -85,8 +93,32 @@ const {
     needs_confirmation: false,
     conflicts: null,
   });
+  // What the server answers about the scenario: switches as `features` says.
+  const state = (f: Features): ProjectState => ({
+    name: "untitled",
+    folder: null,
+    dirty: false,
+    features: f,
+    workspace: "/workspace",
+  });
+  const allOn = (): Features => ({
+    subnet_calculator: true,
+    addressing_validation: true,
+    infrastructure_verification: true,
+  });
   return {
     MockApiError,
+    projectState: vi.fn(async (): Promise<ProjectState> => state(allOn())),
+    setFeatures: vi.fn(async (f: Features): Promise<ProjectState> => state(f)),
+    restart: vi.fn(
+      async (_topology: Topology, devices: string[]): Promise<StatusResponse> => ({
+        ...idleStatus(),
+        devices: devices.map((name) => ({ name, state: "running" as const })),
+        running: devices,
+        deployed: true,
+        message: `Restarted ${devices[0]} from the lab folder in 3.0 s; the rest kept running.`,
+      }),
+    ),
     probe: vi.fn(async (): Promise<ProbeResponse> => ({ checks: [], can_deploy: true })),
     features: vi.fn(
       async (): Promise<FeaturesResponse> => ({
@@ -232,6 +264,11 @@ vi.mock("./api/client", () => ({
     wipeLabs,
     preferences,
     savePreferences,
+    // The switches as the `features` mock has them, so a test that withdraws
+    // one there sees it withdrawn from the start.
+    projectState: vi.fn(async () => ({ ...(await projectState()), features: await features() })),
+    setFeatures,
+    restart,
   },
   initialiseToken: vi.fn(),
 }));
@@ -1032,6 +1069,29 @@ describe("deploying and verifying", () => {
 
     const sent = deploy.mock.calls.at(-1)?.[0];
     expect(sent?.nodes.map((n) => n.name)).toEqual(["r1"]);
+  });
+
+  it("restarts only the selected device, after asking (FR-19)", async () => {
+    deploy.mockResolvedValue(deployed);
+    restart.mockClear();
+    const user = await renderApp();
+    await addRouter(user);
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Deploy" }));
+    await screen.findByRole("button", { name: /^Restart / });
+
+    await user.click(row("r1"));
+    await user.click(screen.getByRole("button", { name: "Restart r1" }));
+    expect(screen.getByRole("alertdialog", { name: "Restart r1?" })).toHaveTextContent(
+      /The rest of the lab keeps running/,
+    );
+    expect(restart).not.toHaveBeenCalled();
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Restart r1" }),
+    );
+
+    await waitFor(() => expect(restart).toHaveBeenCalledWith(expect.anything(), ["r1"]));
+    expect(await screen.findByText(/Restarted r1 from the lab folder/)).toBeInTheDocument();
   });
 
   it("reports each device with a word, not only a colour", async () => {
@@ -1937,11 +1997,11 @@ describe("the scenario as a folder", () => {
     expect(heading).toHaveFocus();
     expect(screen.getByText(/already a scenario called 'base exam'/)).toBeInTheDocument();
     expect(importProject).toHaveBeenCalledTimes(1);
-    expect(importProject).toHaveBeenLastCalledWith(file, false);
+    expect(importProject).toHaveBeenLastCalledWith(file, false, undefined);
 
     await user.click(screen.getByRole("button", { name: "Replace it" }));
 
-    await waitFor(() => expect(importProject).toHaveBeenLastCalledWith(file, true));
+    await waitFor(() => expect(importProject).toHaveBeenLastCalledWith(file, true, undefined));
     expect(await screen.findByText(/Opened imported scenario/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Replace a scenario?" })).toBeNull();
   });
@@ -1962,6 +2022,89 @@ describe("the scenario as a folder", () => {
     expect(screen.queryByRole("heading", { name: "Replace a scenario?" })).toBeNull();
     // Back on the button that started it, not dropped at the top of the page.
     expect(screen.getByRole("button", { name: "Import…" })).toHaveFocus();
+  });
+
+  it("sets the feature switches from their section (FR-28)", async () => {
+    preferences.mockResolvedValueOnce({
+      panels: {
+        left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+        right: {
+          order: ["details", "addressing", "arrange", "scenario", "exam", "lab"],
+          collapsed: [],
+        },
+      },
+    });
+    setFeatures.mockClear();
+    const user = await renderApp();
+    await user.click(await screen.findByRole("checkbox", { name: "Subnet calculator" }));
+    await waitFor(() =>
+      expect(setFeatures).toHaveBeenCalledWith(
+        expect.objectContaining({ subnet_calculator: false }),
+      ),
+    );
+    // The server's answer is adopted: the calculator goes where it is refused.
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: "Subnet calculator" })).not.toBeChecked(),
+    );
+  });
+
+  it("seals an export with a password typed twice (note 1)", async () => {
+    Object.defineProperty(URL, "createObjectURL", { value: vi.fn(() => "blob:x"), writable: true });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), writable: true });
+    exportProject.mockClear();
+    const user = await renderApp();
+    await addRouter(user);
+    await user.click(await screen.findByRole("button", { name: "Export" }));
+
+    await user.click(screen.getByRole("checkbox", { name: "Seal it with a password" }));
+    const download = screen.getByRole("button", { name: "Download sealed .kgx" });
+    expect(download).toBeDisabled();
+    await user.type(screen.getByLabelText("Password"), "open-sesame");
+    await user.type(screen.getByLabelText("The password again"), "open-sesame");
+    await user.click(download);
+
+    await waitFor(() =>
+      expect(exportProject).toHaveBeenCalledWith(expect.anything(), undefined, "open-sesame"),
+    );
+    expect(await screen.findByText(/sealed with a password/)).toBeInTheDocument();
+  });
+
+  it("asks for the password of a sealed file, and again after a wrong one", async () => {
+    importProject
+      .mockClear()
+      .mockRejectedValueOnce(new MockApiError("This file is sealed with a password.", 428))
+      .mockRejectedValueOnce(new MockApiError("That password does not open this file.", 403));
+    const user = await renderApp();
+    const file = new File(["KGUI-SEALED-1"], "exam.kgx");
+    await user.upload(screen.getByLabelText("Scenario file to import"), file);
+
+    expect(await screen.findByRole("heading", { name: "Open a sealed scenario" })).toHaveFocus();
+    await user.type(screen.getByLabelText("Password"), "guess{Enter}");
+    expect(await screen.findByText(/does not open this file/)).toBeInTheDocument();
+    expect(importProject).toHaveBeenLastCalledWith(file, false, "guess");
+
+    await user.clear(screen.getByLabelText("Password"));
+    await user.type(screen.getByLabelText("Password"), "open-sesame");
+    await user.click(screen.getByRole("button", { name: "Open it" }));
+
+    await waitFor(() => expect(importProject).toHaveBeenLastCalledWith(file, false, "open-sesame"));
+    expect(await screen.findByText(/Opened imported scenario/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Open a sealed scenario" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Import…" })).toHaveFocus();
+  });
+
+  it("keeps a sealed file's password for the replace question", async () => {
+    importProject
+      .mockClear()
+      .mockRejectedValueOnce(new MockApiError("This file is sealed with a password.", 428))
+      .mockRejectedValueOnce(new MockApiError("There is already a scenario…", 409));
+    const user = await renderApp();
+    const file = new File(["KGUI-SEALED-1"], "exam.kgx");
+    await user.upload(screen.getByLabelText("Scenario file to import"), file);
+    await user.type(await screen.findByLabelText("Password"), "open-sesame{Enter}");
+
+    await user.click(await screen.findByRole("button", { name: "Replace it" }));
+    await waitFor(() => expect(importProject).toHaveBeenLastCalledWith(file, true, "open-sesame"));
   });
 
   it("says when an imported lab came from outside this application", async () => {

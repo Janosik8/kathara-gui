@@ -40,7 +40,7 @@ from kathara_gui.domain.model import Topology
 from kathara_gui.domain.naming import lab_name_problem, suggest_lab_name
 from kathara_gui.features import Features
 from kathara_gui.kathara import runner, state
-from kathara_gui.project import scenario
+from kathara_gui.project import scenario, sealing
 from kathara_gui.project.session import (
     Persisted,
     ScenarioNameError,
@@ -59,6 +59,10 @@ MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _STAGING = ".import"
 
 
+#: The shortest password accepted for a sealed export.
+MIN_PASSWORD = 4
+
+
 class ProjectState(BaseModel):
     name: str
     folder: str | None = Field(
@@ -75,6 +79,11 @@ class SaveRequest(BaseModel):
         default=None,
         description="Save as: the copy's name, which is also its folder's. "
         "Defaults to the scenario's own name and folder.",
+    )
+    password: str | None = Field(
+        default=None,
+        description="Export only: seal the zip with this password (note 1). Opening "
+        "the file then needs it.",
     )
 
 
@@ -107,6 +116,10 @@ class OpenResponse(BaseModel):
     folder: str
     warnings: list[str] = []
     foreign: bool = False
+
+
+class FeaturesRequest(BaseModel):
+    features: Features
 
 
 class CaptureRequest(BaseModel):
@@ -241,6 +254,8 @@ def export(request: SaveRequest, session: Session = Depends(get_session)) -> Res
     Saved first, so what leaves the machine is what the canvas currently shows
     rather than whatever was last written.
     """
+    if request.password is not None:
+        _check_password(request.password)
     folder = persist(session, request.topology, request.name).folder
 
     archive = session.workspace_root / _STAGING / f"{folder.name}.zip"
@@ -250,11 +265,44 @@ def export(request: SaveRequest, session: Session = Depends(get_session)) -> Res
     finally:
         archive.unlink(missing_ok=True)
 
+    if request.password is None:
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{folder.name}.zip"'},
+        )
+    # Sealed: no longer a zip anyone can unzip, so not named like one.
+    filename = f"{folder.name}{sealing.SEAL_EXTENSION}"
     return Response(
-        content=payload,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{folder.name}.zip"'},
+        content=sealing.seal(payload, request.password),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _check_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A password needs at least {MIN_PASSWORD} characters.",
+        )
+
+
+def _wrong(exc: sealing.WrongPassword) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.put("/features", response_model=ProjectState)
+def set_features(
+    request: FeaturesRequest, session: Session = Depends(get_session)
+) -> ProjectState:
+    """Switch the assistive features on or off for this scenario (FR-28).
+
+    Written into ``kgui.json`` at once. Nothing here can stop the owner of the
+    machine editing that file, or this application (F51).
+    """
+    session.set_features(request.features)
+    return _state(session)
 
 
 @router.post("/open", response_model=OpenResponse)
@@ -304,6 +352,18 @@ async def import_scenario(
     # "ćwiczenie.zip" is an ordinary name for a scenario here.
     filename = unquote(request.headers.get("X-KGUI-Filename", "imported"))
     stem = Path(Path(filename.replace("\\", "/")).name).stem or "imported"
+    if sealing.is_sealed(payload):
+        # In a header, percent-encoded like the name, never in the URL.
+        password = unquote(request.headers.get("X-KGUI-Password", ""))
+        if not password:
+            raise HTTPException(
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail="This file is sealed with a password. Enter it to open the file.",
+            )
+        try:
+            payload = sealing.unseal(payload, password)
+        except sealing.WrongPassword as exc:
+            raise _wrong(exc) from exc
     is_archive = payload[:2] == b"PK"
 
     # Named after the file, so a lab that names itself nowhere is named by it.
@@ -423,7 +483,7 @@ def _adopt(session: Session, folder: Path) -> OpenResponse:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     session.replace(loaded.topology, dirty=False)
-    session.set_features(loaded.features)
+    session.adopt_settings(loaded.features)
     session.mark_saved(folder)
     return OpenResponse(
         topology=loaded.topology,

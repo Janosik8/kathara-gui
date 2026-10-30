@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-09-27 (Phases 0–3 complete; 4–6 mostly done; first Windows run)
+- **Last updated:** 2026-10-30 (the lock on the exam switches removed, D12; zones, sealed export, restarting one device)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -17,8 +17,9 @@ A living document — update it when behaviour changes.
 | Node 20+ | **only** to build the UI from source | `node --version` |
 | Docker, running | Kathará deploys containers | `docker info` |
 
-End users installing a release need only Python and Docker — the UI ships pre-built.
-Node is a contributor requirement.
+A published release would carry the interface pre-built, so its users would need only
+Python and Docker (the wheel already does, F45). No release is published yet, so for now
+every install builds the interface from source and needs Node once.
 
 Install uv if missing: `brew install uv` (macOS) or see the uv docs.
 
@@ -62,7 +63,8 @@ not affected, and `uv` isn't either, because it's a real executable.
 code, but it serves the interface as last built. In a source checkout it compares the two
 at startup and prints a warning with the rebuild command when the build is missing or older
 than the source, so an out-of-date interface never goes unnoticed. An installed release
-ships its interface pre-built and never shows the warning.
+(a wheel built after the interface, as the installer makes) carries its interface and
+never shows the warning.
 
 Your browser opens automatically. The terminal prints a URL containing a session token:
 
@@ -400,8 +402,8 @@ All but the last are in the top bar; **Capture running state** is in the **Scena
 | **Save** | Writes the folder into your workspace. Ctrl/Cmd+S does the same. |
 | **Save as…** | The same, under a folder name you choose. Opens a field under the top bar; `Escape` closes it. |
 | **Open…** | Lists the scenarios in your workspace under the top bar; pick one to open it. Each is listed by its lab name, which is also its folder; a folder that differs (one from before folders took the lab's name) is shown after it. A scenario whose lab is running has a green dot and the word **running** beside its name. Allowed while a lab runs, which keeps running. |
-| **Export** | Opens a strip under the top bar saying what is in the download; **Download .zip**, or Export pressed again, downloads the folder as `<name>.zip`, for submitting or sending. The scenario is saved first. |
-| **Import…** | Opens a strip under the top bar saying what can be imported; **Choose a file…**, or Import… pressed again, opens the file chooser. Takes a zip, or a bare `lab.conf`, from anywhere. A scenario from outside this application is marked so in the Scenario panel. A zip is named after its file, and the lab inside is renamed to match, so `student.zip` opens as `student`. A browser's copy number is ignored: "base exam (1).zip" is `base exam`. A bare `lab.conf` keeps the name its `LAB_NAME` gives it. If the workspace already has a scenario of that name, it asks before replacing it; a scenario whose lab is running is never replaced — stop it first. |
+| **Export** | Opens a strip under the top bar saying what is in the download; **Download .zip**, or Export pressed again, downloads the folder as `<name>.zip`, for submitting or sending. The scenario is saved first. Ticking **Seal it with a password** downloads `<name>.kgx` instead, encrypted; see *Feature switches and the sealed export*. |
+| **Import…** | Opens a strip under the top bar saying what can be imported; **Choose a file…**, or Import… pressed again, opens the file chooser. Takes a zip, or a bare `lab.conf`, from anywhere. A scenario from outside this application is marked so in the Scenario panel. A zip is named after its file, and the lab inside is renamed to match, so `student.zip` opens as `student`. A browser's copy number is ignored: "base exam (1).zip" is `base exam`. A bare `lab.conf` keeps the name its `LAB_NAME` gives it. If the workspace already has a scenario of that name, it asks before replacing it; a scenario whose lab is running is never replaced — stop it first. A sealed `.kgx` asks for its password under the top bar before it opens. |
 | **Capture running state** | Copies what the devices are actually running back into the scenario. The result stays listed until you close it with its **×**. |
 
 **Save keeps it here; Export sends it out.** Scenario folders live in the workspace
@@ -456,7 +458,7 @@ made before the answer would have changed a lab that turns out to be running.
 The reason is that there are two places the network can change, the canvas and the
 containers, and when both can change at once there's no simple answer to "which one is
 right?". Locking the canvas leaves only one direction: things you change inside the
-containers with `kathara connect`.
+containers, through a shell opened with `docker exec` (or `kathara connect`).
 
 **To bring those changes onto the canvas**, press **Capture running state**. Routing
 configuration goes to each router's `frr.conf` and interface addresses onto the canvas, and
@@ -562,15 +564,56 @@ records the old name — correctly. Ordinary routing configuration typed in `vty
 calculator, opening that scenario withdraws it on your machine too. A lab imported from
 outside has no such settings, so everything is on.
 
-### Not built yet
+### Feature switches and the sealed export
 
-- **In-app terminal.** Copy the shell command from the Laboratory panel into a terminal for now — see §4.
-- **Variants** of a scenario (exam groups), **PDF manuals**, and a **built-in lab library**.
-- **Setting exam-mode toggles.** The server enforces them and they are stored in the scenario folder,
-  but there is no interface for an instructor to change them, so a new scenario has
-  everything on.
+The **Feature switches** section of the right panel, collapsed until you open it, has three switches
+under **Features allowed**: **Subnet calculator**, **Addressing checks** and **Link
+verification**. Unticking one withdraws that feature for this scenario. The switch is
+written to `kgui.json` at once, without a Save, and the server enforces it: the calculator
+is refused even to a request that does not come from the page.
 
-See [PLAN.md](../PLAN.md).
+**What the switches do not do.** They are kept in the scenario's `kgui.json`, and a
+student's copy is on the student's machine, so the student can edit them, or the
+application itself. They guide an exam; they do not police it. An exam that must be
+policed needs computers the students do not control. (A password on the switches was
+built and removed, because putting back a copy of the original file before handing in
+defeated it without trace: F51 in [PLAN.md](../PLAN.md).)
+
+**A sealed export.** In **Export**, tick **Seal it with a password**, type an opening
+password twice and press **Download sealed .kgx**. The file is the scenario's zip,
+encrypted (AES-256-GCM), so it cannot be unzipped or read without the password. **Import…**
+takes it, asks for the password, and refuses a wrong one. Send the file ahead of the exam
+and give out the password when it starts.
+
+### Zones
+
+The **Zones** section of the left panel draws named areas behind the devices: Area 0, a
+backbone, AS 100. **Add zone round N devices** draws one round the selected devices; with
+nothing selected, **Add zone** puts one above the lab. Each zone has a **Zone name**, a
+**Shape** (rectangle, ellipse or cloud), **Fit to selected devices** and a delete button.
+
+A zone is independent of the devices in it. Dragging a zone moves no device, and dragging a
+device out of a zone leaves the zone where it is. Click a zone on the canvas to select it,
+then drag its corners to resize it, or press Delete. Each change is one undo step.
+
+Zones are saved in `lab.conf` as `# kgui:zone` comments, which Kathará ignores.
+
+**A BGP lab imported without a layout** is laid out by autonomous system. The application
+reads `router bgp <number>` from each router's `frr.conf` or `bgpd.conf`; with two systems
+or more, each is laid out on its own, side by side, inside a zone called `AS <number>`.
+Hosts and switches join the system their routers belong to. The zones are ordinary ones:
+rename them, move them or delete them.
+
+### Not built, by decision
+
+The user decided on 2026-10-29 not to build these (D11 in [PLAN.md](../PLAN.md)):
+
+- **An in-app terminal.** Copy the shell command from the Laboratory panel into a terminal —
+  see §4.
+- **Variants** of a scenario (exam groups), and duplicating a group of devices: **Save as**
+  makes a variant.
+- **PDF manuals** beside the topology, and a **built-in lab library**.
+- **Autosave.** Save is deliberate.
 
 ---
 
@@ -638,6 +681,17 @@ happen with a lab started from elsewhere, for example with `kathara lstart`.
 
 `kathara list` shows everything running; `kathara wipe` removes it all.
 
+### Restarting one device
+
+To apply a change to one device's files without redeploying the lab, select the device (or
+several) on the canvas while the lab runs and press **Restart r1** in the Laboratory panel.
+It asks first, then stops that device's container and starts it again from the lab folder;
+the rest of the lab keeps running. On the Windows machine it took 3 to 4 seconds (3.3 s and 4.1 s measured). Use it after
+editing a file in the lab folder by hand, such as `r1/etc/frr/frr.conf`.
+
+What was configured inside that device since it started, and not captured, is lost, as
+with Stop. An exited device cannot be restarted this way; deploy the lab again.
+
 ### Stopping everything
 
 **A lab keeps running when the application stops.** That's deliberate: restart the
@@ -684,9 +738,10 @@ If you have Kathará's own command-line tool, the panel also shows the equivalen
 kathara connect -d "C:\path\to\kathara-labs\untitled" r1
 ```
 
-`-d` names the lab directory. Kathará identifies a lab by its directory, so `kathara
-connect r1` run from anywhere else fails with `MachineNotRunningError`, even while `kathara
-list` shows the device running.
+`-d` names the lab directory. The CLI reads the lab's name from that directory's
+`lab.conf` (a lab is identified by its name, see *Redeploying*), so `kathara connect r1`
+run from anywhere else fails with `MachineNotRunningError`, even while `kathara list` shows
+the device running.
 
 **On Windows, the Kathará CLI is a separate install** (from kathara.org), and without it
 `kathara` is "not recognized as an internal or external command". The panel used to
@@ -748,13 +803,17 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/lab/deploy` | deploy; reports conflicts unless `confirm` is set |
 | POST | `/api/lab/undeploy` | stop the lab |
 | POST | `/api/lab/verify` | ping across every direct link |
+| POST | `/api/lab/restart` | stop and start the named `devices` of the running lab from its folder; the rest keep running |
+| GET | `/api/lab/everything` | how many devices, in how many labs, **Stop every lab** would stop |
+| POST | `/api/lab/wipe` | stop every lab of this user, capturing nothing (`kathara wipe`) |
 | POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
 | GET | `/api/project` | scenario name, folder, feature toggles |
+| PUT | `/api/project/features` | set the exam switches; written to `kgui.json` at once |
 | GET | `/api/project/scenarios` | scenario folders in the workspace, each with `running` when its lab has a running container |
 | POST | `/api/project/save` | write the scenario folder into the workspace |
-| POST | `/api/project/export` | the scenario folder as a zip, for download |
+| POST | `/api/project/export` | the scenario folder as a zip, for download; with a `password` (at least 4 characters), sealed as a `.kgx` |
 | POST | `/api/project/open` | open a scenario folder from the workspace |
-| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running |
+| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running; a sealed `.kgx` needs its password in the `X-KGUI-Password` header, percent-encoded: 428 without one, 403 for a wrong one |
 | POST | `/api/project/capture` | pull running configuration into the scenario |
 | GET | `/api/preferences` | the side panels' layout: each panel's section order and which are collapsed |
 | PUT | `/api/preferences` | store that layout in `.kgui-preferences.json`; unknown sections are dropped, missing ones restored |
@@ -782,12 +841,11 @@ uv run python scripts/spike_vertical.py          # full Kathará path against Do
 ```
 
 ```bash
-cd frontend
-npm run dev          # dev server with hot reload
-npm test             # vitest, includes axe accessibility audits
-npm run test:watch
-npm run lint         # TypeScript type check
-npm run build        # build into ../src/kathara_gui/static/
+npm --prefix frontend run dev          # dev server with hot reload
+npm --prefix frontend test             # vitest, includes axe accessibility audits
+npm --prefix frontend run test:watch
+npm --prefix frontend run lint         # TypeScript type check
+npm --prefix frontend run build        # build into src/kathara_gui/static/
 ```
 
 Run everything the way CI does:

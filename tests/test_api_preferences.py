@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kathara_gui.api.preferences import FILE_NAME, SECTIONS
+from kathara_gui.api.preferences import COLLAPSED, FILE_NAME, SECTIONS
 from kathara_gui.main import create_app
 from kathara_gui.project.session import Session, get_session
 
@@ -18,7 +18,7 @@ TOKEN = "test-token-value"
 DEFAULTS = {
     "panels": {
         "left": {"order": list(SECTIONS["left"]), "collapsed": []},
-        "right": {"order": list(SECTIONS["right"]), "collapsed": []},
+        "right": {"order": list(SECTIONS["right"]), "collapsed": list(COLLAPSED["right"])},
     }
 }
 
@@ -45,7 +45,7 @@ def test_a_layout_survives_a_new_server(session: Session, client: TestClient) ->
         "panels": {
             "left": {"order": ["topology", "palette", "connect", "domains"], "collapsed": []},
             "right": {
-                "order": ["lab", "details", "addressing", "arrange", "scenario"],
+                "order": ["lab", "details", "addressing", "arrange", "scenario", "exam"],
                 "collapsed": ["arrange", "details"],
             },
         }
@@ -88,10 +88,27 @@ def test_unknown_ids_are_dropped_and_missing_ones_return_in_place(
     )
     panels = client.get("/api/preferences").json()["panels"]
     # A missing id goes after the one that precedes it by default: connect
-    # after palette, topology after domains.
-    assert panels["left"]["order"] == ["domains", "topology", "palette", "connect"]
-    assert panels["right"]["order"] == ["details", "addressing", "arrange", "scenario", "lab"]
-    assert panels["right"]["collapsed"] == ["lab"]
+    # after palette, zones and topology after domains.
+    assert panels["left"]["order"] == ["domains", "zones", "topology", "palette", "connect"]
+    assert panels["right"]["order"] == [
+        "details", "addressing", "arrange", "scenario", "exam", "lab"
+    ]
+    # A section new to the file arrives collapsed if it starts collapsed.
+    assert panels["right"]["collapsed"] == ["exam", "lab"]
+
+
+def test_a_layout_stored_before_the_exam_section_gains_it_collapsed(
+    session: Session, client: TestClient
+) -> None:
+    """FR-28 added a section; a file from before it must not lose it or open it."""
+    order = ["lab", "details", "addressing", "arrange", "scenario"]
+    (session.workspace_root / FILE_NAME).parent.mkdir(parents=True, exist_ok=True)
+    (session.workspace_root / FILE_NAME).write_text(
+        json.dumps({"panels": {"right": {"order": order, "collapsed": []}}}), encoding="utf-8"
+    )
+    right = client.get("/api/preferences").json()["panels"]["right"]
+    assert right["order"] == [*order, "exam"]
+    assert right["collapsed"] == ["exam"]
 
 
 def test_the_file_is_lf_only_and_hidden_from_the_scenario_list(

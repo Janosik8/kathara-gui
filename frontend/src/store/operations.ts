@@ -19,6 +19,7 @@ import {
   type Node,
   type Position,
   type Topology,
+  type Zone,
   compactInterfaces,
   nextInterfaceNumber,
 } from "../types";
@@ -56,7 +57,10 @@ export type Operation =
   | { type: "removeLink"; collisionDomain: string }
   | { type: "updateInterface"; node: string; number: number; changes: Partial<Interface> }
   | { type: "setSubnet"; collisionDomain: string; subnet: string | null }
-  | { type: "setLabMetadata"; changes: Partial<Omit<Topology, "nodes" | "collision_domains">> }
+  | { type: "setLabMetadata"; changes: Partial<Omit<Topology, "nodes" | "collision_domains" | "zones">> }
+  | { type: "addZone"; zone: Zone }
+  | { type: "updateZone"; id: string; changes: Partial<Omit<Zone, "id">>; label?: string }
+  | { type: "removeZone"; id: string }
   | { type: "replaceTopology"; topology: Topology };
 
 /** Thrown when an operation refers to something that is not there. */
@@ -354,6 +358,29 @@ export function apply(topology: Topology, op: Operation): Topology {
     case "setLabMetadata":
       return { ...topology, ...op.changes };
 
+    case "addZone": {
+      const zones = topology.zones ?? [];
+      if (zones.some((z) => z.id === op.zone.id)) {
+        throw new OperationError(`A zone with the id "${op.zone.id}" already exists.`);
+      }
+      return { ...topology, zones: [...zones, op.zone] };
+    }
+
+    case "updateZone": {
+      const zones = topology.zones ?? [];
+      if (!zones.some((z) => z.id === op.id)) throw new OperationError("No such zone.");
+      return {
+        ...topology,
+        zones: zones.map((z) => (z.id === op.id ? { ...z, ...op.changes } : z)),
+      };
+    }
+
+    case "removeZone": {
+      const zones = topology.zones ?? [];
+      if (!zones.some((z) => z.id === op.id)) throw new OperationError("No such zone.");
+      return { ...topology, zones: zones.filter((z) => z.id !== op.id) };
+    }
+
     case "replaceTopology":
       return op.topology;
   }
@@ -410,6 +437,12 @@ export function describe(op: Operation): string {
       return op.changes.name !== undefined
         ? `Renamed the scenario to ${op.changes.name}`
         : "Changed lab details";
+    case "addZone":
+      return `Added the zone ${op.zone.name || "without a name"}`;
+    case "updateZone":
+      return op.label ?? "Changed a zone";
+    case "removeZone":
+      return "Removed a zone";
     case "replaceTopology":
       return "Replaced the topology";
   }

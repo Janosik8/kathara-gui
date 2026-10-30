@@ -744,11 +744,126 @@ def test_feature_toggles_travel_with_the_scenario(client: TestClient, session: S
 
     session.set_features(Features(subnet_calculator=False))
     name = save(client)["name"]
-    session.set_features(Features())
+    session.reset()
 
     body = client.post("/api/project/open", json={"folder": name}).json()
     assert body["features"]["subnet_calculator"] is False
     assert session.features.subnet_calculator is False
+
+
+# -- the exam switches (FR-28) --------------------------------------------------
+
+OFF = {
+    "subnet_calculator": False,
+    "addressing_validation": False,
+    "infrastructure_verification": True,
+}
+
+
+def test_the_switches_can_be_set_and_are_written_at_once(client: TestClient) -> None:
+    """FR-28: written into kgui.json without waiting for a Save."""
+    folder = Path(save(client)["folder"])
+    response = client.put("/api/project/features", json={"features": OFF})
+    assert response.status_code == 200, response.text
+    assert response.json()["features"] == OFF
+
+    stored = json.loads((folder / "kgui.json").read_text())
+    assert stored["features"] == OFF
+    # Switched off means refused by the server, not merely hidden.
+    assert client.post("/api/topology/addressing/allocate", json={}).status_code == 403
+
+
+def test_a_lock_left_by_an_earlier_build_is_ignored_and_dropped(
+    client: TestClient, session: Session
+) -> None:
+    """F51: the author's lock was removed. A scenario that still carries one
+    opens with its switches as they are, and the next write leaves it out."""
+    name = save(client)["name"]
+    folder = Path(client.get("/api/project").json()["folder"])
+    stored = json.loads((folder / "kgui.json").read_text())
+    stored["features"] = OFF
+    stored["exam_lock"] = {"version": 1, "salt": "00", "verifier": "x", "signature": "y"}
+    (folder / "kgui.json").write_text(json.dumps(stored))
+    session.reset()
+
+    body = client.post("/api/project/open", json={"folder": name}).json()
+    assert body["features"] == OFF
+    assert client.put("/api/project/features", json={"features": OFF}).status_code == 200
+    assert "exam_lock" not in json.loads((folder / "kgui.json").read_text())
+
+
+def test_a_short_seal_password_is_refused(client: TestClient) -> None:
+    response = client.post("/api/project/export", json={"topology": TRIANGLE, "password": "abc"})
+    assert response.status_code == 400
+
+
+# -- the sealed export (note 1) -------------------------------------------------
+
+
+def test_a_sealed_export_is_not_a_zip_and_opens_only_with_its_password(
+    client: TestClient, session: Session
+) -> None:
+    from kathara_gui.project import sealing
+
+    response = client.post(
+        "/api/project/export", json={"topology": TRIANGLE, "password": "open-sesame"}
+    )
+    assert response.status_code == 200, response.text
+    assert 'filename="ospf triangle.kgx"' in response.headers["content-disposition"]
+    blob = response.content
+    assert sealing.is_sealed(blob)
+    assert not zipfile.is_zipfile(io.BytesIO(blob))
+    assert b"lab.conf" not in blob and b"10.0.0.1" not in blob
+
+    session.reset()
+    headers = {"X-KGUI-Filename": "ospf triangle.kgx"}
+    asked = client.post(
+        "/api/project/import?replace=true", content=blob, headers=headers
+    )
+    assert asked.status_code == 428
+    wrong = client.post(
+        "/api/project/import?replace=true",
+        content=blob,
+        headers={**headers, "X-KGUI-Password": "nope"},
+    )
+    assert wrong.status_code == 403
+    opened = client.post(
+        "/api/project/import?replace=true",
+        content=blob,
+        headers={**headers, "X-KGUI-Password": "open-sesame"},
+    )
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["topology"]["name"] == "ospf triangle"
+
+
+def test_a_damaged_sealed_file_is_refused(client: TestClient) -> None:
+    blob = client.post(
+        "/api/project/export", json={"topology": TRIANGLE, "password": "open-sesame"}
+    ).content
+    damaged = blob[:-1] + bytes([blob[-1] ^ 1])
+    response = client.post(
+        "/api/project/import?replace=true",
+        content=damaged,
+        headers={"X-KGUI-Filename": "x.kgx", "X-KGUI-Password": "open-sesame"},
+    )
+    assert response.status_code == 403
+
+
+def test_a_sealed_exam_keeps_its_switches(client: TestClient, session: Session) -> None:
+    """What an instructor hands out: restrictions inside a file sealed until the exam."""
+    save(client)
+    client.put("/api/project/features", json={"features": OFF})
+    blob = client.post(
+        "/api/project/export", json={"topology": TRIANGLE, "password": "open-sesame"}
+    ).content
+    session.reset()
+
+    body = client.post(
+        "/api/project/import?replace=true",
+        content=blob,
+        headers={"X-KGUI-Filename": "exam.kgx", "X-KGUI-Password": "open-sesame"},
+    ).json()
+    assert body["features"] == OFF
 
 
 # -- project state ------------------------------------------------------

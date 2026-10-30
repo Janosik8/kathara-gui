@@ -32,9 +32,14 @@ FILE_NAME = ".kgui-preferences.json"
 # The sections of each side panel, in their default order. The frontend names
 # the same ids; an id outside these is dropped on the way in.
 SECTIONS: dict[str, tuple[str, ...]] = {
-    "left": ("palette", "connect", "domains", "topology"),
-    "right": ("details", "addressing", "arrange", "scenario", "lab"),
+    "left": ("palette", "connect", "domains", "zones", "topology"),
+    "right": ("details", "addressing", "arrange", "scenario", "exam", "lab"),
 }
+
+# Sections that start collapsed, in a fresh layout and when they first appear
+# in a stored one. The exam switches matter to an instructor, rarely to anyone
+# else, so they wait behind their heading (FR-28).
+COLLAPSED: dict[str, tuple[str, ...]] = {"left": (), "right": ("exam",)}
 
 
 class PanelLayout(BaseModel):
@@ -52,13 +57,14 @@ class Preferences(BaseModel):
 
 
 def _default(side: str) -> PanelLayout:
-    return PanelLayout(order=list(SECTIONS[side]))
+    return PanelLayout(order=list(SECTIONS[side]), collapsed=list(COLLAPSED[side]))
 
 
 def _clean(side: str, layout: PanelLayout) -> PanelLayout:
     """Known ids only, each once, every known id present."""
     known = SECTIONS[side]
     order = [s for i, s in enumerate(layout.order) if s in known and s not in layout.order[:i]]
+    arrived = [s for s in known if s not in order]
     for index, section in enumerate(known):
         if section in order:
             continue
@@ -66,7 +72,9 @@ def _clean(side: str, layout: PanelLayout) -> PanelLayout:
         # arrives where it was designed to sit rather than at the bottom.
         before = [s for s in known[:index] if s in order]
         order.insert(order.index(before[-1]) + 1 if before else 0, section)
-    collapsed = [s for s in known if s in layout.collapsed]
+    collapsed = [
+        s for s in known if s in layout.collapsed or (s in arrived and s in COLLAPSED[side])
+    ]
     return PanelLayout(order=order, collapsed=collapsed)
 
 

@@ -8,9 +8,9 @@
  * the viewport box — and it is pure, so it can be pinned down.
  */
 
-import type { Node as FlowNode } from "@xyflow/react";
+import type { Node as FlowNode, NodeChange } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
-import { placementSignature, mergeMeasurements } from "./TopologyCanvas";
+import { committedMoves, placementSignature, mergeMeasurements } from "./TopologyCanvas";
 
 const node = (id: string, measured?: { width: number; height: number }): FlowNode => ({
   id,
@@ -158,5 +158,36 @@ describe("placementSignature", () => {
     const a = placementSignature([withHandles("r1", [[0, "left", "50%"]])]);
     const b = placementSignature([withHandles("r2", [[0, "left", "50%"]])]);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("committedMoves (UX-03)", () => {
+  const end = (id: string, x: number): NodeChange => ({
+    type: "position",
+    id,
+    position: { x, y: 0 },
+    dragging: false,
+  });
+
+  it("returns every device of a selection dragged together, in one batch", () => {
+    const { devices } = committedMoves([end("r1", 10), end("r2", 20), end("pc1", 30)]);
+    expect(devices).toEqual({ r1: { x: 10, y: 0 }, r2: { x: 20, y: 0 }, pc1: { x: 30, y: 0 } });
+  });
+
+  it("ignores the frames of a drag still in progress", () => {
+    const moving: NodeChange = { type: "position", id: "r1", position: { x: 5, y: 5 }, dragging: true };
+    expect(committedMoves([moving])).toEqual({ devices: {}, domains: {}, zones: {} });
+  });
+
+  it("keeps a zone apart from the devices, so moving it moves none of them (FR-10)", () => {
+    const { devices, zones } = committedMoves([end("zone:z1", 30), end("r1", 10)]);
+    expect(zones).toEqual({ z1: { x: 30, y: 0 } });
+    expect(devices).toEqual({ r1: { x: 10, y: 0 } });
+  });
+
+  it("keeps a shared segment's node apart from the devices", () => {
+    const { devices, domains } = committedMoves([end("r1", 10), end("cd:A", 40)]);
+    expect(devices).toEqual({ r1: { x: 10, y: 0 } });
+    expect(domains).toEqual({ A: { x: 40, y: 0 } });
   });
 });

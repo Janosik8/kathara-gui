@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.9",
     "kathara>=3.8",
     "docker>=7.1",
+    "cryptography>=43",
 ]
 
 [project.scripts]

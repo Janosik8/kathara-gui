@@ -71,6 +71,10 @@ interface Props {
   everything?: EverythingResponse | null;
   /** Stop every lab, capturing nothing: `kathara wipe`. */
   onWipe?: () => void;
+  /** The devices selected on the canvas, by name. */
+  selectedDevices?: string[];
+  /** Restart these devices alone, from their files (FR-19). */
+  onRestart?: (devices: string[]) => void;
 }
 
 const DEVICE_STATE: Record<string, { glyph: string; label: string }> = {
@@ -146,8 +150,11 @@ export function LabPanel({
   onAnnounce,
   everything,
   onWipe,
+  selectedDevices = [],
+  onRestart,
 }: Props) {
   const [confirmingStop, setConfirmingStop] = useState(false);
+  const [confirmingRestart, setConfirmingRestart] = useState(false);
   const [confirmingWipe, setConfirmingWipe] = useState(false);
   const [shellDevice, setShellDevice] = useState<string | null>(null);
   // The message closed by hand; a different one shows again.
@@ -164,6 +171,10 @@ export function LabPanel({
   // Verification runs commands inside the containers, so it needs live ones —
   // `deployed` is true for a lab whose devices have all exited.
   const anyRunning = (status?.running.length ?? 0) > 0;
+  // Only a running device can be restarted; an exited one needs the lab deployed again.
+  const restartable = selectedDevices.filter((name) => status?.running.includes(name));
+  const restartWhat =
+    restartable.length === 1 ? restartable[0]! : `${restartable.length} devices`;
 
   return (
     // The tinted block is the panel section around this, heading included.
@@ -320,6 +331,42 @@ export function LabPanel({
         </div>
       )}
 
+      {confirmingRestart && restartable.length > 0 && (
+        <div className="confirm" role="alertdialog" aria-labelledby="restart-heading">
+          <h3 className="confirm__heading" id="restart-heading">
+            Restart {restartWhat}?
+          </h3>
+          <p>
+            {restartable.join(", ")} {restartable.length === 1 ? "stops" : "stop"} and{" "}
+            {restartable.length === 1 ? "starts" : "start"} again from the files in the lab
+            folder, so a configuration file changed since the deploy takes effect. The rest of
+            the lab keeps running. Anything configured inside{" "}
+            {restartable.length === 1 ? "it" : "them"} since and not captured is lost.
+          </p>
+          <div className="lab__actions">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingRestart(false);
+                onRestart?.(restartable);
+              }}
+              disabled={busy !== null}
+            >
+              Restart {restartWhat}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingRestart(false);
+                onAnnounce?.("Nothing was restarted.");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {verifyDrift && verifyDrift.length > 0 && (
         // Verification pings the design's addresses, so an address changed
         // inside a container and not captured is tested as it was (test 4B.2).
@@ -372,6 +419,19 @@ export function LabPanel({
         >
           {busy === "undeploy" ? "Stopping…" : "Stop"}
         </button>
+        {anyRunning && onRestart && (
+          <button
+            type="button"
+            onClick={() => setConfirmingRestart(true)}
+            disabled={busy !== null || restartable.length === 0 || confirmingRestart}
+          >
+            {busy === "restart"
+              ? "Restarting…"
+              : restartable.length > 0
+                ? `Restart ${restartWhat}`
+                : "Restart selected"}
+          </button>
+        )}
         {anyRunning && (
           <button type="button" onClick={onCheck} disabled={busy !== null}>
             {busy === "check" ? "Checking…" : "Check for changes"}
@@ -395,6 +455,12 @@ export function LabPanel({
 
       {deviceCount === 0 && (
         <p className="field__hint">Add a device before deploying.</p>
+      )}
+
+      {anyRunning && onRestart && restartable.length === 0 && (
+        <p className="field__hint">
+          Select running devices to restart only them, from their files.
+        </p>
       )}
 
       {deployed && deviceCount > 0 && (

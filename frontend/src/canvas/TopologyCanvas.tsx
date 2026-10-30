@@ -28,14 +28,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PendingEnd, Topology } from "../types";
+import type { PendingEnd, Topology, Zone } from "../types";
 import { DeviceNode } from "./DeviceNode";
 import { SegmentEdge } from "./SegmentEdge";
+import { ZoneNode } from "./ZoneNode";
 import { type Placement, computePlacements, domainPosition, segmentPosition } from "./layout";
 
 // Registered outside the component: a new object each render would remount
 // every node and lose their measurements.
-const NODE_TYPES = { device: DeviceNode };
+const NODE_TYPES = { device: DeviceNode, zone: ZoneNode };
 const EDGE_TYPES = { segment: SegmentEdge };
 
 /**
@@ -50,8 +51,20 @@ interface Props {
   selected: string[];
   onSelect: (name: string | null, additive: boolean) => void;
   onMove: (name: string, position: { x: number; y: number }) => void;
+  /**
+   * Several selected devices were dragged together (UX-03). One call, so the
+   * drag is one edit and one undo step, as UX-06 asks; without it each device
+   * would be committed through `onMove` on its own.
+   */
+  onMoveMany?: (positions: Record<string, { x: number; y: number }>) => void;
   /** A shared segment's node was dragged to a new place. */
   onMoveDomain?: (name: string, position: { x: number; y: number }) => void;
+  /** A zone was moved or resized on the canvas (FR-10). */
+  onZoneChange?: (id: string, changes: Partial<Omit<Zone, "id">>, label: string) => void;
+  /** A zone was clicked, or null when the selection left it. */
+  onSelectZone?: (id: string | null) => void;
+  /** The zone currently selected, if any. */
+  selectedZone?: string | null;
   /** The first end of a link being drawn in connect mode, if any. */
   pending?: PendingEnd | null;
   /**
@@ -139,13 +152,47 @@ export function placementSignature(nodes: readonly FlowNode[]): string {
     .join("|");
 }
 
+/**
+ * The moves a batch of React Flow changes commits: only where a drag ended.
+ *
+ * Recording every intermediate frame would flood the operation log and make
+ * undo useless. A selection dragged together ends in one batch, so its devices
+ * come back together and are committed as one edit (UX-03, UX-06). Shared
+ * segments' nodes carry a `cd:` prefix and are moved by their own operation.
+ */
+export function committedMoves(changes: NodeChange[]): {
+  devices: Record<string, { x: number; y: number }>;
+  domains: Record<string, { x: number; y: number }>;
+  zones: Record<string, { x: number; y: number }>;
+} {
+  const devices: Record<string, { x: number; y: number }> = {};
+  const domains: Record<string, { x: number; y: number }> = {};
+  const zones: Record<string, { x: number; y: number }> = {};
+  for (const change of changes) {
+    if (change.type === "position" && change.dragging === false && change.position) {
+      if (change.id.startsWith("cd:")) domains[change.id.slice(3)] = change.position;
+      else if (change.id.startsWith(ZONE_PREFIX)) {
+        zones[change.id.slice(ZONE_PREFIX.length)] = change.position;
+      } else devices[change.id] = change.position;
+    }
+  }
+  return { devices, domains, zones };
+}
+
+/** Zones' node ids carry this prefix; a device name cannot contain ":". */
+export const ZONE_PREFIX = "zone:";
+
 function CanvasInner({
   topology,
   selected,
   pending,
   onSelect,
   onMove,
+  onMoveMany,
   onMoveDomain,
+  onZoneChange,
+  onSelectZone,
+  selectedZone = null,
   onSelectCollisionDomain,
   onSelectLink,
   selectedLink,
@@ -161,7 +208,29 @@ function CanvasInner({
     // link leaves in the direction it actually travels.
     const placements = computePlacements(topology);
 
-    const flowNodes: FlowNode[] = topology.nodes.map((node) => ({
+    // First, so they are drawn first, and behind everything else.
+    const zoneNodes: FlowNode[] = (topology.zones ?? []).map((zone) => ({
+      id: `${ZONE_PREFIX}${zone.id}`,
+      type: "zone",
+      position: zone.position,
+      width: zone.width,
+      height: zone.height,
+      zIndex: -1,
+      selected: zone.id === selectedZone,
+      data: {
+        name: zone.name,
+        shape: zone.shape,
+        locked,
+        onResize: ({ x, y, width, height }: { x: number; y: number; width: number; height: number }) =>
+          onZoneChange?.(
+            zone.id,
+            { position: { x, y }, width, height },
+            `Resized ${zone.name || "a zone"}`,
+          ),
+      },
+    }));
+
+    const deviceNodes: FlowNode[] = topology.nodes.map((node) => ({
       id: node.name,
       type: "device",
       position: node.position,
@@ -175,6 +244,7 @@ function CanvasInner({
         pending: node.name === pendingDevice,
       },
     }));
+    const flowNodes = [...zoneNodes, ...deviceNodes];
 
     const flowEdges: Edge[] = [];
 
@@ -240,7 +310,16 @@ function CanvasInner({
     }
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [topology, selected, pendingDevice, pendingDomain, selectedLink]);
+  }, [
+    topology,
+    selected,
+    pendingDevice,
+    pendingDomain,
+    selectedLink,
+    selectedZone,
+    locked,
+    onZoneChange,
+  ]);
 
   /**
    * React Flow's own view of the nodes.
@@ -276,16 +355,17 @@ function CanvasInner({
       if (locked) changes = changes.filter((change) => change.type !== "position");
       setNodes((current) => applyNodeChanges(changes, current));
 
-      for (const change of changes) {
-        // Commit only when the drag ends: recording every intermediate frame
-        // would flood the operation log and make undo useless.
-        if (change.type === "position" && change.dragging === false && change.position) {
-          if (change.id.startsWith("cd:")) onMoveDomain?.(change.id.slice(3), change.position);
-          else onMove(change.id, change.position);
-        }
+      const { devices, domains, zones } = committedMoves(changes);
+      for (const [name, position] of Object.entries(domains)) onMoveDomain?.(name, position);
+      for (const [id, position] of Object.entries(zones)) {
+        const zone = topology.zones?.find((z) => z.id === id);
+        onZoneChange?.(id, { position }, `Moved ${zone?.name || "a zone"}`);
       }
+      const names = Object.keys(devices);
+      if (names.length > 1 && onMoveMany) onMoveMany(devices);
+      else for (const name of names) onMove(name, devices[name]!);
     },
-    [onMove, onMoveDomain, locked],
+    [onMove, onMoveMany, onMoveDomain, onZoneChange, topology.zones, locked],
   );
 
   return (
@@ -297,6 +377,12 @@ function CanvasInner({
         edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onNodeClick={(event, node) => {
+          if (node.id.startsWith(ZONE_PREFIX)) {
+            // Not in connect mode, where a zone is not an end to join.
+            if (!connectMode) onSelectZone?.(node.id.slice(ZONE_PREFIX.length));
+            return;
+          }
+          onSelectZone?.(null);
           const domain = node.data?.collisionDomain;
           if (typeof domain !== "string") onSelect(node.id, event.ctrlKey || event.metaKey);
           // The same rule as a link: in connect mode it is an end to join,
@@ -316,6 +402,7 @@ function CanvasInner({
         onPaneClick={() => {
           onSelect(null, false);
           onSelectLink?.(null);
+          onSelectZone?.(null);
         }}
         // Two defaults made clicking on a device unreliable (test step 1A.5,
         // "I often have to click a router 2 or 3 times"). React Flow hands
@@ -328,6 +415,9 @@ function CanvasInner({
         nodesDraggable={!connectMode}
         onNodeDragStart={locked ? () => onLockedEdit?.() : undefined}
         nodeClickDistance={NODE_CLICK_DISTANCE}
+        // A selected zone raised above the devices would cover them, and its
+        // own handles are enough to show which one is selected.
+        elevateNodesOnSelect={false}
         snapToGrid
         snapGrid={[16, 16]}
         fitView
@@ -343,6 +433,9 @@ function CanvasInner({
           // minimap when the fill is close to the background.
           nodeStrokeWidth={2}
           nodeBorderRadius={3}
+          // A zone filled in would bury the devices it surrounds; outlined,
+          // it still shows where the areas are.
+          nodeColor={(node) => (node.type === "zone" ? "transparent" : "var(--fg-muted)")}
         />
       </ReactFlow>
     </div>

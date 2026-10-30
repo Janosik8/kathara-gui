@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from kathara_gui.domain.naming import check_unique_names, validate_device_name
 
 DeviceKind = Literal["router", "switch", "pc", "server"]
+ZoneShape = Literal["rectangle", "ellipse", "cloud"]
 
 # Sensible starting images per kind. Routers need a routing suite; everything
 # else only needs a shell and the usual network utilities.
@@ -241,6 +242,24 @@ class CollisionDomain(BaseModel):
         return value
 
 
+class Zone(BaseModel):
+    """A named area drawn behind devices: an OSPF area, an AS, a LAN (FR-10).
+
+    A separate layer, as the supervisor asked on 2 September: it groups devices
+    for the reader and means nothing to Kathará, which never sees it. Moving a
+    device does not move its zone, and moving a zone moves no device; each is
+    adjusted on its own ("żeby dało się po prostu tak jak mogę routery
+    przeciągać, tak żebym te chmurki mógł później taki adjustment zrobić").
+    """
+
+    id: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(default="", max_length=80)
+    shape: ZoneShape = "rectangle"
+    position: Position = Field(default_factory=Position, description="Top-left corner.")
+    width: float = Field(default=320.0, gt=0)
+    height: float = Field(default=200.0, gt=0)
+
+
 class Topology(BaseModel):
     """A complete network scenario."""
 
@@ -252,6 +271,7 @@ class Topology(BaseModel):
     web: str | None = None
     nodes: list[Node] = Field(default_factory=list)
     collision_domains: list[CollisionDomain] = Field(default_factory=list)
+    zones: list[Zone] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _names_are_portable_together(self) -> Topology:
@@ -261,6 +281,9 @@ class Topology(BaseModel):
             raise ValueError(f"Duplicate device name(s): {', '.join(exact)}")
         # Catches R1/r1, which is two devices on Linux but one on macOS.
         check_unique_names(names)
+        ids = [zone.id for zone in self.zones]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Two zones share an id.")
         return self
 
     # -- lookups -------------------------------------------------------

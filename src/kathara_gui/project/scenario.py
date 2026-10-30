@@ -35,10 +35,18 @@ from typing import Any
 
 from kathara_gui import __version__
 from kathara_gui.domain.addressing import infer_subnets
+from kathara_gui.domain.asgroups import as_groups, asn_from_config, clustered_layout
 from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.codec.startup import parse_loopbacks, parse_startup
 from kathara_gui.domain.layout import arrange, needs_layout
-from kathara_gui.domain.model import KNOWN_DAEMONS, CollisionDomain, Node, Topology
+from kathara_gui.domain.model import (
+    KNOWN_DAEMONS,
+    CollisionDomain,
+    Node,
+    Position,
+    Topology,
+    Zone,
+)
 from kathara_gui.features import Features
 from kathara_gui.fsutil import write_text_lf
 from kathara_gui.project.labdir import write_lab
@@ -50,6 +58,7 @@ __all__ = [
     "Scenario",
     "ScenarioError",
     "save",
+    "write_settings",
     "load",
     "recover_device_configuration",
     "export_zip",
@@ -135,6 +144,31 @@ def _daemons_from_file(text: str) -> list[str]:
         if name.strip() in KNOWN_DAEMONS and value.strip().lower() in ("yes", "1", "true"):
             enabled.append(name.strip())
     return enabled
+
+
+#: Where a router's BGP configuration may be, in labs from FRR or Quagga days.
+_BGP_FILES = (
+    ("etc", "frr", "frr.conf"),
+    ("etc", "frr", "bgpd.conf"),
+    ("etc", "quagga", "bgpd.conf"),
+)
+
+
+def _arrange_by_as(topology: Topology, folder: Path) -> tuple[dict[str, Position], list[Zone]]:
+    """A layout for a lab that has none; each AS in its own zone when there are two (9B.2)."""
+    asns: dict[str, int] = {}
+    for node in topology.nodes:
+        for parts in _BGP_FILES:
+            text = _read(folder.joinpath(node.name, *parts))
+            asn = asn_from_config(text) if text else None
+            if asn is not None:
+                asns[node.name] = asn
+                break
+    groups = as_groups(topology, asns)
+    if len(groups) < 2:
+        # One AS, or none, is a lab with nothing to separate.
+        return arrange(topology), []
+    return clustered_layout(topology, groups)
 
 
 def recover_device_configuration(topology: Topology, folder: Path) -> Topology:
@@ -233,20 +267,25 @@ def _settings(features: Features) -> str:
     random. The filesystem records when a file was written; a scenario does not
     need to disagree with it.
     """
-    return (
-        json.dumps(
-            {
-                "format": FORMAT_VERSION,
-                "application": __version__,
-                "features": features.model_dump(),
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    settings: dict[str, object] = {
+        "format": FORMAT_VERSION,
+        "application": __version__,
+        "features": features.model_dump(),
+    }
+    return json.dumps(settings, indent=2) + "\n"
 
 
-def save(topology: Topology, folder: Path, *, features: Features | None = None) -> Path:
+def write_settings(folder: Path, features: Features) -> None:
+    """Write only ``kgui.json``: the switches, not the design."""
+    write_text_lf(Path(folder) / SETTINGS_NAME, _settings(features))
+
+
+def save(
+    topology: Topology,
+    folder: Path,
+    *,
+    features: Features | None = None,
+) -> Path:
     """Write ``topology`` into ``folder`` as a complete scenario.
 
     Generated files are refreshed and files belonging to departed devices are
@@ -255,7 +294,7 @@ def save(topology: Topology, folder: Path, *, features: Features | None = None) 
     """
     folder = Path(folder)
     write_lab(topology, folder)
-    write_text_lf(folder / SETTINGS_NAME, _settings(features or Features()))
+    write_settings(folder, features or Features())
     return folder
 
 
@@ -290,6 +329,8 @@ def load(folder: Path) -> Scenario:
                 f"This scenario was written by a newer version of Kathara GUI "
                 f"(format {version}, this version reads {FORMAT_VERSION}). Update to open it."
             )
+        # Anything else in it, such as the ``exam_lock`` an earlier build
+        # wrote (F48, removed by F51), is ignored and dropped by the next write.
         features = Features(**stored.get("features", {}))
 
     # The folder's own name is the better title when lab.conf carries none:
@@ -310,7 +351,7 @@ def load(folder: Path) -> Scenario:
     # on the same spot and the diagram would be unreadable until dragged apart
     # by hand. Only ever applied when there is no layout to lose.
     if needs_layout(topology):
-        positions = arrange(topology)
+        positions, zones = _arrange_by_as(topology, folder)
         topology = topology.model_copy(
             update={
                 "nodes": [
@@ -318,7 +359,8 @@ def load(folder: Path) -> Scenario:
                     if node.name in positions
                     else node
                     for node in topology.nodes
-                ]
+                ],
+                "zones": zones or topology.zones,
             }
         )
 

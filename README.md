@@ -11,21 +11,24 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 ## Status
 
-Under development. Phases 0–3 complete — integration spike and CI, domain model and
-`lab.conf` codec, topology editor, and addressing with conflict detection. Phase 6
-(accessibility) has advanced alongside them rather than after: the palette, reflow to 200%
-zoom and keyboard equivalence are built and asserted in tests. Screen readers are out of
-scope by decision (D10 in `PLAN.md`).
+Every requirement is built (82 of 87) or dropped by decision (5). You can design a
+topology on a canvas or from the keyboard, group it into named zones, plan the addressing
+with conflict detection, deploy it with one click, restart a single device, verify every
+link, capture what was configured inside the containers, and save, export, import and
+reopen scenarios, including labs made without this application; a BGP lab is laid out by
+autonomous system. An instructor can withdraw assistive features for an exam and send the
+scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
+(D9).
 
-Phase 4 (deploy, diagnostics, terminal) is in progress: labs deploy, conflicting deployments
-are caught, and links are verified; the in-app terminal is outstanding.
+It has passed a manual procedure on Windows, now 131 steps: 121 passed, 2 describe features
+dropped by decision, and 8, for the features added on 2026-10-29, are not yet run by hand.
+The installer has been run on a clean Windows 11 machine, and an EN 301 549 conformance
+table states partial conformance, by decision: screen readers are out of scope (D10 in
+`PLAN.md`).
 
-Phase 5 is largely done. A scenario is a Kathará lab folder and exports as a plain zip of
-it, so a lab can be configured by hand, captured, saved, reopened and redeployed with its
-configuration and canvas layout intact — and anyone can unzip it and read the files. Labs
-made without this application import too: their addressing is recovered from the startup
-scripts, and a crossing-minimising layout is applied since they carry no coordinates.
-Variants, a PDF manual viewer and an in-app terminal remain.
+Not built, by decision (D11): an in-app terminal (copy the `docker exec` command from the
+Laboratory panel instead), scenario variants, example labs, a PDF manual viewer and
+autosave. No release is published yet. `docs/REQUIREMENTS.md` has the full list.
 
 - **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
   will not do, with current status against each item.

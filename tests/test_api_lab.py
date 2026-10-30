@@ -117,3 +117,14 @@ def test_wipe_needs_the_token(session: Session) -> None:
     app.dependency_overrides[get_session] = lambda: session
     with TestClient(app) as anonymous:
         assert anonymous.post("/api/lab/wipe").status_code == 401
+
+
+def test_restarting_a_device_the_lab_does_not_have_is_refused(client: TestClient) -> None:
+    """FR-19 refuses before touching Docker; the restart itself is a docker test."""
+    topology = {"name": "lab", "nodes": [{"name": "r1"}]}
+    body = client.post(
+        "/api/lab/restart", json={"topology": topology, "devices": ["r9"]}
+    ).json()
+    assert body["message"] == "Could not restart: no device called r9."
+    body = client.post("/api/lab/restart", json={"topology": topology, "devices": []}).json()
+    assert body["message"] == "Choose a device to restart."

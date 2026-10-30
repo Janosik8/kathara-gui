@@ -212,6 +212,23 @@ def undeploy(
     return _status_response(result)
 
 
+class RestartRequest(TopologyRequest):
+    devices: list[str] = Field(description="The devices to restart; the rest keep running.")
+
+
+@router.post("/restart", response_model=StatusResponse)
+def restart(request: RestartRequest, session: Session = Depends(get_session)) -> StatusResponse:
+    """Restart chosen devices of the running lab from their files (FR-19).
+
+    The design is read-only while the lab runs (D9), so the deployed snapshot
+    still describes what runs: nothing to adopt or forget here.
+    """
+    result = runner.restart(
+        request.topology, session.lab_dir(request.topology), request.devices
+    )
+    return _status_response(result)
+
+
 @router.post("/verify", response_model=DiagnosticsResponse)
 def verify(
     request: TopologyRequest, session: Session = Depends(get_session)

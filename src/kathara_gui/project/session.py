@@ -162,10 +162,25 @@ class Session:
         with self._lock:
             return self._features
 
-    def set_features(self, features: Features) -> Features:
+    def adopt_settings(self, features: Features) -> None:
+        """The switches of a scenario just opened."""
         with self._lock:
             self._features = features
+
+    def set_features(self, features: Features) -> Features:
+        """Change the switches (FR-28), and write them at once."""
+        with self._lock:
+            self._features = features
+            self._write_settings()
             return self._features
+
+    def _write_settings(self) -> None:
+        # The switches are the scenario's, not the design's, so they are
+        # written at once rather than waiting for the next Save: a switch that
+        # waited for Save would look set and not be. A scenario with no
+        # folder yet gets them with its first save.
+        if self._path is not None and self._path.is_dir():
+            scenario.write_settings(self._path, self._features)
 
     @property
     def topology(self) -> Topology:

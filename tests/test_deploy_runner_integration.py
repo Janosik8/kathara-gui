@@ -92,6 +92,59 @@ def test_undeploy_stops_everything(working_lab: Topology, lab_dir: Path) -> None
     assert status.deployed is False
 
 
+def _container_ids(topology: Topology, lab_dir: Path) -> dict[str, str]:
+    from Kathara.utils import generate_urlsafe_hash
+
+    from kathara_gui.kathara import connection
+
+    machines = connection.manager().get_machines_api_objects(
+        lab_hash=generate_urlsafe_hash(topology.name)
+    )
+    return {m.labels["name"]: m.id for m in machines}
+
+
+def test_restarting_one_device_leaves_the_rest_running(
+    working_lab: Topology, lab_dir: Path
+) -> None:
+    """FR-19: r1 is a new container, r2 the same one, and the link still works."""
+    runner.deploy(working_lab, lab_dir, confirm=True)
+    before = _container_ids(working_lab, lab_dir)
+
+    status = runner.restart(working_lab, lab_dir, ["r1"])
+    after = _container_ids(working_lab, lab_dir)
+
+    assert sorted(status.running) == ["r1", "r2"]
+    assert "Restarted r1" in (status.message or "")
+    assert after["r2"] == before["r2"]
+    assert after["r1"] != before["r1"]
+    assert diagnostics.verify(working_lab, lab_dir).healthy is True
+
+
+def test_a_restarted_device_reads_its_files_again(working_lab: Topology, lab_dir: Path) -> None:
+    """The point of restarting: a file changed since the deploy takes effect."""
+    runner.deploy(working_lab, lab_dir, confirm=True)
+    marker = lab_dir / "r1" / "etc" / "kgui-restart-marker"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("read again\n", encoding="utf-8")
+
+    status = runner.restart(working_lab, lab_dir, ["r1"])
+    assert "r1" in status.running
+
+    import docker
+
+    container = docker.from_env().containers.get(_container_ids(working_lab, lab_dir)["r1"])
+    result = container.exec_run("cat /etc/kgui-restart-marker")
+    assert result.exit_code == 0
+    assert b"read again" in result.output
+
+
+def test_restarting_a_device_that_is_not_running_says_so(
+    working_lab: Topology, lab_dir: Path
+) -> None:
+    status = runner.restart(working_lab, lab_dir, ["r1"])
+    assert "not running" in (status.message or "")
+
+
 def test_diagnostics_pass_on_a_correct_link(working_lab: Topology, lab_dir: Path) -> None:
     runner.deploy(working_lab, lab_dir, confirm=True)
     report = diagnostics.verify(working_lab, lab_dir)

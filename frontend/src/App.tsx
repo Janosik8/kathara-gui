@@ -10,6 +10,7 @@ import {
   type Conflicts,
   type EnvironmentCheck,
   type EverythingResponse,
+  type Features,
   type Preferences,
   type ScenarioSummary,
   type StatusResponse,
@@ -20,6 +21,7 @@ import { AddressingPanel } from "./panels/AddressingPanel";
 import { CollisionDomainsPanel, referencedDomains } from "./panels/CollisionDomainsPanel";
 import { AlignmentToolbar } from "./panels/AlignmentToolbar";
 import { ConnectModeBar } from "./panels/ConnectModeBar";
+import { ExamPanel } from "./panels/ExamPanel";
 import { ExplainContext } from "./panels/Explain";
 import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
@@ -35,6 +37,7 @@ import {
 } from "./panels/PanelSection";
 import { type ScenarioDialog, ScenarioDrawer } from "./panels/ScenarioDrawer";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
+import { ZonesPanel } from "./panels/ZonesPanel";
 import { Palette, suggestName } from "./panels/Palette";
 import { ALIGNMENT_LABELS, type AlignmentAction, computeAlignment } from "./store/alignment";
 import { labNameProblem, type Operation } from "./store/operations";
@@ -43,6 +46,7 @@ import {
   type DeviceKind,
   type PendingEnd,
   type Topology,
+  type Zone,
   newNode,
   suggestCollisionDomain,
 } from "./types";
@@ -175,8 +179,12 @@ const PANEL_MIN = 208;
  * repairs a stored layout against it, so the two must name the same ids.
  */
 const DEFAULT_LAYOUT: Preferences["panels"] = {
-  left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
-  right: { order: ["details", "addressing", "arrange", "scenario", "lab"], collapsed: [] },
+  left: { order: ["palette", "connect", "domains", "zones", "topology"], collapsed: [] },
+  right: {
+    order: ["details", "addressing", "arrange", "scenario", "exam", "lab"],
+    // The exam switches matter to an instructor, rarely to anyone else.
+    collapsed: ["exam"],
+  },
 };
 
 /**
@@ -227,6 +235,16 @@ export default function App() {
 
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedLink, setSelectedLink] = useState<string | null>(null);
+  // A zone selected on the canvas or in the Zones panel (FR-10). One thing is
+  // selected at a time, so Delete is never ambiguous.
+  const [selectedZone, setSelectedZoneState] = useState<string | null>(null);
+  const selectZone = useCallback((id: string | null) => {
+    setSelectedZoneState(id);
+    if (id !== null) {
+      setSelected([]);
+      setSelectedLink(null);
+    }
+  }, []);
 
   // Connect mode: click one device, then another, and a link appears — the
   // interaction people expect from a topology editor.
@@ -269,6 +287,17 @@ export default function App() {
   const [environment, setEnvironment] = useState<EnvironmentCheck[]>([]);
   const [canDeploy, setCanDeploy] = useState(false);
   const [canVerify, setCanVerify] = useState(true);
+  const [examBusy, setExamBusy] = useState(false);
+  const features: Features = {
+    subnet_calculator: canAllocate,
+    addressing_validation: canValidate,
+    infrastructure_verification: canVerify,
+  };
+  const applyFeatures = useCallback((f: Features) => {
+    setCanAllocate(f.subnet_calculator);
+    setCanValidate(f.addressing_validation);
+    setCanVerify(f.infrastructure_verification);
+  }, []);
   const [labBusy, setLabBusy] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Conflicts | null>(null);
   // Set when Verify links found the containers' addresses differing from the
@@ -299,10 +328,15 @@ export default function App() {
   /** The open scenario came from outside this application (test 9A.1). */
   const [foreign, setForeign] = useState(false);
   // A file whose scenario is already in the workspace, held while the user
-  // decides whether it replaces that one (test 5C.1).
-  const [pendingImport, setPendingImport] = useState<{ file: File; message: string } | null>(
-    null,
-  );
+  // decides whether it replaces that one (test 5C.1); or a sealed file, held
+  // until its password is given (note 1). The password is kept for the
+  // replace question that may follow it.
+  const [pendingImport, setPendingImport] = useState<{
+    file: File;
+    message: string;
+    sealed?: boolean;
+    password?: string;
+  } | null>(null);
 
   // Panel widths, in pixels. Kept here rather than in CSS because the user
   // drags them; the stylesheet supplies only the starting point and the floor.
@@ -748,9 +782,11 @@ export default function App() {
       })
       .catch(() => setCanDeploy(false));
 
+    // All three switches, for a page reloaded over a scenario already open;
+    // not only the one a refusal would otherwise reveal.
     api
-      .features()
-      .then((f) => setCanVerify(f.infrastructure_verification))
+      .projectState()
+      .then((state) => applyFeatures(state.features))
       .catch(() => undefined);
 
     api
@@ -762,7 +798,7 @@ export default function App() {
       .catch(() => undefined);
 
     refreshEverything();
-  }, [refreshEverything]);
+  }, [refreshEverything, applyFeatures]);
 
   const runLabAction = useCallback(
     async (
@@ -847,6 +883,11 @@ export default function App() {
   const removeSelected = useCallback(() => {
     // Selecting a link clears any device selection and vice versa, so at most
     // one of these branches can apply.
+    if (selectedZone) {
+      edit({ type: "removeZone", id: selectedZone });
+      setSelectedZoneState(null);
+      return;
+    }
     if (selectedLink) {
       edit({ type: "removeLink", collisionDomain: selectedLink });
       setSelectedLink(null);
@@ -854,7 +895,32 @@ export default function App() {
     }
     for (const name of selected) edit({ type: "removeNode", name });
     setSelected([]);
-  }, [edit, selected, selectedLink]);
+  }, [edit, selected, selectedLink, selectedZone]);
+
+  /** Restart devices of the running lab, leaving the rest running (FR-19). */
+  const restartDevices = useCallback(
+    async (devices: string[]) => {
+      setLabBusy("restart");
+      try {
+        const result = await api.restart(topology, devices);
+        setLabStatus(result);
+        // Results from before describe containers that are no longer there.
+        setDiagnostics(null);
+        if (result.message) setStatus(result.message);
+      } catch (err) {
+        fail(err);
+      } finally {
+        setLabBusy(null);
+      }
+    },
+    [topology],
+  );
+
+  const changeZone = useCallback(
+    (id: string, changes: Partial<Omit<Zone, "id">>, label: string) =>
+      edit({ type: "updateZone", id, changes, label }),
+    [edit],
+  );
 
   const align = useCallback(
     (action: AlignmentAction) => {
@@ -967,13 +1033,13 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, []);
 
-  const exportScenario = useCallback(async () => {
+  const exportScenario = useCallback(async (password?: string) => {
     setScenarioBusy("export");
     try {
-      const blob = await api.exportProject(topology);
-      download(blob, `${topology.name || "scenario"}.zip`);
+      const blob = await api.exportProject(topology, undefined, password);
+      download(blob, `${topology.name || "scenario"}${password ? ".kgx" : ".zip"}`);
       markSaved(); // exporting saves the folder first, so it is on disk
-      setStatus("Scenario exported.");
+      setStatus(password ? "Scenario exported, sealed with a password." : "Scenario exported.");
     } catch (err) {
       fail(err);
     } finally {
@@ -1007,6 +1073,13 @@ export default function App() {
   const exportButton = useRef<HTMLButtonElement>(null);
   const importButton = useRef<HTMLButtonElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const refocusImport = useRef(false);
+  useEffect(() => {
+    if (scenarioBusy === null && refocusImport.current) {
+      refocusImport.current = false;
+      importButton.current?.focus();
+    }
+  }, [scenarioBusy]);
 
   const closeDialog = useCallback(() => {
     const opener = {
@@ -1049,9 +1122,7 @@ export default function App() {
       setSelectedLink(null);
       // Feature toggles belong to the scenario, so opening one adopts its
       // restrictions rather than keeping the previous scenario's.
-      setCanAllocate(result.features.subnet_calculator);
-      setCanValidate(result.features.addressing_validation);
-      setCanVerify(result.features.infrastructure_verification);
+      applyFeatures(result.features);
       setStatus(
         result.foreign
           ? `Opened ${result.topology.name}, imported from outside this application.`
@@ -1059,7 +1130,7 @@ export default function App() {
       );
       void checkRunning(result.topology);
     },
-    [load, checkRunning],
+    [load, checkRunning, applyFeatures],
   );
 
   const openScenario = useCallback(
@@ -1109,16 +1180,49 @@ export default function App() {
     }
   }, [load]);
 
+  /** Change the switches; the server answers with where they stand (FR-28). */
+  const setExamFeatures = useCallback(
+    async (next: Features) => {
+      setExamBusy(true);
+      try {
+        const state = await api.setFeatures(next);
+        applyFeatures(state.features);
+        setStatus("Feature switches changed.");
+      } catch (err) {
+        fail(err);
+      } finally {
+        setExamBusy(false);
+      }
+    },
+    [applyFeatures],
+  );
+
   const importScenario = useCallback(
-    async (file: File, replace = false) => {
+    async (file: File, replace = false, password?: string) => {
       setScenarioBusy("import");
       try {
-        adopt(await api.importProject(file, replace));
+        adopt(await api.importProject(file, replace, password));
+        if (password !== undefined && !replace) {
+          // The password strip closes, so focus goes back to what opened it,
+          // once that is no longer disabled by the import in progress.
+          setPendingImport(null);
+          setScenarioDialog(null);
+          refocusImport.current = true;
+        }
       } catch (err) {
         // A scenario of that name is already in the workspace: asked, not
         // replaced. Only the server knows the name, worked out from the file's.
         if (err instanceof ApiError && err.status === 409 && !replace) {
-          setPendingImport({ file, message: err.message });
+          setPendingImport({ file, message: err.message, password });
+          setScenarioDialog("import");
+          return;
+        }
+        // Sealed: asked for its password, and asked again after a wrong one.
+        if (
+          err instanceof ApiError &&
+          (err.status === 428 || (err.status === 403 && password !== undefined))
+        ) {
+          setPendingImport({ file, message: err.message, sealed: true });
           setScenarioDialog("import");
           return;
         }
@@ -1270,7 +1374,7 @@ export default function App() {
         (event.key === "Delete" || event.key === "Backspace") &&
         // A selected link counts too; requiring a selected *device* meant
         // Delete silently did nothing when only a link was chosen.
-        (selected.length > 0 || selectedLink !== null) &&
+        (selected.length > 0 || selectedLink !== null || selectedZone !== null) &&
         !isTreeItem(event.target)
       ) {
         event.preventDefault();
@@ -1288,6 +1392,7 @@ export default function App() {
     removeSelected,
     selected,
     selectedLink,
+    selectedZone,
     connectMode,
     leaveConnectMode,
     toggleConnectMode,
@@ -1471,7 +1576,7 @@ export default function App() {
           <input
             ref={importInput}
             type="file"
-            accept=".zip,.conf,application/zip,text/plain"
+            accept=".zip,.kgx,.conf,application/zip,text/plain"
             className="file-input"
             aria-label="Scenario file to import"
             tabIndex={-1}
@@ -1541,11 +1646,17 @@ export default function App() {
           validateName={(name) => labNameProblem(name, otherScenarioNames)}
           onOpen={openScenario}
           onNew={() => void newScenario()}
-          importConflict={pendingImport?.message ?? null}
+          importConflict={pendingImport && !pendingImport.sealed ? pendingImport.message : null}
           onReplace={() => {
-            if (pendingImport) void importScenario(pendingImport.file, true);
+            if (pendingImport) {
+              void importScenario(pendingImport.file, true, pendingImport.password);
+            }
           }}
-          onExport={() => void exportScenario()}
+          importPassword={pendingImport?.sealed ? pendingImport.message : null}
+          onImportPassword={(password) => {
+            if (pendingImport) void importScenario(pendingImport.file, false, password);
+          }}
+          onExport={(password) => void exportScenario(password)}
           onChooseFile={() => importInput.current?.click()}
           onClose={closeDialog}
         />
@@ -1605,6 +1716,20 @@ export default function App() {
               lockable: true,
               content: <CollisionDomainsPanel topology={topology} onDispatch={edit} />,
             },
+            zones: {
+              title: "Zones",
+              headingId: "zones-heading",
+              lockable: true,
+              content: (
+                <ZonesPanel
+                  topology={topology}
+                  selected={selected}
+                  selectedZone={selectedZone}
+                  onSelectZone={selectZone}
+                  onDispatch={edit}
+                />
+              ),
+            },
             topology: {
               title: "Topology",
               headingId: "topology",
@@ -1637,7 +1762,11 @@ export default function App() {
             onSelect={activate}
             onSelectCollisionDomain={activateDomain}
             onMove={(name, position) => edit({ type: "moveNode", name, position })}
+            onMoveMany={(positions) => edit({ type: "moveNodes", positions })}
             onMoveDomain={(name, position) => edit({ type: "moveDomain", name, position })}
+            onZoneChange={changeZone}
+            onSelectZone={selectZone}
+            selectedZone={selectedZone}
             onSelectLink={(domain) => {
               // Exactly one thing is selected at a time, so Delete is never
               // ambiguous about what it will remove.
@@ -1729,6 +1858,19 @@ export default function App() {
                 />
               ),
             },
+            exam: {
+              // Still keyed "exam" so that panel layouts already saved keep it
+              // where the user put it; named for what it holds, not one use of it.
+              title: "Feature switches",
+              headingId: "switches-heading",
+              content: (
+                <ExamPanel
+                  features={features}
+                  busy={examBusy}
+                  onSetFeatures={(f) => void setExamFeatures(f)}
+                />
+              ),
+            },
             lab: {
               title: "Laboratory",
               headingId: "lab-heading",
@@ -1751,6 +1893,8 @@ export default function App() {
                   onCheck={checkLab}
                   everything={everything}
                   onWipe={wipeLabs}
+                  selectedDevices={selected}
+                  onRestart={(devices) => void restartDevices(devices)}
                   onVerify={verifyLinks}
                   verifyDrift={verifyDrift}
                   onCaptureAndVerify={captureAndVerify}

@@ -107,6 +107,22 @@ export interface CollisionDomain {
   position?: Position | null;
 }
 
+export type ZoneShape = "rectangle" | "ellipse" | "cloud";
+
+/**
+ * A named area drawn behind devices: an OSPF area, an AS, a LAN (FR-10). A
+ * layer of its own: moving a device does not move its zone, nor the reverse.
+ */
+export interface Zone {
+  id: string;
+  name: string;
+  shape: ZoneShape;
+  /** Top-left corner. */
+  position: Position;
+  width: number;
+  height: number;
+}
+
 export interface Topology {
   name: string;
   description?: string | null;
@@ -116,6 +132,8 @@ export interface Topology {
   web?: string | null;
   nodes: Node[];
   collision_domains: CollisionDomain[];
+  /** Optional: a topology from before zones has none. */
+  zones?: Zone[];
 }
 
 export interface TopologyState {
