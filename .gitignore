@@ -24,9 +24,6 @@ src/kathara_gui/static/
 .labs/
 *.kgui
 
-
-
-
 .DS_Store
 
 # Generated labs (see --workspace)

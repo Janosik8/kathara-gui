@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; side panels hidden; zones, sealed export, restarting one device)
+- **Last updated:** 2026-11-01 (addresses on the canvas on by default; the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; side panels hidden; zones, sealed export, restarting one device)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---

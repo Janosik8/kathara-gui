@@ -65,7 +65,8 @@ your browser. The same command works on macOS, Windows and Linux.
 
 You need **uv** (it provides Python and installs the application) and, once, **Node.js**
 (to build the interface). On Windows: `winget install astral-sh.uv` and
-`winget install OpenJS.NodeJS.LTS`, then open a new terminal. Then get the code and run the
+`winget install OpenJS.NodeJS.LTS` (and `winget install Git.Git` if Git is missing), then
+open a new terminal. Then get the code and run the
 installer in its folder:
 
 ```
@@ -90,7 +91,8 @@ build product and is not in git, so either installs a copy that answers "Kathara
 interface" (bug 38, F45). To update, `git pull` and run the installer again. To remove it, run `.\uninstall.cmd`
 or `./uninstall.sh`; your labs are kept.
 
-Your browser opens automatically. To stop the server, press Ctrl+C.
+Your browser opens automatically. To stop the server, press Ctrl+C. How to use the
+application, panel by panel, is in **[docs/USAGE.md](docs/USAGE.md)**.
 
 Deploying writes each lab to `./kathara-labs/<name>`, next to wherever you started the
 command; the path is printed at startup. To open a shell on a running device, choose it in
@@ -122,6 +124,21 @@ npm --prefix frontend run build
 
 In PowerShell on Windows, type `npm.cmd` instead of `npm`: the default execution policy
 blocks `npm.ps1`. See `docs/USAGE.md` §2.
+
+How the project is worked on:
+
+- **Verify against real containers, not only unit tests.** Several changes that passed every
+  test were still wrong in the running application (F7, F11, F13, F16 in `PLAN.md`);
+  `uv run pytest -m docker` and a run by hand are worth the minutes.
+- **Measure claims rather than assert them.** The layout counts crossings, the palette tests
+  compute contrast ratios, the reflow tests parse the real stylesheet.
+- **Keep the documents in step with each change**, and recount the requirement and step
+  totals from their tables rather than incrementing them.
+- **Generated files are LF only**, because they run inside Linux containers whatever the
+  host; `.gitattributes` keeps the checkout consistent (`.cmd` files excepted).
+- **On Windows, never read or rewrite a source file with PowerShell 5.1's `Get-Content`**:
+  it reads UTF-8 without a BOM as ANSI and mangles characters such as `á`, `—` and `ł`.
+- Any interface change is checked against `docs/CONFORMANCE.md`, and its row updated.
 
 ### Tests
 

@@ -355,7 +355,7 @@ The four not ticked are features that are not built. The five steps added afterw
 (F43–F46) were run as they came; four passed by 2026-10-29, among them the installer on a
 clean Windows 11 machine. Every defect it
 reported is traced in three places. The tester's words go on the step's `Notes:` line or in
-`bugs/bugs.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
+`bugs/reported-defects.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
 retested by hand, and the result is noted under the original report.
 
 The striking result is how much the automated suite missed. Every finding from F20 to F41,
@@ -488,3 +488,203 @@ drawing one — without the other.
 live configuration and accessibility. It is the combination that matters: closing the loop
 from an idea to a running network and back again, rather than serving one point on that
 path. That combination is what this work contributes.
+
+---
+
+## Appendix A. Capabilities and scenarios
+
+The nine capabilities of the thesis specification, with the scenarios that define them,
+as agreed with the supervisor. They are the source of the requirements: `REQUIREMENTS.md`
+traces each requirement to them, and says which were built and which were dropped
+(Capability 7 and the scenarios that need variants or duplication, D11). Where this text and
+the application differ, `REQUIREMENTS.md` is the authority; the specification was revised
+where the application had good reason to differ, for example Capability 4's results given in
+words rather than colours (Capability 6).
+
+### Capability 1 — Visual Topology and Addressing Design
+
+**Description:** This capability replaces the manual, text-based creation of `lab.conf` files with an intuitive graphical interface. It allows users to visually build network structures. The tool must be highly flexible: for instructors, it provides automated assistance in generating and validating IP addressing plans to reduce design time. For students, these automated assistants can be restricted to test their knowledge. **Output:** Generation of a ready `lab.conf` and device-specific configuration files. **Directional Assumption:** The initial topology generation process is driven by the instructor; the tool should streamline this process. The resulting topology can be checked for errors.
+
+**Scenario A: Instructor Designing a Base Exam**
+
+* **Step 1:** The instructor opens the application and creates a new workspace.
+* **Step 2:** They drag and drop router icons to map out a network.
+* **Step 3:** The Addressing Plan Configurator automatically prompts them to define subnets for the drawn links, verifying there are no overlapping IP pools.
+
+**Scenario B: Student Practice in Restricted Mode**
+
+* **Step 1:** A student uses the tool to build a topology from scratch for a homework assignment.
+* **Step 2:** They draw the connections and manually input the IP addresses and subnet masks.
+* **Step 3:** Because the automated calculator is disabled (via Capability 8), the system accepts the input without correcting it, forcing the student to verify their own subnet math.
+
+**Scenario C: Designing a Complex Data Center Fabric**
+
+* **Step 1:** A user wants to simulate a dense Spine-Leaf data center architecture.
+* **Step 2:** They utilize the GUI's alignment tools and grid snapping to neatly organize dozens of nodes.
+* **Step 3:** The visual interface allows them to easily track the dense web of connections that would be a nightmare to read and manage in a plain-text `lab.conf` file.
+
+### Capability 2 — Iterative Scenario Development, Modification, and Variant Creation
+
+**Description:** Modifying an existing scenario setup has traditionally been a tedious process. This capability allows users to seamlessly load an existing "base scenario" and visually iterate upon it to create multiple variants (e.g., for different student groups, or scaling up a network) without ever touching the underlying text files.
+
+**Scenario A: Creating Exam Variants to Prevent Cheating**
+
+* **Step 1:** The examiner loads a saved "Base Exam" topology.
+* **Step 2:** For Group A, they delete a core link and add a backup path, saving it as "Variant A".
+* **Step 3:** They reload the base file. For Group B, they add an entirely new router, saving it as "Variant B". The addressing calculator automatically adjusts IPs for both variants without overlapping.
+
+**Scenario B: Scaling Up an Existing Network**
+
+* **Step 1:** An instructor wants to extend a previous week's lab (a single-site LAN) into a WAN setup.
+* **Step 2:** They load last week's state, select the existing nodes, and visually group them as "Site 1".
+* **Step 3:** They duplicate the setup to create "Site 2" and draw a single WAN link between them, instantly generating a new, complex lab without starting from scratch.
+
+**Scenario C: Rapid Bug Fixing in Exam Scenarios**
+
+* **Step 1:** During an exam test-run, the instructor realizes a specific link creates a physically impossible loop that breaks the intended routing logic.
+* **Step 2:** Instead of digging through `lab.conf` collision domains to find the exact line, they load the GUI, click the problematic link, and hit "Delete."
+* **Step 3:** They click "Save," and the application instantly rewrites the configuration files flawlessly.
+
+### Capability 3 — Automated Configuration and Deployment
+
+**Description:** This feature bridges the gap between the visual design and the actual Kathara environment. It automatically generates all necessary native configuration files in the background and instantly deploys the virtual network containers with a single click, allowing users to focus on network concepts rather than file management.
+
+**Scenario A: Student Deploying a Provided Exam**
+
+* **Step 1:** The student loads the topology file provided by the instructor into the GUI.
+* **Step 2:** The student clicks a single "Deploy Laboratory" button.
+* **Step 3:** The application automatically translates the visual layout into native Kathara configuration files and instantly spins up the virtual containers.
+
+**Scenario B: Instructor Rapid Prototyping**
+
+* **Step 1:** An instructor is experimenting with a new BGP setup and isn't sure if a specific connection model will work.
+* **Step 2:** They quickly draw the topology in the GUI and hit "Deploy."
+* **Step 3:** The lab starts instantly, allowing the instructor to test the concept immediately without spending 15 minutes manually writing setup scripts. If it fails, they tear it down with one click, modify the GUI (with Capability 2), and deploy again.
+
+**Scenario C: Seamless Resumption of Saved Work**
+
+* **Step 1:** A student loads a previously exported state (from Capability 5) containing both the topology layout and the internal device configurations.
+* **Step 2:** They click "Deploy."
+* **Step 3:** The system not only sets up the `lab.conf` but automatically pushes the saved `.startup` scripts and configurations into the containers, bringing the lab exactly back to where the student left off.
+
+### Capability 4 — Infrastructure Verification and Diagnostics
+
+**Description:** To ensure that the baseline infrastructure is functioning properly before advanced routing protocols are applied, this capability offers automated diagnostic tools. It runs initial tests on direct connections to instantly identify and highlight any underlying physical, data-link, or L3 misconfigurations.
+
+**Scenario A: Base Topology Verification**
+
+* **Step 1:** A user finishes deploying a complex lab and wants to ensure the baseline is functional.
+* **Step 2:** They click "Verify Infrastructure."
+* **Step 3:** The application executes automated `ping` scripts across all direct links. The GUI lists every link with its result in words and a symbol (✓ Pass, ✕ Fail with the reason, – Skipped where an end has no address) and a summary, confirming the base setup is ready for routing configuration. Results are given as text rather than only as colours on the canvas, so that they do not depend on colour vision (Capability 6).
+
+**Scenario B: Troubleshooting a Physical Layer Mistake**
+
+* **Step 1:** A student deploys an exam but cannot establish an OSPF adjacency.
+* **Step 2:** They run the diagnostic tool. The link between R1 and R2 is reported as ✕ Fail, with the reason.
+* **Step 3:** The student realizes they visually connected eth0 to eth1, but configured the IP addresses on the wrong interfaces inside the terminal. The tool immediately isolated the problem to a baseline connection issue.
+
+### Capability 5 — State Extraction and Scenario Management
+
+**Description:** This capability simplifies the management of laboratory states by automatically pulling current running configurations from all active virtual containers. It allows users to effortlessly export, save, reload, and share complete educational scenarios without having to manually log into individual container terminals to copy files.
+
+**Scenario A: Hibernating a Lab Session**
+
+* **Step 1:** A student runs out of time during a 90-minute lab class while configuring BGP.
+* **Step 2:** They click "Export Current State" in the GUI. The application automatically pulls the `run conf` from all active containers.
+* **Step 3:** The student sends the single generated file to their cloud drive, goes home, and loads it into their local Kathara GUI to continue exactly where they left off.
+
+**Scenario B: Submitting a Completed Exam**
+
+* **Step 1:** An exam ends. Instead of zipping multiple chaotic folders or taking screenshots, the student clicks "Export Current State."
+* **Step 2:** The application bundles the visual layout and all running configurations into a single, clean file.
+* **Step 3:** The student uploads this single file to the university's e-learning platform as their final exam submission.
+
+**Scenario C: Automated Grading and Inspection**
+
+* **Step 1:** An instructor downloads a student's exported state file and loads it into their own GUI instance.
+* **Step 2:** The GUI perfectly recreates the student's topology layout.
+* **Step 3:** The instructor can visually inspect the network and deploy it to check the running configurations inside the containers, making the grading process highly efficient.
+
+### Capability 6 — Accessibility and Usability Compliance
+
+Recognizing the legal and ethical imperative of inclusive design, this application is engineered to follow the Web Content Accessibility Guidelines (WCAG 2.1), national regulations concerning digital accessibility for public entities (EN 301 549), and internal directives of the AGH University, for users with colour vision deficiencies, low vision, and those working by keyboard alone: no information is conveyed by colour alone, contrast meets WCAG 2.1, the interface remains usable at 200% zoom and under the system's dark and high-contrast themes, and every function is operable from the keyboard. Support for screen readers, and so for blind users, is outside the scope of this thesis; the application produces no sound, so it needs no adaptation for users who are deaf or hard of hearing. The system prioritizes a polished, reliable experience over an excess of unrefined features, ensuring usability for diverse user groups. Furthermore, special emphasis is placed on creating a reliable and refined tool with an interface fully adapted to accessibility best practices.
+
+**Scenario A: Colour Vision Deficiency (colour blindness) Support**
+
+* **Step 1:** A user with Deuteranomaly (red-green colour blindness) accesses the application.
+* **Step 2:** No separate profile has to be switched on: the interface never conveys a status by colour alone, and its palette is chosen to stay distinguishable under colour vision deficiencies and in greyscale.
+* **Step 3:** During the execution of the Infrastructure Verification tool, every result carries a symbol and a word (✓ Pass, ✕ Fail, – Skipped), and device and addressing states likewise carry symbols, words and distinct shapes, guaranteeing unequivocal diagnostic feedback.
+
+**Scenario B: Low Vision UI Scaling**
+
+* **Step 1:** A user with visual impairments experiences difficulty perceiving small terminal fonts and interface labels.
+* **Step 2:** The user enlarges the interface with the browser's zoom or the operating system's display and text scaling, to 150% or up to 200%. The application relies on these rather than on a scaling control of its own, so that the user's existing setting applies everywhere and the two cannot conflict.
+* **Step 3:** The graphical user interface dynamically adapts to these parameters: text, node icons and labels grow, panels reflow or stack without horizontal scrolling, and connection lines and labels do not overlap or break the canvas layout, thereby remaining fully legible.
+
+**Scenario C: High Contrast Theme for Cognitive and Visual Focus**
+
+* **Step 1:** A student operating in a high-luminance environment or experiencing visual processing strain sets their operating system to dark mode, or to a high-contrast theme.
+* **Step 2:** The application follows that setting without being configured separately, as it does the system's increased-contrast and reduced-motion preferences.
+* **Step 3:** The canvas background transitions to a dark hue, while network nodes and links are drawn in colours whose contrast is verified against WCAG 2.1 (1.4.3 and 1.4.11) and with high-contrast borders; under a high-contrast theme the system's own colours are used. This significantly enhances readability and mitigates ocular fatigue.
+
+### Capability 7 — Shared Working Space (Real-Time Collaboration)
+
+**Description:** This capability introduces a collaborative environment where multiple users can work on a single network topology simultaneously. It transforms the solitary act of network configuration into a team-based exercise, highly useful for group projects or live troubleshooting sessions.
+
+**Scenario A: Group Project Collaboration**
+
+* **Step 1:** A group of students is tasked with designing a multi-area corporate network. Student A creates a "Shared Session" and sends a link to Students B and C.
+* **Step 2:** All three students join the canvas. Student A builds the core network, while B and C build the branch offices simultaneously.
+* **Step 3:** They see each other's nodes appearing in real-time, completely eliminating the need to merge separate `lab.conf` files later.
+
+**Scenario B: Live Instructor Assistance**
+
+* **Step 1:** A student is stuck on a topology assignment at home and cannot figure out a subnetting issue.
+* **Step 2:** They generate a live share link and send it to the instructor.
+* **Step 3:** The instructor joins the session, visually points out the missing link on the canvas, and demonstrates how to fix it in real-time without needing to send files back and forth.
+
+**Scenario C: ISP Simulation Roleplay**
+
+* **Step 1:** An instructor sets up a massive blank canvas for an "Internet Simulation" lab.
+* **Step 2:** Five different groups of students join the session. Each group is assigned an Autonomous System (AS).
+* **Step 3:** The groups independently build their internal topologies on the same shared canvas, and then visually draw BGP peering links to the other groups' border routers, simulating a real-world multi-ISP environment.
+
+### Capability 8 — Application Services and Mode Management (Feature Toggling)
+
+**Description:** This capability allows for the granular management of application features based on the context of use. Instructors can enable or disable specific capabilities (like the subnet calculator or diagnostic tools) when creating a scenario, ensuring the tool perfectly matches the pedagogical goals of a specific lab or exam.
+
+**Scenario: Strict Exam Mode**
+
+* **Step 1:** An instructor builds a troubleshooting exam.
+* **Step 2:** Before saving, they open the "Mode Management" tab and explicitly disable the "Subnet Calculator" and "Infrastructure Verification" features.
+* **Step 3:** When students open the exam, these app capabilities are locked. Students are forced to rely entirely on manual terminal commands and their own knowledge to pass.
+
+### Capability 9 — Smart Auto-Layout Engine for Legacy Imports
+
+**Description:** When users import legacy, text-based `lab.conf` files that lack explicit X/Y visual coordinates, this capability utilizes graph-drawing algorithms to automatically arrange the nodes. It intelligently spaces out core routers, switches, and edge devices, generating a clean, logical visual representation and preventing a tangled, overlapping mess on the canvas.
+
+**Scenario A: Migrating an Old Database of Scenarios**
+
+* **Step 1:** An instructor wants to reuse a library of 50 older Kathara scenarios that were created purely in text editors over the last few years.
+* **Step 2:** They import a legacy `lab.conf` file into the GUI.
+* **Step 3:** The Auto-Layout Engine parses the file, analyzes the connection links, and automatically draws a well-structured topology on the canvas, instantly modernizing the old material without any manual drag-and-drop effort.
+
+**Scenario B: Importing External Text Topologies**
+
+* **Step 1:** A student finds a raw `lab.conf` snippet for a complex BGP lab on a public GitHub repository and wants to visualize it to understand it better.
+* **Step 2:** They save the text as a `lab.conf` file and open it with the application's import module.
+* **Step 3:** The system generates the visual nodes and links, automatically organizing the distinct Autonomous Systems into separate visual clusters based on their interconnections, allowing the student to grasp the network structure at a glance.
+
+**Scenario C: Untangling a Messy Workspace**
+
+* **Step 1:** A user has been manually building and expanding a massive topology for an hour, and the canvas has become a chaotic, unreadable web of crossing wires and randomly placed nodes.
+* **Step 2:** They select all nodes and click the "Auto-Arrange Topology" button.
+* **Step 3:** The algorithm recalculates the positions, actively minimizing link crossings and snapping nodes into a clear hierarchical layout (e.g., Core-Distribution-Access), instantly cleaning up the visual workspace.
+
+## References
+
+1. Cisco Systems, Inc., *Network Topology Icons*, Cisco Brand Center.
+   https://www.cisco.com/c/en/us/about/brand-center/network-topology-icons.html (accessed 2026-11-01). The device pictures in the application are these icons,
+   used unmodified (`icons/NOTICE.md`).
+2. Cisco Systems, Inc., *Copyright Use and Policies*, Cisco Brand Center.
+   https://www.cisco.com/c/en/us/about/brand-center/copyright-use.html (accessed 2026-11-01).

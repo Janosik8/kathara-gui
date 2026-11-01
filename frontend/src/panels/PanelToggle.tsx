@@ -1,5 +1,5 @@
 /**
- * Hiding a side panel completely, and showing it again (`NOTES/MYNOTES.md`
+ * Hiding a side panel completely, and showing it again (the tester's
  * note 6), so the canvas can have the whole window.
  *
  * A hidden panel leaves a strip the height of the window at its edge, saying

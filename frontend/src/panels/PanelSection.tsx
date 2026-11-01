@@ -1,5 +1,5 @@
 /**
- * One section of a side panel, collapsible and movable (`NOTES/MYNOTES.md`
+ * One section of a side panel, collapsible and movable (the tester's
  * note 3).
  *
  * The heading is a button, the disclosure pattern: one press collapses the

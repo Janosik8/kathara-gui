@@ -1,6 +1,6 @@
 /**
  * The feature switches, in the section of that name, and the exam author's
- * lock on them (FR-28, `NOTES/MYNOTES.md` note 1).
+ * lock on them (FR-28, the tester's note 1).
  *
  * An instructor switches off the subnet calculator, the addressing checks or
  * the link verification. The server refuses what is off, so hiding a button

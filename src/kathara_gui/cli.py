@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         # `uv run` receives it twice; uvicorn treats the second as "force exit",
         # skips the orderly shutdown, and the cancelled lifespan task was
         # logged as an ERROR with two chained tracebacks — a clean stop that
-        # looked like a crash (bug reported in bugs/pwsh.txt).
+        # looked like a crash (bug 21, F22).
         uvicorn.run(app, host=HOST, port=port, log_level="info", lifespan="off")
     except KeyboardInterrupt:
         # uvicorn re-raises the signal after shutting down so that the exit

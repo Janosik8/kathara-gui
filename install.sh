@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-step install of Kathara GUI on macOS and Linux (NOTES/MYNOTES.md note 5, F45).
+# One-step install of Kathara GUI on macOS and Linux (the tester's note 5, F45).
 #
 # Builds the interface, then installs the kathara-gui command with uv. Run it
 # again after a git pull to update. It never installs system software: a

@@ -1,5 +1,5 @@
 @echo off
-rem One-step install of Kathara GUI on Windows (NOTES/MYNOTES.md note 5, F45).
+rem One-step install of Kathara GUI on Windows (the tester's note 5, F45).
 rem
 rem Builds the interface, then installs the kathara-gui command with uv. Run it
 rem again after a git pull to update. A .cmd file rather than .ps1 on purpose:

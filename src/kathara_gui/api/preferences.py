@@ -5,7 +5,7 @@ and the browser keys storage by origin, so whatever a page stored is gone on
 the next launch (F42). A small file in the workspace survives, and the
 workspace is already the one place the application writes to.
 
-Today it holds the side panels' layout (`NOTES/MYNOTES.md` note 3): the order
+Today it holds the side panels' layout (the tester's note 3): the order
 of their sections and which are collapsed. The file is a dot-file, so the
 scenario list, which skips dot-entries, never mistakes it for a lab.
 

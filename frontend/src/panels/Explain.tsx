@@ -1,5 +1,5 @@
 /**
- * Explanations of what a control does, shown only on request (`NOTES/MYNOTES.md`
+ * Explanations of what a control does, shown only on request (the tester's
  * note 4).
  *
  * The ⓘ button in the top bar turns them on. Off, the panels show button
