@@ -1,7 +1,36 @@
 # Design rationale
 
 Why this application exists, what shape it takes, and why each significant choice was made.
-`PLAN.md` records *what* is built and *when*; this document records *why*.
+
+<!-- contents -->
+## Contents
+
+- [1. The problem](#1-the-problem)
+- [2. Why an application, and not scripts or templates](#2-why-an-application-and-not-scripts-or-templates)
+- [3. How each capability is served](#3-how-each-capability-is-served)
+  - [The idea that ties it together](#the-idea-that-ties-it-together)
+- [4. Technology choices](#4-technology-choices)
+  - [Python for everything touching Kathará](#python-for-everything-touching-kathará)
+  - [A browser interface, served locally](#a-browser-interface-served-locally)
+  - [Distributed as a Python package, not a binary](#distributed-as-a-python-package-not-a-binary)
+  - [The rest](#the-rest)
+- [5. Decisions that shape the code](#5-decisions-that-shape-the-code)
+- [6. How it is verified](#6-how-it-is-verified)
+  - [A fourth layer: a scripted manual run, and what it found](#a-fourth-layer-a-scripted-manual-run-and-what-it-found)
+- [7. Scope, and what was left out](#7-scope-and-what-was-left-out)
+  - [Where this sits against existing tools](#where-this-sits-against-existing-tools)
+- [Appendix A. Capabilities and scenarios](#appendix-a-capabilities-and-scenarios)
+  - [Capability 1 — Visual Topology and Addressing Design](#capability-1--visual-topology-and-addressing-design)
+  - [Capability 2 — Iterative Scenario Development, Modification, and Variant Creation](#capability-2--iterative-scenario-development-modification-and-variant-creation)
+  - [Capability 3 — Automated Configuration and Deployment](#capability-3--automated-configuration-and-deployment)
+  - [Capability 4 — Infrastructure Verification and Diagnostics](#capability-4--infrastructure-verification-and-diagnostics)
+  - [Capability 5 — State Extraction and Scenario Management](#capability-5--state-extraction-and-scenario-management)
+  - [Capability 6 — Accessibility and Usability Compliance](#capability-6--accessibility-and-usability-compliance)
+  - [Capability 7 — Shared Working Space (Real-Time Collaboration)](#capability-7--shared-working-space-real-time-collaboration)
+  - [Capability 8 — Application Services and Mode Management (Feature Toggling)](#capability-8--application-services-and-mode-management-feature-toggling)
+  - [Capability 9 — Smart Auto-Layout Engine for Legacy Imports](#capability-9--smart-auto-layout-engine-for-legacy-imports)
+- [References](#references)
+<!-- /contents -->
 
 ---
 
@@ -53,7 +82,7 @@ tool removes the transcription.
 | 5 | State extraction | `vtysh -c "show running-config"` captures a router's live routing state, and `ip addr` its interface addresses; the scenario folder holds both and exports as a zip |
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; every pointer control has a keyboard equivalent, including the panel dividers and the movable panel sections; contrast and reflow asserted against the real stylesheet in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
-| 8 | Exam mode | `features.py`, enforced server-side against the page, and carrying one view setting besides, the host parts on the canvas (FR-49); the author's lock and the sealed export in `project/examlock.py`. The lock deters and records edits made in place; it is not enforced against the owner of the machine (F51, D13) |
+| 8 | Exam mode | `features.py`, enforced server-side against the page, and carrying one view setting besides, the host parts on the canvas; the author's lock and the sealed export in `project/examlock.py`. The lock deters and records edits made in place; it is not enforced against the owner of the machine |
 | 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so; a BGP lab is laid out by autonomous system, each in its own zone (`domain/asgroups.py`) |
 
 ### The idea that ties it together
@@ -91,12 +120,12 @@ is not worth discarding the single best integration asset the platform offers.
 
 ### A browser interface, served locally
 
-This is the decision the accessibility requirement forces. Capability 6 is a graded
-deliverable measured against **EN 301 549** — the instrument Polish law actually binds public
+This is the decision the accessibility requirement forces. Accessibility (Capability 6) is
+measured against **EN 301 549** — the instrument Polish law actually binds public
 bodies to, which maps to WCAG 2.1 AA. In a browser engine that is testable: ARIA,
 `axe-core` in CI, the user's own zoom and contrast settings. In Qt or Tkinter
 there is no equivalent audit tooling, and "we followed WCAG" becomes an unverifiable claim.
-The reasoning holds even with screen readers since put out of scope (D10 in `PLAN.md`):
+The reasoning holds even with screen readers since put out of scope:
 contrast, reflow, the system's contrast theme and the automated audit still need a browser.
 The resulting claim is partial conformance, stated as such.
 
@@ -113,8 +142,8 @@ capability is a property of the architecture, and it is the clearest avenue for 
 development.
 
 *Rejected:* PySide6/Tkinter. Single language and trivial packaging, but the canvas would be
-hand-built, an embedded terminal and PDF viewer (both planned then, FR-32 and FR-34,
-since dropped, D11) painful, and the accessibility claim unevidenced.
+hand-built, an embedded terminal and PDF viewer (both planned then,
+since dropped) painful, and the accessibility claim unevidenced.
 
 ### Distributed as a Python package, not a binary
 
@@ -125,9 +154,6 @@ prerequisite for Kathará, so anyone able to run the target environment can inst
 Dropping binaries removed cross-compilation, target triples, a build matrix, code signing
 and an Apple Developer certificate — the largest source of risk in the plan — for no
 practical loss in reach. One artifact serves every OS and architecture instead of five.
-
-> This supersedes the thesis text, which still promises standalone executables. That
-> paragraph needs rewriting.
 
 ### The rest
 
@@ -156,22 +182,22 @@ that promise. The scenario is a folder on the student's machine, and the applica
 open-source code on it too; anything the application reads, the student can edit, and
 anything it writes as evidence, the student can delete or restore from a copy. A first
 version signed the switches with a key derived from the author's password, so that an edit
-would show when the instructor unlocked the submission (F48). It was defeated the next day
+would show when the instructor unlocked the submission. It was defeated the next day
 by the simplest possible move: keep a copy of the original `kgui.json`, sit the exam with
-the switches on, and put the copy back before handing in (F51). It was removed (D12),
+the switches on, and put the copy back before handing in. It was removed,
 because a check that reports "intact" on a file that was tampered with is worse than no
-check. The user restored it the same day (D13), because the specification asks for the
+check. It was restored the same day, because the specification asks for the
 capabilities to be locked when students open the exam: it stops a switch being changed in
 the application without the author's password and shows an edit made to the file in place,
 and the interface says beside it what it cannot see.
 
 What the application does guarantee is narrower and true. A switched-off feature is
-refused by the server, not only hidden, so the page's developer tools do not bring it back
-(D3); and the **sealed export** encrypts the scenario (AES-256-GCM, the key from a password
+refused by the server, not only hidden, so the page's developer tools do not bring it back;
+and the **sealed export** encrypts the scenario (AES-256-GCM, the key from a password
 by scrypt), so an exam sent ahead of time cannot be read before the password is given out.
 Enforcing an exam against its candidate needs a machine the candidate does not control:
-the lab room's computers, or a server. That is outside a local application, and it is the
-honest answer for the thesis.
+the lab room's computers, or a server. That is outside a local application, and saying so is the
+honest answer.
 
 **Zones are drawn, not inferred.** A zone could have been a property of the devices in it,
 so that moving a zone moved them. The supervisor asked for the opposite, and it is the
@@ -180,7 +206,7 @@ and a device dragged to tidy a link should not change what it is annotated as. S
 a shape behind the devices with no membership at all, stored as a comment in `lab.conf`.
 The one place zones are computed is the import of a BGP lab with no layout, where the
 autonomous systems are a fact of the configuration; even then the result is ordinary zones
-that the user can change. Text labels (FR-51) follow the same rule: a line of text placed
+that the user can change. Text labels follow the same rule: a line of text placed
 anywhere, at a size of its own, belonging to nothing, stored as a `# kgui:text` comment.
 
 **Edits are discrete operations over a pure reducer.** This costs nothing now, buys undo and
@@ -240,7 +266,7 @@ daemon breaks with it, because Kathará keeps one pool of connections for the li
 process. On Windows these are named pipes, and a dead pipe raises an error that the HTTP
 library does not recognise as a dropped connection. So every call takes Kathará's manager
 through one function that pings the daemon first, and opens fresh connections when the old
-ones are dead (F36). Without that, a dead connection read as "no daemon, so nothing is
+ones are dead. Without that, a dead connection read as "no daemon, so nothing is
 running": a status check then hid the exited lab, and the next deploy failed with an error
 naming a Windows API call.
 
@@ -272,10 +298,10 @@ which Kathará genuinely does not record, are guessed from FRR evidence first an
 convention second, and the guess is presentational: it picks an icon the user can change.
 A zip is imported under its file's name, and the `LAB_NAME` inside is rewritten to match.
 That way the folder and the lab stay one name, which is how Kathará knows a lab: a student
-who renames the exam they were given to `student.zip` gets a lab of their own (F40). The
+who renames the exam they were given to `student.zip` gets a lab of their own. The
 ` (1)` a browser adds to a second download is not part of the name, because it marks a copy
 of the same lab. And an import never replaces a scenario already in the workspace without
-asking (F39).
+asking.
 
 **The layout is laid out, not simulated.** A foreign lab has no coordinates, so every device
 would land on one point. A force-directed spring model is the usual reach and the wrong
@@ -298,11 +324,11 @@ runs in them, so there is nothing to capture, and asking would offer a choice wi
 useful answer. If any device is still running, Deploy asks.
 
 **So a lab has one name, and it is three things at once.** It is the name in the header, the
-scenario's folder, and, through that hash, the containers Kathará runs. Until the tester's
-notes on step 3E.2 these could drift apart. A folder was named by a transformation of the
+scenario's folder, and, through that hash, the containers Kathará runs. In early versions
+these could drift apart. A folder was named by a transformation of the
 lab name (`base exam` became `base-exam`). Renaming a lab in the header left its folder
 where it was. And nothing stopped two folders from holding labs of the same name, which is
-exactly the case the consent prompt above was built to survive. They are now one thing (F34):
+exactly the case the consent prompt above was built to survive. They are now one thing:
 
 - The folder is the lab's name exactly, so the name is restricted to what every filesystem
   accepts: letters in any script, digits, spaces, dashes and underscores.
@@ -330,8 +356,7 @@ Three layers, because each catches what the others cannot:
 Accessibility is checked from both ends: `axe-core` for structure, roles and naming, and a
 Python test asserting the palette's contrast ratios. That second one exists because **axe
 cannot evaluate colour contrast under jsdom** — it needs a real canvas — so a clean automated
-run is not a contrast pass. Manual screen reader testing was planned, and dropped on
-2026-10-25 by the user's decision (D10): screen readers are out of scope. The ARIA structure
+run is not a contrast pass. Manual screen reader testing was planned, and dropped: screen readers are out of scope. The ARIA structure
 axe checks stays, because it costs nothing and the tree is also the keyboard path, but it is
 not claimed to work with a screen reader. The application makes no sound, so nothing is
 needed for hearing.
@@ -340,59 +365,48 @@ needed for hearing.
 
 The three automated layers cannot see what a person sees: whether a click lands, whether a
 dragged node stays put, whether a message reaches the screen. So the application is also run
-by hand against a written procedure, `docs/TEST-PROCEDURE-WINDOWS.md`. It had 121 steps in
-eleven sections when it was accepted (128 until the seven screen-reader steps were dropped
-by D10), one per capability of the specification, and each step states its expected
-result before it is run. Steps added since for later features bring it to 136. The tester
-ticks a step or writes down, in their own words, what happened instead.
+by hand against a written procedure, one section per capability of the specification, and
+each step states its expected result before it is run. The tester ticks a step or writes
+down, in their own words, what happened instead.
 
-It has been run on two Windows machines, Windows 10 and Windows 11; a macOS machine used in
-the same weeks raised reports of its own (bugs 23–31). By 2026-10-24, 56 steps
-had passed: sections 0–2 and the first half of section 3. By 2026-10-25, 112 of 121 had
-passed, with the keyboard steps left untested by choice, and on 2026-10-27, with the keyboard
-steps passed too, 117 of 121, which the tester accepted as the Windows run NFR-01 asks for.
-The four not ticked are features that are not built. The five steps added afterwards
-(F43–F46) were run as they came; four passed by 2026-10-29, among them the installer on a
-clean Windows 11 machine. Every defect it
-reported is traced in three places. The tester's words go on the step's `Notes:` line or in
-`bugs/reported-defects.txt`. The cause and fix go in a numbered finding in `PLAN.md`. The step is then
-retested by hand, and the result is noted under the original report.
+It was run on two Windows machines, Windows 10 and Windows 11, and a macOS machine used in
+the same weeks raised reports of its own. Every defect reported was traced to its cause,
+fixed, and the step retested by hand.
 
-The striking result is how much the automated suite missed. Every finding from F20 to F41,
-twenty-two in all, came from this run or from the tester's reports during it, and in each
+The striking result is how much the automated suite missed. Twenty-two defects in a row came from this run or from the tester's reports during it, and in each
 case every test passed beforehand:
 
 - **Platform behaviour no test could reproduce.** The documented commands did not run in a
-  PowerShell with the default execution policy (F21, F22), and the "open a shell" command
-  failed on Windows (F20).
-- **Failures that were handled but never shown on screen** (F23, and the unflagged address
-  in F24). The same pattern recurred in F29: a refused edit while the lab ran explained
+  PowerShell with the default execution policy, and the "open a shell" command
+  failed on Windows.
+- **Failures that were handled but never shown on screen**, and an address the editor did
+  not flag. The same pattern recurred later: a refused edit while the lab ran explained
   itself to the keyboard but not to the mouse.
 - **Pointer behaviour that jsdom does not model.** A single pixel of hand movement turned a
-  click into a drag (F24). A dragged segment node snapped back (F27).
+  click into a drag. A dragged segment node snapped back.
 - **Kathará's own constraints, which the editor did not enforce.** Kathará refuses gaps in
-  interface numbering (F26) and uppercase device names (F28), and Save wrote into another
-  scenario's folder (F25).
+  interface numbering and uppercase device names, and Save wrote into another
+  scenario's folder.
 - **State the tests set up but no user ever reaches that way.** Every test of the lock
   started from a lab deployed in the same session. None opened another scenario and came
   back, which is how the tester found a running lab shown as stopped, with no way to stop
-  it (F33). Two labs with one name were tested as a conflict to warn about, never as
-  something that should not be possible to create (F34).
+  it. Two labs with one name were tested as a conflict to warn about, never as
+  something that should not be possible to create.
 
 One report is worth singling out. The tester described the read-only lock as returning
 "after a second" on reload, and judged it harmless. The cause was that the design rendered
 before the server had answered whether the lab was running, so for that second it could be
-edited (F29). That is exactly what the lock exists to prevent. A tester's own reading of
+edited. That is exactly what the lock exists to prevent. A tester's own reading of
 severity is evidence, but it is not the diagnosis, and every report was traced to its
 cause before it was judged.
 
-A question found one more, F31, which no step covers. The tester asked whether Kathará sets
+A question found one more, which no step covers. The tester asked whether Kathará sets
 a loopback address in Linux or in `vtysh`. It can be either, and capture had been built for
 the first only. An address set in `vtysh` was therefore captured into both `frr.conf` and
 `.startup`, and after that removing it in the editor had no effect. Explaining the domain
 to a user turned out to be a way of reviewing the design against it.
 
-Step 4B.2 found F37, and with it an asymmetry. Capture had been built to *change* an
+One step found another, and with it an asymmetry. Capture had been built to *change* an
 address, never to *remove* one: it overwrote the design with whatever the container
 reported, and an address deleted inside the container left nothing to report, so it
 survived every capture. The status check had the same blind spot. The test failed for a
@@ -417,15 +431,15 @@ palette that is safe by default, the browser's and the system's own scaling, and
 system's dark and contrast themes. Where the built application was the better answer,
 the document was changed to match it, and git keeps the original wording.
 
-Where a defect could be pinned down by a test once it was understood, a test was added: F26
-is now checked against Kathará's own parser. Where it could not, the fix was confirmed by
-hand: F24's clicks and F27's drag. That is the stated reason the manual layer exists rather
+Where a defect could be pinned down by a test once it was understood, a test was added: interface
+numbering is now checked against Kathará's own parser. Where it could not, the fix was
+confirmed by hand: the clicks and the drag. That is the stated reason the manual layer exists rather
 than an omission in the automated ones.
 
 ## 7. Scope, and what was left out
 
-Capability 7 and the AI assistant are deliberately unimplemented. So, by the user's
-decision of 2026-10-29 (D11), are variants of a scenario, a terminal inside the
+Capability 7 and the AI assistant are deliberately unimplemented. So, by decision, are
+variants of a scenario, a terminal inside the
 application, shipped example labs, a PDF viewer and autosave: each was weighed against the
 time left for the thesis, and each has a workaround that already works (Save as, the copied
 `docker exec` command, the system's own PDF viewer). The supervisor judged the
@@ -457,16 +471,16 @@ genuinely efficient way to handle a common need.
 
 **Where it falls short**, and what each shortcoming became here:
 
-| Observed limitation | Requirement it produced |
+| Observed limitation | What this application does instead |
 |---|---|
-| Interaction is entirely form-based; the forms are dense, and building a topology means filling fields rather than drawing | **FR-02** — connect devices by direct interaction, not by describing them |
-| Topology and addressing plan are entangled in one form, *all in one* | Addressing is a separate, optional assistant (**FR-06**, **FR-07**) that can be withdrawn for an exam (**FR-27**) |
-| **Existing labs cannot be imported.** It is a generator of new files, not a tool for working with labs that already exist | **FR-11**, **FR-12** — import and export must be first-class, and reach the interface |
-| Two export routes exist, but only one produces something the tool can read back | **FR-13** — a round trip must not lose anything, including options the model does not interpret |
-| The topology preview stays blank until enough fields are filled, so the drawing follows the form rather than leading it | **FR-01**, **FR-30** — the diagram is the document, and its layout persists |
-| No connection to Docker at all: the output is a ZIP the user must unpack and start by hand | **FR-16**, **FR-17** — deploy and stop from the application |
-| No way to recover configuration typed inside a running container | **FR-24** — pull running configuration back out |
-| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | **FR-14**, **FR-21** — iterate on a saved project, and be told when the running lab has drifted from the design (read-only while deployed, D9); deriving variants, **FR-15**, was dropped (D11), since Save as makes one |
+| Interaction is entirely form-based; the forms are dense, and building a topology means filling fields rather than drawing | Connect devices by direct interaction, not by describing them |
+| Topology and addressing plan are entangled in one form, *all in one* | Addressing is a separate, optional assistant that can be withdrawn for an exam |
+| **Existing labs cannot be imported.** It is a generator of new files, not a tool for working with labs that already exist | Import and export must be first-class, and reach the interface |
+| Two export routes exist, but only one produces something the tool can read back | A round trip must not lose anything, including options the model does not interpret |
+| The topology preview stays blank until enough fields are filled, so the drawing follows the form rather than leading it | The diagram is the document, and its layout persists |
+| No connection to Docker at all: the output is a ZIP the user must unpack and start by hand | Deploy and stop from the application |
+| No way to recover configuration typed inside a running container | Pull running configuration back out |
+| Modifying a scenario means deleting, rethinking, re-exporting and reopening; it corresponds badly to how a scenario is actually developed | Iterate on a saved project, and be told when the running lab has drifted from the design (read-only while deployed); Save as makes a variant |
 
 The last is the important one. The tool is not *wrong*; it simply assumes a scenario is
 written once. The observed reality — an exam judged too easy, a link that creates an
@@ -493,13 +507,10 @@ path. That combination is what this work contributes.
 
 ## Appendix A. Capabilities and scenarios
 
-The nine capabilities of the thesis specification, with the scenarios that define them,
-as agreed with the supervisor. They are the source of the requirements: `REQUIREMENTS.md`
-traces each requirement to them, and says which were built and which were dropped
-(Capability 7 and the scenarios that need variants or duplication, D11). Where this text and
-the application differ, `REQUIREMENTS.md` is the authority; the specification was revised
-where the application had good reason to differ, for example Capability 4's results given in
-words rather than colours (Capability 6).
+The nine capabilities of the specification, with the scenarios that define them.
+Capability 7 and the scenarios that need variants or duplication were not built. Where this
+text and the application differ, the application had good reason to, for example
+Capability 4's results given in words rather than colours (Capability 6).
 
 ### Capability 1 — Visual Topology and Addressing Design
 

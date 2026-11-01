@@ -3,8 +3,47 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-11-01 (addresses on the canvas on by default; the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; side panels hidden; zones, sealed export, restarting one device)
-- See [PLAN.md](../PLAN.md) for what is built and what is not.
+- **Last updated:** 2026-11-01
+
+<!-- contents -->
+## Contents
+
+- [1. Prerequisites](#1-prerequisites)
+- [2. Running it](#2-running-it)
+  - [From a source checkout (what you have now)](#from-a-source-checkout-what-you-have-now)
+  - [Options](#options)
+  - [Live-reloading UI work](#live-reloading-ui-work)
+  - [Installed as a command, in one step](#installed-as-a-command-in-one-step)
+  - [Installed as a tool, by hand with uv](#installed-as-a-tool-by-hand-with-uv)
+- [3. What you can do in the UI today](#3-what-you-can-do-in-the-ui-today)
+  - [Container images](#container-images)
+  - [A narrow window, or a magnified one](#a-narrow-window-or-a-magnified-one)
+  - [Finding your way around](#finding-your-way-around)
+  - [Reading the diagram](#reading-the-diagram)
+  - [Keyboard](#keyboard)
+  - [Planning the addressing](#planning-the-addressing)
+  - [Saving, sharing and reopening a scenario](#saving-sharing-and-reopening-a-scenario)
+  - [Opening a lab somebody else made](#opening-a-lab-somebody-else-made)
+  - [While the lab is running, the design is read-only](#while-the-lab-is-running-the-design-is-read-only)
+  - [Tidying the layout](#tidying-the-layout)
+  - [Hibernating and resuming a lab](#hibernating-and-resuming-a-lab)
+  - [Feature switches, their lock, and the sealed export](#feature-switches-their-lock-and-the-sealed-export)
+  - [Zones](#zones)
+  - [Text labels](#text-labels)
+  - [Not built, by decision](#not-built-by-decision)
+- [4. Verifying a topology outside the UI](#4-verifying-a-topology-outside-the-ui)
+  - [Redeploying](#redeploying)
+  - [Restarting one device](#restarting-one-device)
+  - [Stopping everything](#stopping-everything)
+  - [Getting a shell on a running device](#getting-a-shell-on-a-running-device)
+  - [When a device says "Exited"](#when-a-device-says-exited)
+  - [Running an exported lab by hand](#running-an-exported-lab-by-hand)
+  - [API reference](#api-reference)
+- [5. Development commands](#5-development-commands)
+  - [Layout](#layout)
+- [6. Troubleshooting](#6-troubleshooting)
+- [7. Accessibility testing](#7-accessibility-testing)
+<!-- /contents -->
 
 ---
 
@@ -18,7 +57,7 @@ A living document — update it when behaviour changes.
 | Docker, running | Kathará deploys containers | `docker info` |
 
 A published release would carry the interface pre-built, so its users would need only
-Python and Docker (the wheel already does, F45). No release is published yet, so for now
+Python and Docker (the wheel already does). No release is published yet, so for now
 every install builds the interface from source and needs Node once.
 
 Install uv if missing: `brew install uv` (macOS) or see the uv docs.
@@ -171,7 +210,7 @@ uv tool uninstall kathara-gui
 
 **Build the interface before `uv tool install .`** The interface is a build product and
 is not in git, so before it is built there is nothing to install with the server. That is
-how a copy that answered "404 Not Found" at every page came about (F45). Such a copy now
+how a copy that answered "404 Not Found" at every page came about. Such a copy now
 says so when it starts, and shows the reason on the page. `--reinstall-package` makes uv
 rebuild rather than reuse its cached copy, so a `git pull` reaches the installed command.
 `uv run kathara-gui`, above, needs no installation at all.
@@ -181,8 +220,7 @@ rebuild rather than reuse its cached copy, so a `git pull` reaches the installed
 ## 3. What you can do in the UI today
 
 The editor, addressing, deployment, verification, saving and capturing running
-configuration all work. What was left out is listed under *Not built, by decision* below and
-in [PLAN.md](../PLAN.md).
+configuration all work. What was left out is listed under *Not built, by decision* below.
 
 | Action | How |
 |---|---|
@@ -221,7 +259,7 @@ in [PLAN.md](../PLAN.md).
 | Export, import | **Export** and **Import…** in the top bar, after Open. The first press says what each does and the second does it. Export downloads the folder as a `.zip`; Import takes such a zip, a folder zipped by hand, or a plain `lab.conf`, and asks before replacing a scenario of the same name. |
 | Deploy | Right panel → **Laboratory** → **Deploy**. The design becomes read-only while the lab runs. |
 | Verify links | **Laboratory** → **Verify links**: pings across every link. Close the results with their **×**. |
-| See what changed inside the containers | **Laboratory** → **Check for changes**. It asks Docker which devices are running, exited or gone, and compares every interface's address inside the containers with what was deployed or last captured. It does not compare routing configuration typed in `vtysh`; **Capture** reads that. A device whose container was removed outside the application (Docker Desktop, `docker rm`) is named, with a warning in the panel: Redeploy to start it again, or Stop. Nothing polls in the background (NFR-11), so the device states shown are as of the last deploy, capture or check. |
+| See what changed inside the containers | **Laboratory** → **Check for changes**. It asks Docker which devices are running, exited or gone, and compares every interface's address inside the containers with what was deployed or last captured. It does not compare routing configuration typed in `vtysh`; **Capture** reads that. A device whose container was removed outside the application (Docker Desktop, `docker rm`) is named, with a warning in the panel: Redeploy to start it again, or Stop. Nothing polls in the background, so the device states shown are as of the last deploy, capture or check. |
 | Keep what changed inside the containers | **Scenario** → **Capture running state**. |
 | Open a shell on a device | **Laboratory** → choose the device → **Copy command**, then paste it into any terminal. |
 | Stop the lab | **Laboratory** → **Stop**, then choose whether to capture first or discard. |
@@ -600,8 +638,7 @@ and cannot be recovered: forget it and the lock can only be removed by hand, by 
 there can be edited; no application can stop that. `kgui.json` carries a signature over the
 switches, so when the instructor unlocks a copy whose switches were edited in place, the
 section says they were changed outside the application. It **cannot** tell a copy of the
-original `kgui.json` put back before handing in from one never touched (F51 in
-[PLAN.md](../PLAN.md)). The lock keeps the switches in the application and makes an edit in
+original `kgui.json` put back before handing in from one never touched. The lock keeps the switches in the application and makes an edit in
 place show; it does not police an exam. An exam that must be policed needs computers the
 students do not control.
 
@@ -652,7 +689,7 @@ Text labels are saved in `lab.conf` as `# kgui:text` comments, which Kathará ig
 
 ### Not built, by decision
 
-The user decided on 2026-10-29 not to build these (D11 in [PLAN.md](../PLAN.md)):
+These are not built:
 
 - **An in-app terminal.** Copy the shell command from the Laboratory panel into a terminal —
   see §4.
@@ -937,7 +974,7 @@ scripts/              the integration spike
 `NPM_CONFIG_CACHE=./.npm-cache npm install`
 
 **"Kathara GUI has no interface" on the page, or a warning saying so at startup** — the
-copy you started was installed before the interface was built (F45). Run `install.cmd` or
+copy you started was installed before the interface was built. Run `install.cmd` or
 `./install.sh` in the project folder.
 
 **Blank page, or 404 at the root** — the UI has not been built. `npm --prefix frontend run build`
@@ -952,8 +989,7 @@ origin than the backend. In dev, use the Vite URL and let the proxy handle `/api
 
 **"Docker is not running" after restarting Docker Desktop** — the application reconnects on
 its own, so there is no need to restart it. Wait until Docker Desktop reports that it is
-running, then try again. Before F36, this case failed as
-`(232, 'WriteFile', 'The pipe is being closed.')`.
+running, then try again.
 
 **"npm.ps1 cannot be loaded because running scripts is disabled on this system"** —
 PowerShell's default execution policy on Windows. Type `npm.cmd` instead of `npm`, or run
@@ -980,8 +1016,8 @@ banner at the bottom of the window, with the reason.
 them, or `kathara wipe` if you have the Kathará command-line tool. They're left running on
 purpose when the application stops, and it says so as it exits.
 
-**The disk filled up, and now nothing works even with space free** — found on the Windows
-machine (F18). When the disk holding Docker Desktop's data fills, Docker's storage goes
+**The disk filled up, and now nothing works even with space free** — found on a Windows
+machine. When the disk holding Docker Desktop's data fills, Docker's storage goes
 read-only and Docker Desktop stops with "unable to start". Freeing space brings it back,
 but **images that were being written at the time stay damaged**: files inside them are
 truncated to zero bytes. The symptom is containers that deploy but fail every command, with
@@ -1017,15 +1053,12 @@ says "Exited"* above.
 
 ## 7. Accessibility testing
 
-> The EN 301 549 conformance table (ACC-09) is `docs/CONFORMANCE.md`. It rests on the
-> automated evidence below and on section 6 of `docs/TEST-PROCEDURE-WINDOWS.md`.
+> Accessibility is checked against EN 301 549, by the automated tests below and by a
+> manual keyboard pass on Windows.
 
-> **Screen readers are out of scope** (D10 in `PLAN.md`, 2026-10-25). There is no
-> VoiceOver or NVDA pass, and the conformance claim is partial. The application makes no
-> sound, so nothing is needed for hearing.
+> **Screen readers are out of scope.** There is no VoiceOver or NVDA pass, and the
+> conformance claim is partial. The application makes no sound, so nothing is needed for hearing.
 
-
-Capability 6 is graded, so this is part of the deliverable rather than optional QA.
 
 Automated, on every commit:
 

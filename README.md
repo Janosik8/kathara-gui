@@ -9,49 +9,28 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 > Engineering thesis, Teleinformatics, AGH University — Jan Ogiegło
 
-## Status
+## What it does
 
-Every requirement is built (88 of 93) or dropped by decision (5). You can design a
-topology on a canvas or from the keyboard, group it into named zones, annotate it with
-text placed anywhere, plan the addressing
-with conflict detection, deploy it with one click, restart a single device, verify every
-link, capture what was configured inside the containers, and save, export, import and
-reopen scenarios, including labs made without this application; a BGP lab is laid out by
-autonomous system. An instructor can withdraw assistive features for an exam, lock them
-with a password, and send the scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
-(D9).
+- **Design** a topology on a canvas or from the keyboard: routers, switches, PCs, servers
+  and shared segments, grouped into named zones and annotated with text placed anywhere.
+- **Plan the addressing**, with conflicts and mistakes reported, or assign the
+  addresses automatically from a pool.
+- **Deploy** the lab to Docker with one click, restart a single device, and stop it again.
+  While a lab runs, the design is read-only.
+- **Verify** every link in the running lab.
+- **Capture** what was configured inside the containers to their respective configuration files. 
+- **Save, export, import and reopen** scenarios, including labs made without this
+  application
+- **Exams:** an instructor can withdraw the assistive features, lock them with a password,
+  and send the scenario sealed with a password until the exam starts.
 
-It runs on Windows, macOS and Linux. It has passed a manual procedure on Windows, completed
-on 2026-11-01: of 139 steps, 137 passed and the other 2 describe features dropped by decision.
-The installer has been run on a clean Windows 11 machine, and an EN 301 549 conformance
-table states partial conformance, by decision: screen readers are out of scope (D10 in
-`PLAN.md`).
-
-Not built, by decision (D11): an in-app terminal (copy the `docker exec` command from the
-Laboratory panel instead), scenario variants, example labs, a PDF manual viewer and
-autosave. No release is published yet. `docs/REQUIREMENTS.md` has the full list.
-
-- **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — what the application must, should and
-  will not do, with current status against each item.
-- **[docs/DESIGN.md](docs/DESIGN.md)** — why this application exists, how each capability is
-  served, and the reasoning behind every significant technology choice.
-- **[docs/USAGE.md](docs/USAGE.md)** — how to run it, every command, what the UI can do
-  today, keyboard shortcuts, the API, and troubleshooting.
-- **[docs/CONFORMANCE.md](docs/CONFORMANCE.md)** — the EN 301 549 accessibility
-  conformance table, criterion by criterion.
-- **[PLAN.md](PLAN.md)** — development plan, phase status, capability traceability, the
-  decision log and the findings.
-
-All five are living documents kept in step with the code.
+It runs on Windows, macOS and Linux. How to use it, panel by panel, is in
+**[docs/USAGE.md](docs/USAGE.md)**.
 
 ## Requirements
-
-- **Docker**, running, configured for **Linux containers**
-- **Kathará** — installed automatically as a Python dependency
-- **Python 3.12–3.14** — installed for you if you use `uv`
-
-### Windows
-
+- uv
+- Node.js
+- Git
 Kathará has platform-specific prerequisites that this application inherits:
 
 - Docker Desktop **≥ 2.5** using the **WSL2** backend
@@ -86,9 +65,7 @@ before closing, so its messages can be read. Then, in a **new** terminal:
 kathara-gui
 ```
 
-**Not** `uv tool install git+https://…` or `pip install git+https://…`: the interface is a
-build product and is not in git, so either installs a copy that answers "Kathara GUI has no
-interface" (bug 38, F45). To update, `git pull` and run the installer again. To remove it, run `.\uninstall.cmd`
+To update, `git pull` and run the installer again. To remove it, run `.\uninstall.cmd`
 or `./uninstall.sh`; your labs are kept.
 
 Your browser opens automatically. To stop the server, press Ctrl+C. How to use the
@@ -125,27 +102,13 @@ npm --prefix frontend run build
 In PowerShell on Windows, type `npm.cmd` instead of `npm`: the default execution policy
 blocks `npm.ps1`. See `docs/USAGE.md` §2.
 
-How the project is worked on:
-
-- **Verify against real containers, not only unit tests.** Several changes that passed every
-  test were still wrong in the running application (F7, F11, F13, F16 in `PLAN.md`);
-  `uv run pytest -m docker` and a run by hand are worth the minutes.
-- **Measure claims rather than assert them.** The layout counts crossings, the palette tests
-  compute contrast ratios, the reflow tests parse the real stylesheet.
-- **Keep the documents in step with each change**, and recount the requirement and step
-  totals from their tables rather than incrementing them.
-- **Generated files are LF only**, because they run inside Linux containers whatever the
-  host; `.gitattributes` keeps the checkout consistent (`.cmd` files excepted).
-- **On Windows, never read or rewrite a source file with PowerShell 5.1's `Get-Content`**:
-  it reads UTF-8 without a BOM as ANSI and mangles characters such as `á`, `—` and `ł`.
-- Any interface change is checked against `docs/CONFORMANCE.md`, and its row updated.
-
 ### Tests
 
 ```
 uv run pytest                 # unit tests; no Docker required
 uv run pytest -m docker       # integration tests; needs a running Docker daemon
 uv run ruff check .
+npm --prefix frontend test    # interface tests
 ```
 
 ### Integration spike
