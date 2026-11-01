@@ -21,8 +21,8 @@ autonomous system. An instructor can withdraw assistive features for an exam, lo
 with a password, and send the scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
 (D9).
 
-It has passed a manual procedure on Windows, now 139 steps: 122 passed, 2 describe features
-dropped by decision, and 15, for the features added since 2026-10-29, are not yet run by hand.
+It runs on Windows, macOS and Linux. It has passed a manual procedure on Windows, completed
+on 2026-11-01: of 139 steps, 137 passed and the other 2 describe features dropped by decision.
 The installer has been run on a clean Windows 11 machine, and an EN 301 549 conformance
 table states partial conformance, by decision: screen readers are out of scope (D10 in
 `PLAN.md`).
@@ -148,4 +148,5 @@ token appears in the URL printed at startup; treat that URL as a credential.
 
 ## License
 
-MIT
+MIT, except the four device pictures, which are Cisco's network topology icons, used
+unmodified under Cisco's terms: see `icons/NOTICE.md`.
