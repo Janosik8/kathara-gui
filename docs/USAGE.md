@@ -1,21 +1,22 @@
-# Usage and commands
+# Using Kathara GUI
 
-Everything you can do with the application and the repository, in one place.
-A living document — update it when behaviour changes.
+Kathara GUI lets you draw a network, start it as real Linux containers with one click, check
+that every link works, and keep what you configured inside the devices. It is built on
+[Kathará](https://www.kathara.org/), so the labs it makes are ordinary Kathará labs.
 
-- **Last updated:** 2026-11-01
+This guide is for using the application. How it is built, and how to change it, is in
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
 <!-- contents -->
 ## Contents
 
-- [1. Prerequisites](#1-prerequisites)
-- [2. Running it](#2-running-it)
-  - [From a source checkout (what you have now)](#from-a-source-checkout-what-you-have-now)
-  - [Options](#options)
-  - [Live-reloading UI work](#live-reloading-ui-work)
-  - [Installed as a command, in one step](#installed-as-a-command-in-one-step)
-  - [Installed as a tool, by hand with uv](#installed-as-a-tool-by-hand-with-uv)
-- [3. What you can do in the UI today](#3-what-you-can-do-in-the-ui-today)
+- [1. What you need](#1-what-you-need)
+- [2. Installing](#2-installing)
+  - [Option 1: install the `kathara-gui` command (recommended)](#option-1-install-the-kathara-gui-command-recommended)
+  - [Option 2: run it from the project folder, without installing](#option-2-run-it-from-the-project-folder-without-installing)
+- [3. Starting and stopping](#3-starting-and-stopping)
+- [4. Your first lab](#4-your-first-lab)
+- [5. The interface, part by part](#5-the-interface-part-by-part)
   - [Container images](#container-images)
   - [A narrow window, or a magnified one](#a-narrow-window-or-a-magnified-one)
   - [Finding your way around](#finding-your-way-around)
@@ -30,131 +31,49 @@ A living document — update it when behaviour changes.
   - [Feature switches, their lock, and the sealed export](#feature-switches-their-lock-and-the-sealed-export)
   - [Zones](#zones)
   - [Text labels](#text-labels)
-  - [Not built, by decision](#not-built-by-decision)
-- [4. Verifying a topology outside the UI](#4-verifying-a-topology-outside-the-ui)
+  - [What it does not do](#what-it-does-not-do)
+- [6. Working with a running lab](#6-working-with-a-running-lab)
   - [Redeploying](#redeploying)
   - [Restarting one device](#restarting-one-device)
   - [Stopping everything](#stopping-everything)
   - [Getting a shell on a running device](#getting-a-shell-on-a-running-device)
   - [When a device says "Exited"](#when-a-device-says-exited)
   - [Running an exported lab by hand](#running-an-exported-lab-by-hand)
-  - [API reference](#api-reference)
-- [5. Development commands](#5-development-commands)
-  - [Layout](#layout)
-- [6. Troubleshooting](#6-troubleshooting)
-- [7. Accessibility testing](#7-accessibility-testing)
+- [7. Troubleshooting](#7-troubleshooting)
 <!-- /contents -->
 
 ---
 
-## 1. Prerequisites
+## 1. What you need
 
-| Need | Why | Check |
-|---|---|---|
-| Python 3.12–3.14 | the backend | `python3 --version` |
-| [uv](https://docs.astral.sh/uv/) | installs Python and dependencies | `uv --version` |
-| Node 20.19+ or 22.12+ (what Vite 8 needs) | **only** to build the UI from source | `node --version` |
-| Docker, running | Kathará deploys containers | `docker info` |
+- **Docker Desktop**, running. On Windows it needs the **WSL2** backend, **Linux containers**
+  ("Use Windows Containers" off), and the drive holding your labs shared in its settings.
+- **uv**, which provides Python and installs the application.
+- **Node.js**, needed once, to build the interface.
+- **Git**, to download the project (or download it as a ZIP from GitHub).
 
-A published release would carry the interface pre-built, so its users would need only
-Python and Docker (the wheel already does). No release is published yet, so for now
-every install builds the interface from source and needs Node once.
-
-Install uv if missing: `brew install uv` (macOS) or see the uv docs.
-
----
-
-## 2. Running it
-
-### From a source checkout (what you have now)
-
-The UI is gitignored, so build it once before the first run and again after any
-frontend change:
-
-```bash
-npm --prefix frontend ci
-npm --prefix frontend run build
-uv run kathara-gui
-```
-
-One command per line, and `--prefix` instead of `cd frontend`, so the same lines work in
-PowerShell, Command Prompt and a Unix shell. Windows PowerShell 5.1, the default on
-Windows 10 and 11, has no `&&` and rejects `cd frontend && npm install` outright (bug 21).
-
-**In PowerShell on Windows, type `npm.cmd` where these say `npm`:**
+On Windows, in PowerShell:
 
 ```powershell
-npm.cmd --prefix frontend ci
-npm.cmd --prefix frontend run build
-uv run kathara-gui
+winget install astral-sh.uv
+winget install OpenJS.NodeJS.LTS
+winget install Git.Git
 ```
 
-Windows ships with PowerShell's execution policy set to *Restricted*, and Node installs
-`npm` as a PowerShell script (`npm.ps1`), so plain `npm` fails with "npm.ps1 cannot be
-loaded because running scripts is disabled on this system". `npm.cmd` is the same program
-without the script wrapper, and needs no change to your security settings. If you'd rather
-type `npm`, allow locally created scripts once, for your account only:
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Command Prompt and Unix shells are
-not affected, and `uv` isn't either, because it's a real executable.
+Then open a **new** terminal, so it finds them. On macOS, `brew install uv node git`.
 
-**The `npm` steps are only needed the first time, and after the frontend source changes**
-(for example after a `git pull`). `uv run kathara-gui` alone always runs the current Python
-code, but it serves the interface as last built. In a source checkout it compares the two
-at startup and prints a warning with the rebuild command when the build is missing or older
-than the source, so an out-of-date interface never goes unnoticed. An installed release
-(a wheel built after the interface, as the installer makes) carries its interface and
-never shows the warning.
+## 2. Installing
 
-Your browser opens automatically. The terminal prints a URL containing a session token:
+Download the project and go into its folder:
 
 ```
-Kathara GUI running at:
-  http://127.0.0.1:8150/?token=wFbIvMF6qm3SElYwFWH6s0aGA68ycorLCbJOfg0DeCE
+git clone https://github.com/Janosik8/kathara-gui
+cd kathara-gui
 ```
 
-**That URL is a credential.** Anything on your machine can reach `127.0.0.1`, so the token
-is what stops another page from driving your containers. Don't paste it into a bug report.
+### Option 1: install the `kathara-gui` command (recommended)
 
-Stop the server with Ctrl+C.
-
-### Options
-
-```bash
-uv run kathara-gui --help
-uv run kathara-gui --no-browser     # print the URL instead of opening a browser
-uv run kathara-gui --port 8080      # fixed port instead of an unused one
-uv run kathara-gui --version
-uv run kathara-gui --check          # verify startup and exit; used by CI
-uv run kathara-gui --workspace DIR  # where generated labs go (default ./kathara-labs)
-```
-
-A fresh port is chosen each run by default, because hardcoding 8000 collides with whatever
-else you have running.
-
-### Live-reloading UI work
-
-Two processes. The Vite dev server proxies `/api` to the backend, so the browser stays on
-one origin and the `Origin` check behaves exactly as in production.
-
-```bash
-# terminal 1
-uv run kathara-gui --no-browser --port 8000
-
-# terminal 2
-npm --prefix frontend run dev
-```
-
-Open the Vite URL (usually `http://localhost:5173`) but **append the token** from terminal 1:
-`http://localhost:5173/?token=<token>`. Without it every API call returns 401.
-
-Point the proxy elsewhere with `KGUI_BACKEND=http://127.0.0.1:9000 npm run dev` in a Unix
-shell, or `$env:KGUI_BACKEND="http://127.0.0.1:9000"; npm.cmd --prefix frontend run dev` in
-PowerShell.
-
-### Installed as a command, in one step
-
-To run `kathara-gui` from any folder without `uv run`, install it with the script in the
-project folder. On Windows, in PowerShell or Command Prompt:
+On Windows, in PowerShell or Command Prompt (double-clicking `install.cmd` works too):
 
 ```powershell
 .\install.cmd
@@ -166,61 +85,93 @@ On macOS or Linux:
 ./install.sh
 ```
 
-It checks for **uv** (which provides Python and installs the application) and **Node.js**
-(needed once, to build the interface). If one is missing, it stops and prints the command
-that gets it, for example `winget install astral-sh.uv`; it never installs system software
-itself. Then it builds the interface, installs the `kathara-gui` command, checks that the
-installed copy starts, and puts uv's command folder on your PATH if it is not there yet.
-`install.cmd` is a `.cmd` file on purpose: Windows PowerShell's default *Restricted* policy
-refuses `.ps1` scripts but runs it. It can also be double-clicked in Explorer; the window
-then waits for a key before it closes, so its messages can be read (bug 38).
-
-Do **not** install with `uv tool install git+https://…` or `pip install git+https://…`:
-the interface is not in git, so that copy can only say "Kathara GUI has no interface".
-
-Then, in a **new** terminal (the first time only, so it sees the new PATH):
+The installer checks for uv and Node.js and, if one is missing, says how to get it. Then it
+builds the interface, installs the `kathara-gui` command and checks that it starts. It
+waits for a key before closing, so you can read what it says. Then, in a **new** terminal,
+from any folder:
 
 ```
 kathara-gui
-kathara-gui --help
 ```
 
-Labs go to a `kathara-labs` folder in the folder you start it from, as with `uv run`;
-`--workspace` chooses another. Docker Desktop must be running to deploy.
+**To update**, run `git pull` in the project folder and the installer again. **To remove
+it**, run `.\uninstall.cmd` (Windows) or `./uninstall.sh`. Your labs stay, and so do uv,
+Node.js and Docker. A lab still running keeps running, so stop it first if you are done
+with it.
 
-**To update** after a `git pull`, run the installer again. **To remove it**, run
-`.\uninstall.cmd` (Windows; double-clicking works too) or `./uninstall.sh` in the same
-folder; `uv tool uninstall kathara-gui` does the same. Only the command goes: your labs,
-and uv, Node.js and Docker, stay. A lab still deployed keeps running in Docker, so press
-**Stop every lab** first if you are done with it.
+### Option 2: run it from the project folder, without installing
 
-### Installed as a tool, by hand with uv
-
-The installer is a convenience, not a requirement: it runs these commands, which work as
-well typed by hand in the project folder. In PowerShell, type `npm.cmd` for `npm`.
-
-```bash
-npm --prefix frontend ci
-npm --prefix frontend run build                  # first: uv installs what is built
-uv tool install --reinstall-package kathara-gui .
-uv tool update-shell                             # once, if kathara-gui is not found
-kathara-gui
-uv tool uninstall kathara-gui
+```powershell
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+uv run kathara-gui
 ```
 
-**Build the interface before `uv tool install .`** The interface is a build product and
-is not in git, so before it is built there is nothing to install with the server. That is
-how a copy that answered "404 Not Found" at every page came about. Such a copy now
-says so when it starts, and shows the reason on the page. `--reinstall-package` makes uv
-rebuild rather than reuse its cached copy, so a `git pull` reaches the installed command.
-`uv run kathara-gui`, above, needs no installation at all.
+On macOS and Linux, type `npm` instead of `npm.cmd`. The two `npm` lines build the
+interface. They are needed the first time, and again after a `git pull`; if you forget, the
+application says so when it starts. After that, `uv run kathara-gui` in the project folder
+is enough.
 
----
+Why `npm.cmd`: Windows PowerShell refuses to run scripts by default, and plain `npm` is one,
+so it fails with "npm.ps1 cannot be loaded because running scripts is disabled on this
+system". `npm.cmd` is the same program and needs no change to your settings. In Command
+Prompt, plain `npm` works.
 
-## 3. What you can do in the UI today
+## 3. Starting and stopping
 
-The editor, addressing, deployment, verification, saving and capturing running
-configuration all work. What was left out is listed under *Not built, by decision* below.
+Start it with `kathara-gui` (or `uv run kathara-gui` in the project folder, if you chose
+Option 2). Your browser opens on the application, and the terminal prints its address:
+
+```
+Kathara GUI running at:
+  http://127.0.0.1:8150/?token=wFbIvMF6qm3SElYwFWH6s0aGA68ycorLCbJOfg0DeCE
+```
+
+**Keep that address to yourself.** The part after `token=` is a key, chosen anew each time:
+it is what stops other web pages from controlling your containers. If you close the tab,
+open the address again from the terminal.
+
+**To stop the application**, press Ctrl+C in the terminal. A lab you deployed keeps running
+after that, and the application says so as it exits; start it again and it finds the lab.
+
+Your scenarios are kept in a `kathara-labs` folder inside the folder you started the
+command from; the path is printed at startup. Some options:
+
+```
+kathara-gui --workspace C:\labs   # keep the scenarios somewhere else
+kathara-gui --port 8080           # a fixed port instead of a free one chosen each time
+kathara-gui --no-browser          # print the address without opening a browser
+kathara-gui --help                # all of them
+```
+
+## 4. Your first lab
+
+Two routers on one link, from an empty canvas to a working network:
+
+1. In the left panel, press **Add router** twice. `r1` and `r2` appear on the canvas.
+2. Press **C** (or the **Connect mode** button), click `r1`, then click `r2`. A link
+   appears between them, on collision domain `A`. Press Escape to leave connect mode.
+3. In the right panel, open **Addressing** and press **Assign addresses**. Each end of the
+   link gets an address: `10.0.0.1/24` on `r1`, `10.0.0.2/24` on `r2`, shown on the canvas
+   as `eth0 .1` and `eth0 .2`.
+4. Click the name `untitled` at the top left, type a name for the lab, such as `first`, and
+   press Enter. Then **Save**.
+5. In **Laboratory**, press **Deploy**. The header turns red and says the lab is running; the
+   design is read-only until you stop it. The first deploy downloads the router image,
+   which can take a few minutes.
+6. Press **Verify links**. The link `r1`–`r2` should show **✓ Pass**.
+7. Choose `r1` in the Laboratory panel and press **Copy command**. Paste it into a terminal:
+   you are inside the router. Try `ping 10.0.0.2`, or `vtysh` to configure routing. Type
+   `exit` to leave.
+8. Press **Stop**, and choose whether to capture what you configured inside the routers
+   first.
+
+From here, the rest of this guide explains each part.
+
+## 5. The interface, part by part
+
+Everything the application does, in the order you meet it. The table is the quick
+reference; the sections after it explain the parts that need more than a line.
 
 | Action | How |
 |---|---|
@@ -263,7 +214,7 @@ configuration all work. What was left out is listed under *Not built, by decisio
 | Keep what changed inside the containers | **Scenario** → **Capture running state**. |
 | Open a shell on a device | **Laboratory** → choose the device → **Copy command**, then paste it into any terminal. |
 | Stop the lab | **Laboratory** → **Stop**, then choose whether to capture first or discard. |
-| Stop every lab on this computer | **Laboratory** → **All labs** → **Stop every lab**. Captures nothing; see *Stopping everything* in §4. |
+| Stop every lab on this computer | **Laboratory** → **All labs** → **Stop every lab**. Captures nothing; see *Stopping everything* in §6. |
 
 The **Unsaved changes** badge appears once you edit and clears on save.
 
@@ -284,7 +235,7 @@ panels beneath it, with the page scrolling downwards only. Zoom reaches the same
 200% on a 1280-pixel display the viewport is 640 CSS pixels — so magnifying the page reflows
 it rather than pushing the canvas off the side.
 
-The breakpoint is in `rem`, so enlarging the text alone reflows too, not only zooming.
+Enlarging the text alone reflows it too, not only zooming.
 
 **The side panels can be resized.** Drag the divider running the full height of a panel's
 inner edge, or focus it with `Tab` and use the arrow keys — `Home` and `End` jump to the narrowest and widest, and a
@@ -304,11 +255,8 @@ The violet block appears only while a device is selected, and holds everything b
 that one device — its name, image, interfaces and routing daemons. With nothing selected
 there is no tinted block, because there would be nothing in it.
 
-Violet rather than blue: the panel behind these blocks is a cool blue-grey, so a blue tint
-read as the same surface and the block disappeared into it. Violet against amber still
-survives the common red-green colour deficiencies — and the edges differ in *style* as well,
-because the two tints sit at almost the same lightness and would otherwise be identical to
-someone with no colour vision at all.
+The two blocks also differ in the style of their top edge, so they can be told apart
+without seeing colour.
 
 **Every side-panel section can be collapsed and moved.** Press a section's heading to fold
 it down to the heading alone, and again to open it. Drag a section by its header (the ⠿
@@ -317,9 +265,8 @@ shows where it will land. From the keyboard, ▲ and ▼ beside the heading move
 and focus stays on the button so it can be pressed again. Both panels work this way.
 
 The arrangement is remembered between launches, in `.kgui-preferences.json` in the
-workspace. Delete that file to go back to the default order with everything open. The
-browser cannot remember it: every launch takes a new port, and the browser keys its storage
-by port. Collapsing and moving still work while a lab runs and the design is read-only,
+workspace. Delete that file to go back to the default order with everything open.
+Collapsing and moving still work while a lab runs and the design is read-only,
 because they change nothing in the design. A collapsed **Scenario** or **Laboratory** opens
 by itself when something in it needs an answer or reports a result, such as a capture, a
 question before a redeploy, or the link checks.
@@ -364,8 +311,7 @@ and press Delete to remove the whole segment, as you would a link.
 
 ### Keyboard
 
-The whole application is operable without a mouse — that is a graded requirement, so please
-report anything that is not.
+The whole application can be used without a mouse.
 
 | Key | Effect |
 |---|---|
@@ -399,11 +345,8 @@ Two levels of control:
 So to make domain C use `192.168.1.0/24` while everything else is automatic: type it into
 C's field, leave the rest blank, and press **Assign addresses**.
 
-```
-allocated subnets: {'A': '10.0.0.0/24', 'B': '10.0.1.0/24'}
-  r1  eth1  192.168.1.1/24   (domain C)
-  r3  eth1  192.168.1.2/24   (domain C)
-```
+The devices on C are numbered `192.168.1.1/24`, `192.168.1.2/24` and so on, while A and B
+are given `10.0.0.0/24` and `10.0.1.0/24` from the pool.
 
 **Assign** preserves pinned subnets, and any address you typed yourself that lies inside its
 domain's pinned subnet. An address *outside* the pinned subnet is replaced, because the pin
@@ -412,9 +355,7 @@ with nothing pinned whose devices already agree on a subnet keeps that subnet, a
 devices on it are numbered inside it. **Renumber all** replaces everything — that is what
 "all" means, so pin again afterwards if you need to.
 
-A subnet field rejects a host address (`192.168.1.1/24`) and suggests the network instead,
-because the model requires a network and an invalid value would otherwise be rejected on
-every later request.
+A subnet field rejects a host address (`192.168.1.1/24`) and suggests the network instead.
 
 **Two collision domains with overlapping subnets** are a *warning*, not an error, and it
 only states the fact: "Collision domains A and B have the same subnet, 10.9.0.0/24." Usually
@@ -474,9 +415,7 @@ zipped by Finder or Explorer (the extra wrapping directory is unwrapped for you,
 **Its configuration is recovered, not discarded.** A Kathará lab keeps its addressing in
 `<device>.startup` and its routing daemons in `<device>/etc/frr/daemons`, so those files are
 read and folded into the model. Both the modern `ip address add 10.0.0.1/24 dev eth0` and
-the older Netkit `ifconfig eth0 10.0.0.1 netmask 255.255.255.0` are understood. Without
-this, an imported lab looked unaddressed and the validator complained about addresses that
-were on disk all along.
+the older Netkit `ifconfig eth0 10.0.0.1 netmask 255.255.255.0` are understood.
 
 **Device kinds are guessed, because Kathará does not record them.** A device running FRR is
 a router; otherwise names like `pc1`, `server2` or `sw1` pick the icon. Anything unclear
@@ -555,11 +494,6 @@ runs automatically on a lab imported without a saved layout, and never touches a
 already have.
 
 It is a single undo step, so trying it costs nothing.
-
-The algorithm layers devices by distance from the graph's centre and then orders each layer
-by where its neighbours sit — the middle of the classical Sugiyama method. On the ordinary
-teaching shapes (a ring, a star, a chain, a two-tier campus) it produces no crossings at
-all; on a tangled thirty-device graph it cut them from around 185 to 34.
 
 ### Hibernating and resuming a lab
 
@@ -687,12 +621,11 @@ to select it, then press Delete to remove it. Each change is one undo step.
 
 Text labels are saved in `lab.conf` as `# kgui:text` comments, which Kathará ignores.
 
-### Not built, by decision
+### What it does not do
 
-These are not built:
 
 - **An in-app terminal.** Copy the shell command from the Laboratory panel into a terminal —
-  see §4.
+  see *Getting a shell on a running device* in §6.
 - **Variants** of a scenario (exam groups), and duplicating a group of devices: **Save as**
   makes a variant.
 - **PDF manuals** beside the topology, and a **built-in lab library**.
@@ -700,41 +633,7 @@ These are not built:
 
 ---
 
-## 4. Verifying a topology outside the UI
-
-Everything here can be done in the interface. The API is for scripting it. Use the port
-and token printed at startup. Export the generated `lab.conf`:
-
-```bash
-# Unix shell
-TOKEN=<token from startup>
-curl -s -H "X-KGUI-Token: $TOKEN" http://127.0.0.1:8150/api/topology/export \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["text"])'
-```
-
-```powershell
-# PowerShell. In Windows PowerShell 5.1, `curl` is an alias for Invoke-WebRequest and
-# does not take curl's options, so use Invoke-RestMethod.
-$h = @{ "X-KGUI-Token" = "<token from startup>" }
-(Invoke-RestMethod -Headers $h http://127.0.0.1:8150/api/topology/export).text
-```
-
-Import a hand-written lab:
-
-```bash
-# Unix shell
-curl -s -X POST -H "X-KGUI-Token: $TOKEN" -H "Content-Type: application/json" \
-  --data "$(python3 -c 'import json;print(json.dumps({"text":open("lab.conf").read()}))')" \
-  http://127.0.0.1:8150/api/topology/import
-```
-
-```powershell
-# PowerShell. The [string] matters: Windows PowerShell 5.1's Get-Content attaches
-# hidden properties that ConvertTo-Json would send too, and the server refuses them.
-$body = @{ text = [string](Get-Content -Raw lab.conf) } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Headers $h -ContentType "application/json" `
-  -Body $body http://127.0.0.1:8150/api/topology/import
-```
+## 6. Working with a running lab
 
 ### Redeploying
 
@@ -751,8 +650,7 @@ The working loop is: stop (capturing if you want to keep what you configured), e
 deploy, look again. The design can't be edited while the lab runs; see *While the lab is
 running, the design is read-only* above.
 
-**Kathará identifies a lab by its name, not its folder.** `Lab.hash` is derived from
-`LAB_NAME`, so two labs both called `untitled` in different directories are *the same lab*
+**Kathará identifies a lab by its name, not its folder**, so two labs both called `untitled` in different directories are *the same lab*
 to Kathará — deploying one stops the other.
 
 Because of that, deploying when something is already running under the same lab name asks
@@ -769,7 +667,7 @@ happen with a lab started from elsewhere, for example with `kathara lstart`.
 To apply a change to one device's files without redeploying the lab, select the device (or
 several) on the canvas while the lab runs and press **Restart r1** in the Laboratory panel.
 It asks first, then stops that device's container and starts it again from the lab folder;
-the rest of the lab keeps running. On the Windows machine it took 3 to 4 seconds (3.3 s and 4.1 s measured). Use it after
+the rest of the lab keeps running. It takes a few seconds. Use it after
 editing a file in the lab folder by hand, such as `r1/etc/frr/frr.conf`.
 
 What was configured inside that device since it started, and not captured, is lost, as
@@ -827,10 +725,8 @@ run from anywhere else fails with `MachineNotRunningError`, even while `kathara 
 the device running.
 
 **On Windows, the Kathará CLI is a separate install** (from kathara.org), and without it
-`kathara` is "not recognized as an internal or external command". The panel used to
-suggest `cd <dir> && kathara connect r1`, which failed on Windows in three ways: no CLI,
-no `&&` in Windows PowerShell 5.1, and `cd` in `cmd` doesn't switch drives. That is why it
-now leads with `docker exec`.
+`kathara` is "not recognized as an internal or external command". The `docker exec`
+command needs no such install, which is why the panel shows it first.
 
 Use `--workspace DIR` to put labs somewhere else.
 
@@ -855,6 +751,9 @@ capture the configuration next time before you stop for the day.
 
 ### Running an exported lab by hand
 
+An exported lab is an ordinary Kathará lab, so with Kathará's own command-line tool it
+runs without this application:
+
 ```bash
 mkdir mylab
 cd mylab
@@ -865,127 +764,21 @@ kathara connect r1
 kathara lclean
 ```
 
-### API reference
-
-All endpoints need the token, as `X-KGUI-Token` or `?token=`.
-
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/health` | liveness and version |
-| GET | `/api/topology` | current topology, dirty flag, path |
-| PUT | `/api/topology` | replace the topology |
-| POST | `/api/topology/reset` | back to empty |
-| POST | `/api/topology/import` | parse `lab.conf` text; returns warnings |
-| GET | `/api/topology/export` | render the topology as `lab.conf` |
-| GET | `/api/topology/addressing/issues` | addressing problems in the stored topology |
-| POST | `/api/topology/addressing/check` | validate a supplied topology without storing it |
-| POST | `/api/topology/addressing/allocate` | assign addresses; optional per-domain subnets |
-| GET | `/api/lab/probe` | preflight: Docker, Kathará, WSL2 |
-| GET | `/api/lab/features` | which assistive features this scenario allows |
-| POST | `/api/lab/status` | reconcile a topology against the running containers |
-| POST | `/api/lab/deploy` | deploy; reports conflicts unless `confirm` is set |
-| POST | `/api/lab/undeploy` | stop the lab |
-| POST | `/api/lab/verify` | ping across every direct link |
-| POST | `/api/lab/restart` | stop and start the named `devices` of the running lab from its folder; the rest keep running |
-| GET | `/api/lab/everything` | how many devices, in how many labs, **Stop every lab** would stop |
-| POST | `/api/lab/wipe` | stop every lab of this user, capturing nothing (`kathara wipe`) |
-| POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
-| GET | `/api/project` | scenario name, folder, feature toggles, and `exam`: whether they are locked, and unlocked for this session |
-| PUT | `/api/project/features` | set the exam switches; written to `kgui.json` at once; 423 while locked |
-| POST | `/api/project/exam/lock` | lock the switches with the author's `password` (at least 4 characters) |
-| POST | `/api/project/exam/unlock` | unlock them for this session; `intact` is false if `kgui.json` was edited outside the application; 403 for a wrong password |
-| POST | `/api/project/exam/relock` | lock them again after an unlock |
-| DELETE | `/api/project/exam/lock` | remove the lock; only while unlocked |
-| GET | `/api/project/scenarios` | scenario folders in the workspace, each with `running` when its lab has a running container |
-| POST | `/api/project/save` | write the scenario folder into the workspace |
-| POST | `/api/project/export` | the scenario folder as a zip, for download; with a `password` (at least 4 characters), sealed as a `.kgx` |
-| POST | `/api/project/open` | open a scenario folder from the workspace |
-| POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running; a sealed `.kgx` needs its password in the `X-KGUI-Password` header, percent-encoded: 428 without one, 403 for a wrong one |
-| POST | `/api/project/capture` | pull running configuration into the scenario |
-| GET | `/api/preferences` | the side panels' layout: each panel's section order, which are collapsed, and whether the panel is hidden |
-| PUT | `/api/preferences` | store that layout in `.kgui-preferences.json`; unknown sections are dropped, missing ones restored |
-
-The `POST` endpoints for addressing and lab operations take the topology in the request body
-rather than acting on the stored one, because the browser normally holds newer work than the
-server does. `GET /api/topology/addressing/issues` is the exception and reports on the
-stored topology.
-
-The OpenAPI schema while the server runs: `http://127.0.0.1:8150/openapi.json?token=<token>`.
-The interactive page at `/docs?token=<token>` opens but shows no endpoints: it fetches the
-schema without the token, and the server refuses that with 401.
-
 ---
 
-## 5. Development commands
-
-```bash
-uv sync                       # install/refresh Python dependencies
-uv run pytest                 # unit tests, no Docker needed
-uv run pytest -m docker       # integration tests, needs a running daemon
-uv run pytest -q tests/test_labconf_codec.py     # one file
-uv run pytest -k position                        # by name
-uv run ruff check .           # lint
-uv run ruff check --fix .     # autofix
-uv run python scripts/spike_vertical.py          # full Kathará path against Docker
-```
-
-```bash
-npm --prefix frontend run dev          # dev server with hot reload
-npm --prefix frontend test             # vitest, includes axe accessibility audits
-npm --prefix frontend run test:watch
-npm --prefix frontend run lint         # TypeScript type check
-npm --prefix frontend run build        # build into src/kathara_gui/static/
-```
-
-Run everything the way CI does:
-
-```bash
-uv run ruff check .
-uv run pytest -q
-npm --prefix frontend run lint
-npm --prefix frontend test
-npm --prefix frontend run build
-```
-
-Run them in order and stop at the first failure. They're not chained with `&&` because
-Windows PowerShell 5.1 can't parse it.
-
-### Layout
-
-```
-src/kathara_gui/      backend
-  domain/             pure logic — no Docker, filesystem or network
-  kathara/            adapter over the Kathará Python API
-  project/            lab directory and session
-  api/                HTTP routers
-frontend/src/
-  store/              operations reducer, undo, alignment
-  a11y/               accessible tree, live regions
-  canvas/  panels/    React Flow canvas, side panels
-tests/                Python tests
-scripts/              the integration spike
-```
-
----
-
-## 6. Troubleshooting
-
-**`npm error EACCES ... _cacache`** — the npm cache is unwritable. Use another:
-`NPM_CONFIG_CACHE=./.npm-cache npm install`
+## 7. Troubleshooting
 
 **"Kathara GUI has no interface" on the page, or a warning saying so at startup** — the
 copy you started was installed before the interface was built. Run `install.cmd` or
 `./install.sh` in the project folder.
 
-**Blank page, or 404 at the root** — the UI has not been built. `npm --prefix frontend run build`
+**Blank page, or 404 at the root** — the interface has not been built. Run the installer
+again, or the two `npm.cmd` lines of *Installing*, Option 2.
 
-**Every API call returns 401** — the token is missing. Use the full URL printed at startup,
-including `?token=…`. It is stored per browser tab, so a new tab needs the URL again.
+**Nothing works, and the messages say 401** — the page was opened without its key. Open the
+full address printed at startup, including `?token=…`. A new browser tab needs it again.
 
-**403 "Cross-origin requests are not permitted"** — the page was loaded from a different
-origin than the backend. In dev, use the Vite URL and let the proxy handle `/api`.
-
-**`docker info` fails** — start Docker Desktop and wait for it to report running.
+**"Docker is not running"** — start Docker Desktop and wait for it to report running.
 
 **"Docker is not running" after restarting Docker Desktop** — the application reconnects on
 its own, so there is no need to restart it. Wait until Docker Desktop reports that it is
@@ -994,10 +787,6 @@ running, then try again.
 **"npm.ps1 cannot be loaded because running scripts is disabled on this system"** —
 PowerShell's default execution policy on Windows. Type `npm.cmd` instead of `npm`, or run
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. See §2.
-
-**A traceback after Ctrl+C** (`KeyboardInterrupt`, then `CancelledError`) — fixed. It was
-a clean stop that looked like a crash: on Windows, Ctrl+C reaches the server twice. The
-application now just prints "Kathara GUI stopped."
 
 **Port already in use** — omit `--port` and an unused one is chosen for you.
 
@@ -1048,36 +837,3 @@ Settings → Resources → Advanced → **Disk image location**.
 **Every device shows "Exited" after a break** — Docker stopped them; the containers are
 still there but nothing is running inside. Press **Deploy** and confirm. See *When a device
 says "Exited"* above.
-
----
-
-## 7. Accessibility testing
-
-> Accessibility is checked against EN 301 549, by the automated tests below and by a
-> manual keyboard pass on Windows.
-
-> **Screen readers are out of scope.** There is no VoiceOver or NVDA pass, and the
-> conformance claim is partial. The application makes no sound, so nothing is needed for hearing.
-
-
-Automated, on every commit:
-
-```bash
-npm --prefix frontend test     # axe-core audits over tree, panels and the whole app
-```
-
-```bash
-uv run pytest tests/test_contrast.py    # palette contrast against WCAG 2.1
-```
-
-> **axe under jsdom cannot check colour contrast** — it needs a real canvas. A clean
-> `npm test` proves structure, roles and naming only. `test_contrast.py` covers the palette
-> from the other side by reading the real tokens out of `styles.css`, but neither proves
-> *rendered* contrast, so the browser pass below still matters.
-
-Manual:
-
-- **Keyboard only** — unplug the mouse and build a two-device topology.
-- **Zoom to 200%** — layout must not break or overlap.
-- **Dark mode and increased contrast** — both follow the OS setting.
-- **Reduced motion** — animations are suppressed when the OS asks.

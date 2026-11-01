@@ -100,7 +100,11 @@ npm --prefix frontend run build
 ```
 
 In PowerShell on Windows, type `npm.cmd` instead of `npm`: the default execution policy
-blocks `npm.ps1`. See `docs/USAGE.md` §2.
+blocks `npm.ps1`.
+
+How the application is built, and how to work on it, is in
+**[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**; why it is built this way is in
+[docs/DESIGN.md](docs/DESIGN.md).
 
 ### Tests
 

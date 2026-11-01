@@ -1,6 +1,8 @@
 # Design rationale
 
 Why this application exists, what shape it takes, and why each significant choice was made.
+How it is built, file by file, and how to work on it, is in [DEVELOPMENT.md](DEVELOPMENT.md).
+
 
 <!-- contents -->
 ## Contents
