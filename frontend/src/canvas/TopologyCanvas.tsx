@@ -287,6 +287,10 @@ function CanvasInner({
       height: zone.height,
       zIndex: -1,
       selected: zone.id === selectedZone,
+      // While the lab runs a zone cannot be edited, so it lets the pointer
+      // through: a drag that starts on it pans the canvas, as if it were not
+      // there (note 7). Devices still answer a drag with the reason.
+      ...(locked && { draggable: false, selectable: false, style: { pointerEvents: "none" } }),
       data: {
         name: zone.name,
         shape: zone.shape,

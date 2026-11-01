@@ -338,6 +338,64 @@ button:disabled {
   overflow: hidden;
 }
 
+/* The Hide button (note 6), on the panel's canvas side, above the sections
+   so it does not scroll away. */
+.panel__bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px 0;
+}
+
+.panel__bar--right {
+  justify-content: flex-start;
+}
+
+.panel__hide {
+  padding: 2px 10px;
+  font-size: 0.85rem;
+}
+
+/* What a hidden panel leaves: a strip the height of the canvas at its edge,
+   its words running down it. 2rem wide, past the 24px WCAG 2.5.8 asks. */
+.panel-strip {
+  display: flex;
+  flex-shrink: 0;
+  width: 2rem;
+  background: var(--bg-panel);
+}
+
+.panel-strip--left {
+  border-right: 1px solid var(--border);
+}
+
+.panel-strip--right {
+  border-left: 1px solid var(--border);
+}
+
+.panel-strip__button {
+  flex: 1;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg);
+  writing-mode: vertical-rl;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.panel-strip__button:hover {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.panel-strip__button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
 .panel__scroll {
   flex: 1;
   min-height: 0;
@@ -883,6 +941,17 @@ button:disabled {
 
   .panel__scroll {
     overflow-y: visible;
+  }
+
+  /* Stacked, a hidden panel leaves a bar the width of the page instead. */
+  .panel-strip {
+    width: auto;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-strip__button {
+    writing-mode: horizontal-tb;
   }
 
   .app__canvas {

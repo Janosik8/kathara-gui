@@ -30,6 +30,7 @@ import { Inspector } from "./panels/Inspector";
 import { LabPanel } from "./panels/LabPanel";
 import { LabTitle } from "./panels/LabTitle";
 import { PanelResizer } from "./panels/PanelResizer";
+import { HidePanelButton, ShowPanelStrip, hideButtonId, showStripId } from "./panels/PanelToggle";
 import {
   type PanelLayout,
   PanelSection,
@@ -308,8 +309,8 @@ export default function App() {
   const [environment, setEnvironment] = useState<EnvironmentCheck[]>([]);
   const [canDeploy, setCanDeploy] = useState(false);
   const [canVerify, setCanVerify] = useState(true);
-  // Off until the scenario says otherwise, like the server's default (FR-49).
-  const [showAddresses, setShowAddresses] = useState(false);
+  // On until the scenario says otherwise, like the server's default (FR-49).
+  const [showAddresses, setShowAddresses] = useState(true);
   // The exam author's lock on those switches (note 1), and what the last
   // unlock found: false when they were changed outside the application.
   const [exam, setExam] = useState<ExamState>(UNLOCKED);
@@ -326,7 +327,7 @@ export default function App() {
     setCanValidate(f.addressing_validation);
     setCanVerify(f.infrastructure_verification);
     // A server from before FR-49 sends no such key.
-    setShowAddresses(f.interface_addresses ?? false);
+    setShowAddresses(f.interface_addresses ?? true);
   }, []);
   const [labBusy, setLabBusy] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Conflicts | null>(null);
@@ -384,6 +385,21 @@ export default function App() {
       setLayout((current) => ({ ...current, [side]: change(current[side]) }));
     },
     [],
+  );
+
+  /**
+   * Hides a side panel or shows it again (note 6), and moves focus to the
+   * control that takes the place of the one just pressed.
+   */
+  const togglePanel = useCallback(
+    (side: PanelSide) => {
+      const hidden = !layout[side].hidden;
+      arrangePanel(side, (current) => ({ ...current, hidden }));
+      requestAnimationFrame(() =>
+        document.getElementById(hidden ? showStripId(side) : hideButtonId(side))?.focus(),
+      );
+    },
+    [arrangePanel, layout],
   );
 
   useEffect(() => {
@@ -1525,9 +1541,12 @@ export default function App() {
 
   return (
     <div className="app" data-connect-mode={connectMode || undefined}>
-      <a className="skip-link" href="#topology">
-        Skip to topology
-      </a>
+      {/* Not while the panel it leads into is hidden: it would lead nowhere. */}
+      {!layout.left.hidden && (
+        <a className="skip-link" href="#topology">
+          Skip to topology
+        </a>
+      )}
 
       {/* The drift warning lives here as well as in the Laboratory panel: it
           was being missed in the panel, and it changes what every other
@@ -1752,6 +1771,9 @@ export default function App() {
 
       <ExplainContext.Provider value={explain}>
       <div className="app__body">
+        {layout.left.hidden ? (
+          <ShowPanelStrip side="left" name="devices" onToggle={() => togglePanel("left")} />
+        ) : (
         <aside
           className="panel"
           aria-label="Devices"
@@ -1765,6 +1787,7 @@ export default function App() {
             label="Width of the devices panel"
             onResize={(left) => setPanelWidths((w) => ({ ...w, left }))}
           />
+          <HidePanelButton side="left" name="devices" onToggle={() => togglePanel("left")} />
 
           <div className="panel__scroll">
 
@@ -1857,6 +1880,7 @@ export default function App() {
           })}
           </div>
         </aside>
+        )}
 
         <main className="app__canvas">
           <TopologyCanvas
@@ -1891,6 +1915,9 @@ export default function App() {
           />
         </main>
 
+        {layout.right.hidden ? (
+          <ShowPanelStrip side="right" name="details" onToggle={() => togglePanel("right")} />
+        ) : (
         <aside
           className="panel panel--right"
           aria-label="Device details"
@@ -1904,6 +1931,7 @@ export default function App() {
             label="Width of the details panel"
             onResize={(right) => setPanelWidths((w) => ({ ...w, right }))}
           />
+          <HidePanelButton side="right" name="details" onToggle={() => togglePanel("right")} />
 
           <div className="panel__scroll">
 
@@ -2050,6 +2078,7 @@ export default function App() {
           })}
           </div>
         </aside>
+        )}
       </div>
       </ExplainContext.Provider>
 

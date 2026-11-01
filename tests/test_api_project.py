@@ -905,7 +905,7 @@ def test_a_new_scenario_starts_unlocked(client: TestClient, session: Session) ->
     assert client.get("/api/project").json()["exam"] == {"locked": False, "unlocked": False}
 
 
-def test_a_scenario_from_before_the_address_switch_opens_with_it_off(
+def test_a_scenario_from_before_the_address_switch_opens_with_it_on(
     client: TestClient, session: Session
 ) -> None:
     """FR-49: kgui.json written before the switch existed has no key for it."""
@@ -917,7 +917,7 @@ def test_a_scenario_from_before_the_address_switch_opens_with_it_off(
     session.reset()
 
     body = client.post("/api/project/open", json={"folder": name}).json()
-    assert body["features"]["interface_addresses"] is False
+    assert body["features"]["interface_addresses"] is True
     assert body["features"]["subnet_calculator"] is True
 
 

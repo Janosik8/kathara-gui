@@ -301,7 +301,7 @@ class FeaturesResponse(BaseModel):
         description="Whether link diagnostics are available in this scenario."
     )
     interface_addresses: bool = Field(
-        default=False,
+        default=True,
         description="Whether the canvas shows each interface's host part (FR-49).",
     )
 

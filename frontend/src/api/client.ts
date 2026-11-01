@@ -192,7 +192,7 @@ export interface StatusResponse {
 
 /** The side panels' arrangement, remembered between launches (note 3). */
 export interface Preferences {
-  panels: Record<"left" | "right", { order: string[]; collapsed: string[] }>;
+  panels: Record<"left" | "right", { order: string[]; collapsed: string[]; hidden?: boolean }>;
 }
 
 /** Which assistive features this scenario permits (exam mode). */

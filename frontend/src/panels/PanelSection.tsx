@@ -201,6 +201,8 @@ export function PanelSection({
 export interface PanelLayout {
   order: string[];
   collapsed: string[];
+  /** The whole panel hidden, leaving the canvas its room (note 6). */
+  hidden?: boolean;
 }
 
 /**

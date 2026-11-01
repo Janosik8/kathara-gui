@@ -3,7 +3,7 @@
 Everything you can do with the application and the repository, in one place.
 A living document — update it when behaviour changes.
 
-- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; zones, sealed export, restarting one device)
+- **Last updated:** 2026-10-30 (the lock on the exam switches restored, D13; addresses on the canvas; link labels slid along their links; text labels; side panels hidden; zones, sealed export, restarting one device)
 - See [PLAN.md](../PLAN.md) for what is built and what is not.
 
 ---
@@ -286,6 +286,12 @@ because they change nothing in the design. A collapsed **Scenario** or **Laborat
 by itself when something in it needs an answer or reports a result, such as a capture, a
 question before a redeploy, or the link checks.
 
+**A whole side panel can be hidden**, to give the canvas the window. Press **« Hide** at the
+top of the left panel, or **Hide »** at the top of the right one. A narrow strip stays at
+that edge, **Show devices panel** or **Show details panel**; press it to bring the panel
+back. Hidden panels are remembered with the rest of the arrangement. While the devices
+panel is hidden, **Skip to topology** is left out, since the topology is inside it.
+
 **ⓘ, at the right-hand end of the top bar, explains the controls.** The bars and panels
 show button labels and what is happening now, and nothing more, to keep them small. Press
 ⓘ (it fills blue while on) and a strip under the top bar says what each of its buttons
@@ -450,7 +456,9 @@ settings, on the canvas and in the tree. **New**, **Open** and **Import** stay a
 the lab keeps running in the background, and opening its scenario again brings it back
 read-only, with Stop and Capture. Anything that tries to edit anyway
 is refused and says why in the status line: a keyboard shortcut, a press on a disabled
-button, or dragging a device, which stays where it is.
+button, or dragging a device, which stays where it is. Zones are the exception: they cannot
+be selected or dragged while the lab runs, so a drag that starts on one pans the canvas, as
+if the zone were not there.
 
 After reloading the page, the header says **Checking whether the lab is running…** for
 about a second, and the design is locked meanwhile. Docker has to be asked, and an edit
@@ -574,7 +582,7 @@ that feature for this scenario. The switch is written to `kgui.json` at once, wi
 Save, and the server enforces it: the calculator is refused even to a request that does
 not come from the page.
 
-**Addresses on the canvas** is off until you tick it, and only changes the view: each
+**Addresses on the canvas** is on unless you untick it, and only changes the view: each
 interface label gets the end of its address, in blue, on its far side from the device:
 under a label below the device, over one above it, outside one beside it. The part shown starts at
 the first octet the prefix does not wholly cover: `eth0 .1` for `192.168.0.1/24`,
@@ -857,7 +865,7 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/project/open` | open a scenario folder from the workspace |
 | POST | `/api/project/import` | open a zip or a `lab.conf` sent as a raw body; 409 if a scenario of that lab's name exists, unless `?replace=true`; 423 if that scenario's lab is running; a sealed `.kgx` needs its password in the `X-KGUI-Password` header, percent-encoded: 428 without one, 403 for a wrong one |
 | POST | `/api/project/capture` | pull running configuration into the scenario |
-| GET | `/api/preferences` | the side panels' layout: each panel's section order and which are collapsed |
+| GET | `/api/preferences` | the side panels' layout: each panel's section order, which are collapsed, and whether the panel is hidden |
 | PUT | `/api/preferences` | store that layout in `.kgui-preferences.json`; unknown sections are dropped, missing ones restored |
 
 The `POST` endpoints for addressing and lab operations take the topology in the request body

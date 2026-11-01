@@ -38,11 +38,11 @@ class Features(BaseModel):
         description="Automated link diagnostics (Capability 4).",
     )
     interface_addresses: bool = Field(
-        default=False,
+        default=True,
         description="The host part of each interface's address beside its label on the "
         "canvas (FR-49). Only a view: the addresses are in the details panel either way, "
-        "so there is nothing for the server to refuse. Off by default, so a canvas looks "
-        "as it did until someone asks for it.",
+        "so there is nothing for the server to refuse. On by default, as the user asked "
+        "on 2026-11-01, and so on for a scenario saved before the switch existed.",
     )
 
     def require(self, name: str) -> None:

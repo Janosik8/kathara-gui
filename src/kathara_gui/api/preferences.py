@@ -45,6 +45,7 @@ COLLAPSED: dict[str, tuple[str, ...]] = {"left": (), "right": ("exam",)}
 class PanelLayout(BaseModel):
     order: list[str] = Field(description="Section ids, top to bottom.")
     collapsed: list[str] = Field(default_factory=list, description="Section ids shown collapsed.")
+    hidden: bool = Field(default=False, description="The whole panel hidden (note 6).")
 
 
 class Panels(BaseModel):
@@ -75,7 +76,7 @@ def _clean(side: str, layout: PanelLayout) -> PanelLayout:
     collapsed = [
         s for s in known if s in layout.collapsed or (s in arrived and s in COLLAPSED[side])
     ]
-    return PanelLayout(order=order, collapsed=collapsed)
+    return PanelLayout(order=order, collapsed=collapsed, hidden=layout.hidden)
 
 
 def normalise(preferences: Preferences) -> Preferences:

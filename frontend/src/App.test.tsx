@@ -3724,6 +3724,48 @@ describe("side-panel sections collapse and move (note 3)", () => {
     expect(screen.getByRole("button", { name: "Move Laboratory up" })).toHaveFocus();
   });
 
+  it("hides a whole panel and shows it again, focus following the press (note 6)", async () => {
+    const user = await renderApp();
+    screen.getByRole("button", { name: "Hide the devices panel" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.queryByRole("complementary", { name: "Devices" })).toBeNull();
+    const strip = screen.getByRole("button", { name: "Show devices panel" });
+    await waitFor(() => expect(strip).toHaveFocus());
+    // The other panel is untouched.
+    expect(screen.getByRole("complementary", { name: "Device details" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(savePreferences).toHaveBeenLastCalledWith({
+        panels: expect.objectContaining({ left: expect.objectContaining({ hidden: true }) }),
+      }),
+    );
+    const results = await axeCore.run(document.body);
+    expect(screen.queryByRole("link", { name: "Skip to topology" })).toBeNull();
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("complementary", { name: "Devices" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Hide the devices panel" })).toHaveFocus(),
+    );
+  });
+
+  it("opens with a panel hidden when it was left hidden", async () => {
+    preferences.mockResolvedValue({
+      panels: {
+        left: { order: ["palette", "connect", "domains", "topology"], collapsed: [] },
+        right: {
+          order: ["details", "addressing", "arrange", "scenario", "lab"],
+          collapsed: [],
+          hidden: true,
+        },
+      },
+    });
+    await renderApp();
+    await screen.findByRole("button", { name: "Show details panel" });
+    expect(screen.queryByRole("complementary", { name: "Device details" })).toBeNull();
+  });
+
   it("hands focus to the other arrow at the end of the panel", async () => {
     const user = await renderApp();
     screen.getByRole("button", { name: "Move Addressing up" }).focus();

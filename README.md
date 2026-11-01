@@ -11,7 +11,7 @@ running configuration back out of the containers — without hand-editing `lab.c
 
 ## Status
 
-Every requirement is built (86 of 91) or dropped by decision (5). You can design a
+Every requirement is built (88 of 93) or dropped by decision (5). You can design a
 topology on a canvas or from the keyboard, group it into named zones, annotate it with
 text placed anywhere, plan the addressing
 with conflict detection, deploy it with one click, restart a single device, verify every
@@ -21,8 +21,8 @@ autonomous system. An instructor can withdraw assistive features for an exam, lo
 with a password, and send the scenario sealed with a password until the exam starts. While a lab runs, the design is read-only
 (D9).
 
-It has passed a manual procedure on Windows, now 137 steps: 122 passed, 2 describe features
-dropped by decision, and 13, for the features added since 2026-10-29, are not yet run by hand.
+It has passed a manual procedure on Windows, now 139 steps: 122 passed, 2 describe features
+dropped by decision, and 15, for the features added since 2026-10-29, are not yet run by hand.
 The installer has been run on a clean Windows 11 machine, and an EN 301 549 conformance
 table states partial conformance, by decision: screen readers are out of scope (D10 in
 `PLAN.md`).

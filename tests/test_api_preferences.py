@@ -17,8 +17,12 @@ TOKEN = "test-token-value"
 
 DEFAULTS = {
     "panels": {
-        "left": {"order": list(SECTIONS["left"]), "collapsed": []},
-        "right": {"order": list(SECTIONS["right"]), "collapsed": list(COLLAPSED["right"])},
+        "left": {"order": list(SECTIONS["left"]), "collapsed": [], "hidden": False},
+        "right": {
+            "order": list(SECTIONS["right"]),
+            "collapsed": list(COLLAPSED["right"]),
+            "hidden": False,
+        },
     }
 }
 
@@ -61,6 +65,24 @@ def test_a_layout_survives_a_new_server(session: Session, client: TestClient) ->
     )
     with TestClient(again, headers={"X-KGUI-Token": TOKEN}) as second:
         assert second.get("/api/preferences").json() == stored
+
+
+def test_a_hidden_panel_stays_hidden_and_an_older_file_shows_both(
+    session: Session, client: TestClient
+) -> None:
+    layout = {"panels": {"left": {"order": [], "hidden": True}, "right": {"order": []}}}
+    stored = client.put("/api/preferences", json=layout).json()
+    assert stored["panels"]["left"]["hidden"] is True
+    assert stored["panels"]["right"]["hidden"] is False
+    assert client.get("/api/preferences").json()["panels"]["left"]["hidden"] is True
+
+    # A file written before panels could be hidden has no such key.
+    (session.workspace_root / FILE_NAME).write_text(
+        '{"panels": {"left": {"order": ["palette"]}, "right": {"order": ["lab"]}}}',
+        encoding="utf-8",
+    )
+    panels = client.get("/api/preferences").json()["panels"]
+    assert not panels["left"]["hidden"] and not panels["right"]["hidden"]
 
 
 @pytest.mark.parametrize("content", ["{not json", '{"panels": 7}', "\xff\xfe"])
