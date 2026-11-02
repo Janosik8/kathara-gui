@@ -4,7 +4,8 @@ Capability 9's second scenario: a student opens a BGP lab from a public
 repository "to visualize it to understand it better", and the application
 organises "the distinct Autonomous Systems into separate visual clusters". A
 lab from elsewhere has no coordinates, so it is laid out anyway
-(:mod:`~kathara_gui.domain.layout`); this decides *what* is laid out together.
+(:mod:`~kathara_gui.domain.layout`); this decides *what* is laid out together,
+and :mod:`~kathara_gui.domain.clusters` lays it out.
 
 **Where the AS number comes from.** Each router's ``router bgp <ASN>``, read
 from its FRR or Quagga configuration by the caller. A router with no BGP
@@ -19,21 +20,13 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Callable
 
-from kathara_gui.domain.layout import SPACING, arrange
-from kathara_gui.domain.model import Position, Topology, Zone
+from kathara_gui.domain.model import Topology
 
-__all__ = ["asn_from_config", "as_groups", "clustered_layout"]
+__all__ = ["asn_from_config", "as_groups", "spread"]
 
 _ROUTER_BGP = re.compile(r"^\s*router\s+bgp\s+(\d+)\b", re.MULTILINE)
-
-#: Room between a zone's edge and the devices inside it, for their labels.
-_PADDING = {"x": 70, "y": 60}
-#: About how much a device occupies from its position, which is its top-left
-#: corner: the picture, its name and a loopback under it.
-_DEVICE = {"x": 90, "y": 90}
-#: Room between two clusters, so their zones do not touch.
-_GAP = SPACING["x"]
 
 
 def asn_from_config(text: str) -> int | None:
@@ -48,7 +41,30 @@ def as_groups(topology: Topology, asns: dict[str, int]) -> dict[int, list[str]]:
     Repeated until nothing changes, so a host behind a switch behind a router
     joins the router's AS, not only the switch.
     """
-    member: dict[str, int] = {name: asn for name, asn in asns.items() if topology.node(name)}
+    member = spread(
+        topology, {name: asn for name, asn in asns.items() if topology.node(name)}
+    )
+
+    groups: dict[int, list[str]] = defaultdict(list)
+    for node in topology.nodes:
+        if node.name in member:
+            groups[member[node.name]].append(node.name)
+    return dict(sorted(groups.items()))
+
+
+def spread[K](
+    topology: Topology,
+    member: dict[str, K],
+    eligible: Callable[[str], bool] = lambda name: True,
+) -> dict[str, K]:
+    """``member`` extended to the devices wired only to one group.
+
+    A device joins when every neighbour that has a group has the same one.
+    Repeated until nothing changes, so a host behind a switch behind a router
+    joins the router's group, not only the switch. A device ``eligible``
+    refuses is never added, and nothing spreads through it.
+    """
+    member = dict(member)
     neighbours: dict[str, set[str]] = defaultdict(set)
     for domain in topology.referenced_collision_domains():
         names = [node.name for node, _ in topology.members(domain)]
@@ -59,62 +75,10 @@ def as_groups(topology: Topology, asns: dict[str, int]) -> dict[int, list[str]]:
     while changed:
         changed = False
         for node in topology.nodes:
-            if node.name in member:
+            if node.name in member or not eligible(node.name):
                 continue
             around = {member[n] for n in neighbours[node.name] if n in member}
             if len(around) == 1:
                 member[node.name] = around.pop()
                 changed = True
-
-    groups: dict[int, list[str]] = defaultdict(list)
-    for node in topology.nodes:
-        if node.name in member:
-            groups[member[node.name]].append(node.name)
-    return dict(sorted(groups.items()))
-
-
-def clustered_layout(
-    topology: Topology, groups: dict[int, list[str]]
-) -> tuple[dict[str, Position], list[Zone]]:
-    """Positions with each AS laid out on its own, side by side, and a zone round each.
-
-    Devices in no AS are laid out last, as one more cluster without a zone.
-    """
-    clusters: list[tuple[int | None, list[str]]] = list(groups.items())
-    grouped = {name for names in groups.values() for name in names}
-    rest = [node.name for node in topology.nodes if node.name not in grouped]
-    if rest:
-        clusters.append((None, rest))
-
-    positions: dict[str, Position] = {}
-    zones: list[Zone] = []
-    origin_x = 0.0
-    for asn, names in clusters:
-        inside = set(names)
-        part = topology.model_copy(
-            update={"nodes": [n for n in topology.nodes if n.name in inside]}
-        )
-        local = arrange(part)
-        if not local:
-            continue
-        left = min(p.x for p in local.values())
-        right = max(p.x for p in local.values())
-        top = min(p.y for p in local.values())
-        bottom = max(p.y for p in local.values())
-
-        shift = origin_x + _PADDING["x"] - left
-        for name, p in local.items():
-            positions[name] = Position(x=p.x + shift, y=p.y - top + _PADDING["y"])
-        if asn is not None:
-            zones.append(
-                Zone(
-                    id=f"as{asn}",
-                    name=f"AS {asn}",
-                    shape="rectangle",
-                    position=Position(x=origin_x, y=0.0),
-                    width=right - left + _DEVICE["x"] + 2 * _PADDING["x"],
-                    height=bottom - top + _DEVICE["y"] + 2 * _PADDING["y"],
-                )
-            )
-        origin_x += right - left + _DEVICE["x"] + 2 * _PADDING["x"] + _GAP
-    return positions, zones
+    return member

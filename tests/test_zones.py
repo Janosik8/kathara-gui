@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kathara_gui.domain.asgroups import as_groups, asn_from_config, clustered_layout
+from kathara_gui.domain.asgroups import as_groups, asn_from_config
+from kathara_gui.domain.clusters import clustered_layout, routing_groups
 from kathara_gui.domain.codec.labconf import parse, serialize
 from kathara_gui.domain.model import Interface, Node, Position, TextLabel, Topology, Zone
 from kathara_gui.project import scenario
@@ -179,7 +180,8 @@ def inside(position: Position, z: Zone) -> bool:
 
 def test_each_system_is_laid_out_inside_its_own_zone_and_the_zones_do_not_overlap() -> None:
     topology = two_systems()
-    positions, zones = clustered_layout(topology, as_groups(topology, {"r1": 1, "r2": 2}))
+    configs = {"r1": "router bgp 1\n", "r2": "router bgp 2\n"}
+    positions, zones = clustered_layout(topology, routing_groups(topology, configs))
     assert [z.name for z in zones] == ["AS 1", "AS 2"]
     as1, as2 = zones
     for name in ("r1", "sw1", "pc1"):

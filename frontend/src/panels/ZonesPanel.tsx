@@ -6,6 +6,8 @@
  * and so is a keyboard way to place one: select devices in the topology list,
  * then **Add zone** draws one round them, and **Fit to selected devices**
  * redraws an existing zone round a new selection. No zone needs dragging.
+ * **Zones from OSPF areas and BGP ASes** draws one round each area and AS the
+ * routers' configuration names, where the devices stand, and moves none.
  */
 
 import { fitAround, newZone } from "../canvas/zones";
@@ -27,9 +29,21 @@ interface Props {
   selectedZone: string | null;
   onSelectZone: (id: string | null) => void;
   onDispatch: (op: Operation) => void;
+  /** Draw a zone round each OSPF area and BGP AS, from the routers' configuration. */
+  onRoutingZones: () => void;
+  /** True while the configuration is being read. */
+  routingBusy?: boolean;
 }
 
-export function ZonesPanel({ topology, selected, selectedZone, onSelectZone, onDispatch }: Props) {
+export function ZonesPanel({
+  topology,
+  selected,
+  selectedZone,
+  onSelectZone,
+  onDispatch,
+  onRoutingZones,
+  routingBusy = false,
+}: Props) {
   const zones = topology.zones ?? [];
   const chosen = topology.nodes.filter((n) => selected.includes(n.name));
 
@@ -51,6 +65,9 @@ export function ZonesPanel({ topology, selected, selectedZone, onSelectZone, onD
           {chosen.length > 0
             ? `Add zone round ${chosen.length === 1 ? "1 device" : `${chosen.length} devices`}`
             : "Add zone"}
+        </button>
+        <button type="button" onClick={onRoutingZones} disabled={routingBusy}>
+          {routingBusy ? "Reading the configuration…" : "Zones from OSPF areas and BGP ASes"}
         </button>
       </div>
 

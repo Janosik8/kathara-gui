@@ -108,6 +108,15 @@ function isTreeItem(target: EventTarget | null): boolean {
  * 0.8. The store's error is the visible, dismissable banner, and the live
  * region already announces it as an alert.
  */
+/** What Tidy layout grouped by, from the names it laid out apart: "AS 10", "Area 0". */
+export function groupKinds(groups: readonly string[]): string {
+  const kinds = [
+    groups.some((g) => g.startsWith("AS ")) && "BGP AS",
+    groups.some((g) => g.startsWith("Area ")) && "OSPF area",
+  ].filter(Boolean);
+  return kinds.join(" and ");
+}
+
 function fail(err: unknown): void {
   useTopologyStore.setState({ error: describeFailure(err) });
 }
@@ -1015,7 +1024,7 @@ export default function App() {
   const autoArrange = useCallback(async () => {
     setScenarioBusy("arrange");
     try {
-      const { positions } = await api.arrange(topology);
+      const { positions, groups } = await api.arrange(topology);
       const moved = Object.fromEntries(
         Object.entries(positions).filter(([name, p]) => {
           const node = topology.nodes.find((n) => n.name === name);
@@ -1032,8 +1041,37 @@ export default function App() {
       edit({
         type: "moveNodes",
         positions: moved,
-        label: "Tidied the layout",
+        label: groups.length
+          ? `Tidied the layout by ${groupKinds(groups)}: ${groups.join(", ")}`
+          : "Tidied the layout",
         releaseDomains: true,
+      });
+    } catch (err) {
+      fail(err);
+    } finally {
+      setScenarioBusy(null);
+    }
+  }, [topology, edit]);
+
+  /**
+   * A zone round each OSPF area and BGP AS, read from the routers'
+   * configuration, with no device moved. One undo step removes them all.
+   */
+  const routingZones = useCallback(async () => {
+    setScenarioBusy("zones");
+    try {
+      const { zones } = await api.routingZones(topology);
+      if (zones.length === 0) {
+        setStatus(
+          "No zones to draw: the routers' frr.conf files in the lab's folder name fewer " +
+            "than two OSPF areas and fewer than two BGP ASes.",
+        );
+        return;
+      }
+      edit({
+        type: "placeZones",
+        zones,
+        label: `Drew zones round ${zones.map((z) => z.name).join(", ")}`,
       });
     } catch (err) {
       fail(err);
@@ -1838,6 +1876,8 @@ export default function App() {
                   selectedZone={selectedZone}
                   onSelectZone={selectZone}
                   onDispatch={edit}
+                  onRoutingZones={routingZones}
+                  routingBusy={scenarioBusy === "zones"}
                 />
               ),
             },

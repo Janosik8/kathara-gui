@@ -65,6 +65,34 @@ describe("zone operations", () => {
     expect(() => apply(once, { type: "addZone", zone: AREA })).toThrow();
   });
 
+  it("places zones by name: an existing one is moved, a new one added, others kept", () => {
+    const mine: Zone = { ...AREA, id: "z2", name: "Servers" };
+    const start = { ...lab(), zones: [{ ...AREA, name: "Area0", shape: "cloud" as const }, mine] };
+    const placed = apply(start, {
+      type: "placeZones",
+      zones: [
+        { ...AREA, id: "area0", name: "Area 0", position: { x: -70, y: -60 }, width: 500 },
+        { ...AREA, id: "area2", name: "Area 2", position: { x: 300, y: 400 } },
+      ],
+    });
+    expect(placed.zones).toEqual([
+      // Same name, ignoring the space: moved and resized, its id, name and shape kept.
+      { ...AREA, name: "Area0", shape: "cloud", position: { x: -70, y: -60 }, width: 500 },
+      mine,
+      { ...AREA, id: "area2", name: "Area 2", position: { x: 300, y: 400 } },
+    ]);
+    expect(placed.nodes).toEqual(lab().nodes);
+  });
+
+  it("gives a placed zone a free id when its own is taken", () => {
+    const start = { ...lab(), zones: [{ ...AREA, id: "area2", name: "Mine" }] };
+    const placed = apply(start, {
+      type: "placeZones",
+      zones: [{ ...AREA, id: "area2", name: "Area 2" }],
+    });
+    expect(placed.zones?.map((z) => z.id)).toEqual(["area2", "area2-1"]);
+  });
+
   it("describes each change for the undo hint", () => {
     expect(describeOp({ type: "addZone", zone: AREA })).toBe("Added the zone Area 0");
     expect(describeOp({ type: "updateZone", id: "z1", changes: {}, label: "Moved Area 0" })).toBe(
@@ -74,7 +102,7 @@ describe("zone operations", () => {
 });
 
 /** The panel over a topology it really changes, as the app's store does. */
-function Live({ selected = [] as string[], spy = vi.fn() }) {
+function Live({ selected = [] as string[], spy = vi.fn(), onRoutingZones = vi.fn() }) {
   const [topology, setTopology] = useState<Topology>(lab());
   const [zone, setZone] = useState<string | null>(null);
   return (
@@ -87,6 +115,7 @@ function Live({ selected = [] as string[], spy = vi.fn() }) {
         spy(op);
         setTopology((t) => apply(t, op));
       }}
+      onRoutingZones={onRoutingZones}
     />
   );
 }
@@ -123,6 +152,14 @@ describe("ZonesPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Delete zone Backbone" }));
     expect(screen.queryByLabelText("Zone name")).toBeNull();
+  });
+
+  it("asks for zones from the routers' areas and systems", async () => {
+    const user = userEvent.setup();
+    const onRoutingZones = vi.fn();
+    render(<Live onRoutingZones={onRoutingZones} />);
+    await user.click(screen.getByRole("button", { name: "Zones from OSPF areas and BGP ASes" }));
+    expect(onRoutingZones).toHaveBeenCalledOnce();
   });
 
   it("cannot fit a zone with no device selected", async () => {

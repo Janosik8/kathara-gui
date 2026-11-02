@@ -7,7 +7,7 @@
  * address bar invites being copied into a chat or a bug report.
  */
 
-import type { Position, Topology, TopologyState } from "../types";
+import type { Position, Topology, TopologyState, Zone } from "../types";
 
 const TOKEN_KEY = "kgui.token";
 
@@ -329,11 +329,20 @@ export const api = {
 
   /**
    * Positions that lay the whole topology out with as few link crossings as
-   * possible. Returns positions, not a topology, so the editor applies them
-   * as one `moveNodes` operation and one undo retracts the lot.
+   * possible, each autonomous system and OSPF area apart when the routers'
+   * configuration names them. Returns positions, not a topology, so the
+   * editor applies them as one `moveNodes` operation and one undo retracts
+   * the lot. `groups` names what was laid out apart, e.g. "Area 0".
    */
   arrange: (topology: Topology) =>
-    request<{ positions: Record<string, Position> }>("/api/topology/arrange", {
+    request<{ positions: Record<string, Position>; groups: string[] }>("/api/topology/arrange", {
+      method: "POST",
+      body: JSON.stringify(topology),
+    }),
+
+  /** A zone round each autonomous system and OSPF area, where its devices stand now. */
+  routingZones: (topology: Topology) =>
+    request<{ zones: Zone[] }>("/api/topology/zones", {
       method: "POST",
       body: JSON.stringify(topology),
     }),

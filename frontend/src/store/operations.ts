@@ -66,6 +66,9 @@ export type Operation =
   | { type: "addZone"; zone: Zone }
   | { type: "updateZone"; id: string; changes: Partial<Omit<Zone, "id">>; label?: string }
   | { type: "removeZone"; id: string }
+  // Zones round each OSPF area and AS, as one undo step. A zone of the same
+  // name is moved and resized rather than duplicated; every other zone stays.
+  | { type: "placeZones"; zones: Zone[]; label?: string }
   | { type: "addText"; text: TextLabel }
   | { type: "updateText"; id: string; changes: Partial<Omit<TextLabel, "id">>; label?: string }
   | { type: "removeText"; id: string }
@@ -402,6 +405,23 @@ export function apply(topology: Topology, op: Operation): Topology {
       return { ...topology, zones: zones.filter((z) => z.id !== op.id) };
     }
 
+    case "placeZones": {
+      const zones = [...(topology.zones ?? [])];
+      for (const zone of op.zones) {
+        const index = zones.findIndex((z) => sameZoneName(z.name, zone.name));
+        if (index >= 0) {
+          const { position, width, height } = zone;
+          zones[index] = { ...zones[index]!, position, width, height };
+          continue;
+        }
+        const taken = new Set(zones.map((z) => z.id));
+        let id = zone.id;
+        for (let n = 1; taken.has(id); n++) id = `${zone.id}-${n}`;
+        zones.push({ ...zone, id });
+      }
+      return { ...topology, zones };
+    }
+
     case "addText": {
       const texts = topology.texts ?? [];
       if (texts.some((t) => t.id === op.text.id)) {
@@ -491,6 +511,8 @@ export function describe(op: Operation): string {
       return op.label ?? "Changed a zone";
     case "removeZone":
       return "Removed a zone";
+    case "placeZones":
+      return op.label ?? `Drew ${op.zones.length} ${op.zones.length === 1 ? "zone" : "zones"}`;
     case "addText":
       return `Added the text ${op.text.text}`;
     case "updateText":
@@ -500,4 +522,10 @@ export function describe(op: Operation): string {
     case "replaceTopology":
       return "Replaced the topology";
   }
+}
+
+/** Whether two zone names are the same, ignoring case and spaces: `Area0` is `Area 0`. */
+function sameZoneName(a: string, b: string): boolean {
+  const plain = (name: string) => name.replace(/\s+/g, "").toLowerCase();
+  return plain(a) !== "" && plain(a) === plain(b);
 }

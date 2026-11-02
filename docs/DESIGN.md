@@ -85,7 +85,7 @@ tool removes the transcription.
 | 6 | Accessibility | An ARIA tree that is a genuine parallel interface to the canvas, not a summary of it; every pointer control has a keyboard equivalent, including the panel dividers and the movable panel sections; contrast and reflow asserted against the real stylesheet in tests |
 | 7 | Collaboration | **Not built.** Edits are discrete operations over a pure reducer, which is the substrate a CRDT would need |
 | 8 | Exam mode | `features.py`, enforced server-side against the page, and carrying one view setting besides, the host parts on the canvas; the author's lock and the sealed export in `project/examlock.py`. The lock deters and records edits made in place; it is not enforced against the owner of the machine |
-| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so; a BGP lab is laid out by autonomous system, each in its own zone (`domain/asgroups.py`) |
+| 9 | Auto-layout for imports | Positions round-trip through `lab.conf` comments, so a lab exported here reopens as it was drawn; a lab carrying none is laid out in layers by `domain/layout.py`, which minimises link crossings and is measured doing so; a lab is laid out by autonomous system and by OSPF area, the backbone in the middle and the other areas round it, each in its own zone (`domain/asgroups.py`, `domain/areas.py`, `domain/clusters.py`); Tidy layout groups the same way |
 
 ### The idea that ties it together
 

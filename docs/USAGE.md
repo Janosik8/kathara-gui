@@ -495,6 +495,23 @@ already have.
 
 It is a single undo step, so trying it costs nothing.
 
+**Grouped by OSPF area and BGP AS.** When the routers' `frr.conf` files in the lab's folder
+name two OSPF areas or more, Tidy layout keeps each area together. The backbone, area 0, is
+drawn as a rectangle in the middle, and every other area sits on one of its sides, above
+and below first. Each border router stands on the side that faces its other area, so the
+border routers of one area are in a line, and a border router joining two other areas
+stands on the corner between their sides. With two autonomous systems
+or more, each system is laid out apart, side by side, with its areas inside it. The status
+line says what it grouped by, for example "Tidied the layout by OSPF area: Area 0, Area 2".
+
+The area of a router comes from its `network … area …` and `ip ospf area …` lines. A router
+whose `frr.conf` says nothing about OSPF is in no area: it is placed beside the routers it is
+wired to, outside every area. A host or a switch takes the area of the network it is on.
+Tidy layout moves devices only; to draw zones round the areas, see [Zones](#zones).
+
+The configuration is read from the lab's folder, so a lab you have just configured inside
+the running devices needs **Capture running state** first.
+
 ### Hibernating and resuming a lab
 
 Deploy, configure the devices however you like, press **Capture running state**, then
@@ -601,11 +618,26 @@ Zones are saved in `lab.conf` as `# kgui:zone` comments, which Kathará ignores.
 A zone's name sits in its top-left corner. To put a title anywhere else, inside the zone or
 outside it, leave the **Zone name** empty and add a text label.
 
-**A BGP lab imported without a layout** is laid out by autonomous system. The application
-reads `router bgp <number>` from each router's `frr.conf` or `bgpd.conf`; with two systems
-or more, each is laid out on its own, side by side, inside a zone called `AS <number>`.
-Hosts and switches join the system their routers belong to. The zones are ordinary ones:
-rename them, move them or delete them.
+**Zones from OSPF areas and BGP ASes** draws a zone round each OSPF area and each autonomous
+system the routers' configuration names, round the devices where they stand now; it moves
+no device. It reads the same files, by the same rules, as
+[Tidy layout](#tidying-the-layout): two areas or more, two systems or more, and a router
+with no OSPF configuration in no area. **An area's zone runs through its border
+routers**, not round them: a border router has interfaces in two areas, so the zone's edge
+crosses the middle of its picture, and each interface lies in the zone of its own area.
+After Tidy layout, two areas' zones meet along the line of the border routers they share,
+and a router in three areas or more is on a corner of each. The area's other devices and its segments are inside the zone whole. An AS's zone
+holds its routers whole. The zones are called `Area 0`, `Area 1.1.1.1`,
+`AS 65001`. A zone you already have with the same name, spaces and capitals aside
+(`Area0` is `Area 0`), is moved and resized rather than drawn twice, and keeps its shape.
+Zones with other names are left alone. It is one undo step. For neat zones, press
+**Tidy layout** first and then this button.
+
+**A lab imported without a layout** is laid out the same way, and arrives with those zones
+already drawn: an OSPF lab with a zone per area, a BGP lab with a zone per system, and a lab
+with both with the areas inside their system. The application reads each router's
+`frr.conf`, and `bgpd.conf` or `ospfd.conf` in labs from Quagga days. The zones are
+ordinary ones: rename them, move them or delete them.
 
 ### Text labels
 

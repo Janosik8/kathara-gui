@@ -35,7 +35,7 @@ from typing import Any
 
 from kathara_gui import __version__
 from kathara_gui.domain.addressing import infer_subnets
-from kathara_gui.domain.asgroups import as_groups, asn_from_config, clustered_layout
+from kathara_gui.domain.clusters import clustered_layout, routing_groups
 from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.codec.startup import parse_loopbacks, parse_startup
 from kathara_gui.domain.layout import arrange, needs_layout
@@ -149,27 +149,35 @@ def _daemons_from_file(text: str) -> list[str]:
     return enabled
 
 
-#: Where a router's BGP configuration may be, in labs from FRR or Quagga days.
-_BGP_FILES = (
+#: Where a router's BGP and OSPF configuration may be, in labs from FRR or Quagga days.
+_ROUTING_FILES = (
     ("etc", "frr", "frr.conf"),
     ("etc", "frr", "bgpd.conf"),
+    ("etc", "frr", "ospfd.conf"),
     ("etc", "quagga", "bgpd.conf"),
+    ("etc", "quagga", "ospfd.conf"),
 )
 
 
-def _arrange_by_as(topology: Topology, folder: Path) -> tuple[dict[str, Position], list[Zone]]:
-    """A layout for a lab that has none; each AS in its own zone when there are two (9B.2)."""
-    asns: dict[str, int] = {}
+def read_routing_configs(topology: Topology, folder: Path) -> dict[str, str]:
+    """Each device's routing configuration, every file of it there is, by name."""
+    configs: dict[str, str] = {}
     for node in topology.nodes:
-        for parts in _BGP_FILES:
-            text = _read(folder.joinpath(node.name, *parts))
-            asn = asn_from_config(text) if text else None
-            if asn is not None:
-                asns[node.name] = asn
-                break
-    groups = as_groups(topology, asns)
-    if len(groups) < 2:
-        # One AS, or none, is a lab with nothing to separate.
+        texts = [
+            text for parts in _ROUTING_FILES if (text := _read(folder.joinpath(node.name, *parts)))
+        ]
+        if texts:
+            configs[node.name] = "\n".join(texts)
+    return configs
+
+
+def _arrange_by_routing(
+    topology: Topology, folder: Path
+) -> tuple[dict[str, Position], list[Zone]]:
+    """A layout for a lab that has none, each AS and OSPF area in its own zone (9B.2)."""
+    groups = routing_groups(topology, read_routing_configs(topology, folder))
+    if not groups:
+        # One AS or area, or none, is a lab with nothing to separate.
         return arrange(topology), []
     return clustered_layout(topology, groups)
 
@@ -364,7 +372,7 @@ def load(folder: Path) -> Scenario:
     # on the same spot and the diagram would be unreadable until dragged apart
     # by hand. Only ever applied when there is no layout to lose.
     if needs_layout(topology):
-        positions, zones = _arrange_by_as(topology, folder)
+        positions, zones = _arrange_by_routing(topology, folder)
         topology = topology.model_copy(
             update={
                 "nodes": [

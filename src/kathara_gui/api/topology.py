@@ -17,9 +17,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
+from kathara_gui.domain.clusters import clustered_layout, routing_groups, zones_around
 from kathara_gui.domain.codec.labconf import parse, serialize
 from kathara_gui.domain.layout import arrange
-from kathara_gui.domain.model import Position, Topology
+from kathara_gui.domain.model import Position, Topology, Zone
+from kathara_gui.project.scenario import read_routing_configs
 from kathara_gui.project.session import Session, get_session
 
 router = APIRouter(prefix="/api/topology", tags=["topology"])
@@ -52,6 +54,16 @@ class ExportResponse(BaseModel):
 class ArrangeResponse(BaseModel):
     positions: dict[str, Position] = Field(
         description="Where each device should go, by name."
+    )
+    groups: list[str] = Field(
+        default_factory=list,
+        description="The autonomous systems and OSPF areas laid out apart, e.g. 'Area 0'.",
+    )
+
+
+class ZonesResponse(BaseModel):
+    zones: list[Zone] = Field(
+        description="A zone round each autonomous system and OSPF area, where its devices are."
     )
 
 
@@ -128,8 +140,14 @@ def _first_error(exc: ValidationError) -> str:
 
 
 @router.post("/arrange", response_model=ArrangeResponse)
-async def arrange_topology(topology: Topology) -> ArrangeResponse:
+def arrange_topology(
+    topology: Topology, session: Session = Depends(get_session)
+) -> ArrangeResponse:
     """Positions that lay the topology out with as few crossings as possible.
+
+    Each autonomous system and OSPF area is laid out apart, when the routers'
+    configuration in the lab's folder names two or more. Zones are left to the
+    zones endpoint: tidying moves devices and nothing else.
 
     Returns positions rather than a topology, so the editor can apply them as
     a single `moveNodes` operation: one undo step retracts the whole
@@ -139,4 +157,20 @@ async def arrange_topology(topology: Topology) -> ArrangeResponse:
     because the browser holds the newer version — the same rule as every other
     endpoint that computes from a topology.
     """
-    return ArrangeResponse(positions=arrange(topology))
+    groups = routing_groups(topology, read_routing_configs(topology, session.lab_dir(topology)))
+    if not groups:
+        return ArrangeResponse(positions=arrange(topology))
+    positions, _ = clustered_layout(topology, groups)
+    names = [g.name for g in groups] + [a.name for g in groups for a in g.inner]
+    return ArrangeResponse(positions=positions, groups=names)
+
+
+@router.post("/zones", response_model=ZonesResponse)
+def routing_zones(topology: Topology, session: Session = Depends(get_session)) -> ZonesResponse:
+    """A zone round each autonomous system and OSPF area, moving no device.
+
+    Read from the routers' configuration in the lab's folder, as Tidy layout
+    reads it. Empty when it names fewer than two of either.
+    """
+    groups = routing_groups(topology, read_routing_configs(topology, session.lab_dir(topology)))
+    return ZonesResponse(zones=zones_around(topology, groups))

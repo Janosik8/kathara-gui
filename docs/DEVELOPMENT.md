@@ -75,7 +75,9 @@ browser normally holds newer work.
 | `domain/addressing.py` | `infer_subnets`, `validate` (the addressing checks), `allocate` (Assign addresses) |
 | `domain/naming.py` | Device and lab name rules and suggestions |
 | `domain/layout.py` | Layered layout for labs without positions; `count_crossings` measures it |
-| `domain/asgroups.py` | Reads BGP AS numbers and lays each autonomous system out in its own zone |
+| `domain/asgroups.py` | Reads BGP AS numbers; `spread` lets hosts and switches join the group of what they hang off |
+| `domain/areas.py` | Reads OSPF areas per interface (`network … area`, `ip ospf area`) and decides each device's area |
+| `domain/clusters.py` | `routing_groups` (ASes, with areas inside), `clustered_layout` (backbone a rectangle, border routers on the side facing their other area, areas beside them), `zones_around` (zones where devices stand) |
 | `domain/drift.py` | Describes, in sentences, how the design differs from what was deployed or what the containers hold |
 | `kathara/connection.py` | `manager()`: Kathará's manager, after a Docker ping, reconnecting if the old connection died |
 | `kathara/runner.py` | `deploy`, `undeploy`, `restart`, `status`, `find_conflicts`, `running_everywhere`, `wipe` |
@@ -142,7 +144,7 @@ feature switches and their lock) and whatever was captured, such as
 
 ## 4. How a request travels
 
-All three start in `App.tsx` and go through `api/client.ts`.
+All four start in `App.tsx` and go through `api/client.ts`.
 
 - **Deploy** → `POST /api/lab/deploy` (`api/lab.py`). The session saves the scenario
   (`project/scenario.py`, `project/labdir.write_lab`), then `kathara/runner.deploy()` asks
@@ -155,6 +157,15 @@ All three start in `App.tsx` and go through `api/client.ts`.
 - **Capture** → `POST /api/project/capture` (`api/project.py`). `kathara/state.capture()`
   writes each router's running configuration to `frr.conf`; the containers' addresses are
   read back into the design; the scenario is saved.
+- **Tidy layout** → `POST /api/topology/arrange` (`api/topology.py`).
+  `project/scenario.read_routing_configs()` reads each router's `frr.conf` (and the older
+  `bgpd.conf`, `ospfd.conf`) from `session.lab_dir()`; `domain/clusters.routing_groups()`
+  turns them into AS and OSPF area groups (`asgroups.py`, `areas.py`); with two or more,
+  `clustered_layout()` places them, otherwise `layout.arrange()` does. The browser applies
+  the positions as one `moveNodes`. The **Zones from OSPF areas and BGP ASes** button takes
+  the same groups through `POST /api/topology/zones` and `zones_around()`, and applies them as
+  one `placeZones`. An import without coordinates calls `clustered_layout()` in
+  `scenario.load()` and keeps its zones.
 
 The lab endpoints are plain `def`, so FastAPI runs them in its thread pool: Docker calls
 block.
@@ -341,7 +352,8 @@ All endpoints need the token, as `X-KGUI-Token` or `?token=`.
 | POST | `/api/lab/restart` | stop and start the named `devices` of the running lab from its folder; the rest keep running |
 | GET | `/api/lab/everything` | how many devices, in how many labs, **Stop every lab** would stop |
 | POST | `/api/lab/wipe` | stop every lab of this user, capturing nothing (`kathara wipe`) |
-| POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings |
+| POST | `/api/topology/arrange` | positions laying a topology out with fewest crossings, by AS and OSPF area when the lab folder's `frr.conf` files name two or more; `groups` names them |
+| POST | `/api/topology/zones` | a zone round each AS and OSPF area where its devices stand; nothing is stored |
 | GET | `/api/project` | scenario name, folder, feature toggles, and `exam`: whether they are locked, and unlocked for this session |
 | PUT | `/api/project/features` | set the exam switches; written to `kgui.json` at once; 423 while locked |
 | POST | `/api/project/exam/lock` | lock the switches with the author's `password` (at least 4 characters) |
