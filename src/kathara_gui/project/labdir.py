@@ -25,6 +25,24 @@ from kathara_gui.fsutil import write_text_lf
 __all__ = ["write_lab", "render_frr_daemons"]
 
 
+def _ensure_quagga_files(destination: Path, node: Node) -> None:
+    """Give every Quagga daemon the device runs a file to start from (F62).
+
+    The ``kathara/quagga`` image starts a daemon only if its
+    ``/etc/quagga/<daemon>.conf`` exists; without one it stays down, and
+    ``vtysh`` silently drops that daemon's commands. Ticking BGP on a router
+    imported with only zebra and OSPF therefore needs a ``bgpd.conf``. An
+    existing file is never touched: it holds the imported or captured
+    configuration.
+    """
+    folder = destination / node.name / "etc" / "quagga"
+    for daemon in node.quagga_daemons:
+        path = folder / f"{daemon}.conf"
+        if not path.exists():
+            write_text_lf(path, f"! Created by Kathara GUI so that Quagga starts {daemon}; "
+                                "a capture fills it.\n")
+
+
 def render_frr_daemons(node: Node) -> str:
     """Render ``/etc/frr/daemons``, which FRR reads to decide what to launch.
 
@@ -101,7 +119,11 @@ def write_lab(topology: Topology, destination: Path) -> Path:
 
     for node in topology.nodes:
         if node.daemons:
-            write_text_lf(destination / node.name / "etc" / "frr" / "daemons",
+            # Quagga reads the same yes/no file, from its own folder (F60).
+            suite = "quagga" if node.runs_quagga else "frr"
+            write_text_lf(destination / node.name / "etc" / suite / "daemons",
                           render_frr_daemons(node))
+        if node.runs_quagga:
+            _ensure_quagga_files(destination, node)
 
     return destination

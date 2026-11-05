@@ -169,6 +169,13 @@ export function Inspector({ topology, selected, onDispatch }: Props) {
             {daemon} <span className="checkbox__hint">{purpose}</span>
           </label>
         ))}
+        {node.image?.toLowerCase().includes("quagga") && (
+          <Explanation>
+            On Quagga each daemon is its own process with its own file in /etc/quagga, and it
+            runs only once ticked here and redeployed. Until then, vtysh accepts its commands
+            and drops them.
+          </Explanation>
+        )}
         {node.kind === "router" && otherRouters > 0 && (
           <button
             type="button"

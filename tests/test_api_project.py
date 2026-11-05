@@ -408,6 +408,41 @@ def test_importing_a_foreign_lab_recovers_its_daemons(client: TestClient) -> Non
     assert r1["kind"] == "router"
 
 
+def test_importing_a_netkit_lab_runs_it_on_quagga(client: TestClient, tmp_path: Path) -> None:
+    """F60: a Netkit lab keeps Quagga's files in /etc/zebra, so it was written
+    for Quagga. Its routers get kathara/quagga, which reads /etc/quagga, so the
+    files are copied there, and the import says so."""
+    from tests.test_legacy_import import netkit_lab
+
+    folder = netkit_lab(tmp_path / "netkit")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for path in folder.rglob("*"):
+            if path.is_file():
+                archive.write(path, f"netkit/{path.relative_to(folder).as_posix()}")
+
+    response = client.post(
+        "/api/project/import",
+        content=buffer.getvalue(),
+        headers={"X-KGUI-Filename": "netkit.zip"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["quagga"] == ["bb", "r1", "r2"]
+    assert body["converted"] == []
+    assert (Path(body["folder"]) / "bb" / "etc" / "quagga" / "ospfd.conf").is_file()
+    images = {n["name"]: n["image"] for n in body["topology"]["nodes"]}
+    assert images == {
+        "bb": "kathara/quagga",
+        "r1": "kathara/quagga",
+        "r2": "kathara/quagga",
+        "pc1": "kathara/base",
+    }
+    # The user's own copy is never touched: only the one in the workspace.
+    assert not (folder / "bb" / "etc" / "quagga").exists()
+
+
 def test_importing_a_foreign_lab_works_out_each_network(client: TestClient) -> None:
     """Reported: the subnets "did not come through" and were invisible on the
     diagram. Kathará records the wiring but not the plan, so the domains

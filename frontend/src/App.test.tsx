@@ -2260,6 +2260,34 @@ describe("the scenario as a folder", () => {
     expect(await screen.findByText("r1[99]=nonsense")).toBeInTheDocument();
   });
 
+  it("says which routers run on Quagga and which were converted to FRR (F60)", async () => {
+    importProject.mockResolvedValue({
+      topology: { name: "netkit", nodes: [], collision_domains: [] } as never,
+      features: {
+        subnet_calculator: true,
+        addressing_validation: true,
+        infrastructure_verification: true,
+        interface_addresses: false,
+      },
+      folder: "/workspace/netkit",
+      warnings: [],
+      foreign: true,
+      quagga: ["bb0", "r1"],
+      converted: ["r9"],
+      exam: { locked: false, unlocked: false },
+    });
+    const user = await renderApp();
+    await user.upload(
+      screen.getByLabelText("Scenario file to import"),
+      new File(["PK"], "netkit.zip", { type: "application/zip" }),
+    );
+
+    expect(await screen.findByText("Run on Quagga:")).toBeInTheDocument();
+    expect(screen.getByText(/bb0, r1 kept Netkit's configuration/)).toBeInTheDocument();
+    expect(screen.getByText("Converted to FRR:")).toBeInTheDocument();
+    expect(screen.getByText(/r9 name an FRR image/)).toBeInTheDocument();
+  });
+
   it("adopts an opened scenario's exam restrictions", async () => {
     // Feature toggles belong to the scenario, not the machine it is opened on.
     openProject.mockResolvedValue({

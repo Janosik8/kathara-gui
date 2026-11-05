@@ -413,13 +413,39 @@ zipped by Finder or Explorer (the extra wrapping directory is unwrapped for you,
 `__MACOSX` sidecar and `.DS_Store` files are discarded), or a single `lab.conf`.
 
 **Its configuration is recovered, not discarded.** A Kathará lab keeps its addressing in
-`<device>.startup` and its routing daemons in `<device>/etc/frr/daemons`, so those files are
+`<device>.startup`, and its routing daemons in `<device>/etc/frr/daemons`. Those files are
 read and folded into the model. Both the modern `ip address add 10.0.0.1/24 dev eth0` and
-the older Netkit `ifconfig eth0 10.0.0.1 netmask 255.255.255.0` are understood.
+the older Netkit `ifconfig eth0 10.0.0.1 netmask 255.255.255.0` are understood. Labs from
+before FRR are read too:
 
-**Device kinds are guessed, because Kathará does not record them.** A device running FRR is
-a router; otherwise names like `pc1`, `server2` or `sw1` pick the icon. Anything unclear
-stays a router, and the inspector changes it.
+| Where the routing configuration is | Made by | What happens on import |
+|---|---|---|
+| `etc/frr/frr.conf`, or one file per daemon in `etc/frr` | Kathará with FRR | Read as it is; a router with no image gets `kathara/frr`. |
+| `etc/quagga/daemons`, `ospfd.conf`, … | Kathará's Quagga labs | Read, and run on Quagga: a router with no image gets `kathara/quagga`, and its startup starts Quagga. |
+| `etc/zebra/daemons`, `ospfd.conf`, … | Netkit | Read, and run on Quagga: a router with no image gets `kathara/quagga`, and the files are **copied unchanged to `etc/quagga`**, where that image reads them. |
+
+A path of `/etc/zebra` or `/etc/quagga` means the lab was written for Quagga, so it runs on
+Quagga. The copy is made only in the workspace, the original files stay where they were, and
+the Scenario panel names the routers it was made for.
+
+**A router that names an FRR image but has only Quagga's files** is converted. Its
+`zebra.conf` and each enabled daemon's file are merged into `etc/frr/frr.conf`, which is
+all `kathara/frr` reads. Each file's `hostname`, its passwords and its `log file` are
+left out, and Netkit's `ospf cost` under an interface is spelled as FRR's `ip ospf cost`. The
+Scenario panel names those routers too.
+
+**Every device gets an image.** A device whose `lab.conf` names none is given one: a router
+gets `kathara/quagga` or `kathara/frr` as above, and a PC, a server or a switch gets
+`kathara/base`. An image the lab names is kept.
+
+Not understood: BIRD's `etc/bird/bird.conf`, routing typed in a `.startup` with
+`vtysh -c`, and daemons started there by hand. Those devices import without areas or
+daemons. When the scenario is saved, each `.startup` is written afresh from the model, so
+those lines are not kept.
+
+**Device kinds are guessed, because Kathará does not record them.** A device with routing
+files (FRR, Quagga or Netkit) is a router. Otherwise names like `pc1`, `server2` or `sw1`
+pick the icon. Anything unclear stays a router, and the inspector changes it.
 
 **It is laid out for you.** A foreign lab has no coordinates, so every device would arrive
 on the same spot. See below.
@@ -448,7 +474,16 @@ containers, through a shell opened with `docker exec` (or `kathara connect`).
 
 **To bring those changes onto the canvas**, press **Capture running state**. Routing
 configuration goes to each router's `frr.conf` and interface addresses onto the canvas, and
-the captured state becomes what the running lab is compared against.
+the captured state becomes what the running lab is compared against. A router on a Quagga
+image (`kathara/quagga`) is captured daemon by daemon into `etc/quagga/zebra.conf`,
+`ospfd.conf` and so on, the files Quagga reads on the next deploy. An `etc/frr` folder left
+beside them, which Quagga never reads, is removed, and the capture says so.
+
+**On a Quagga router, a daemon runs only once it is ticked** in the Inspector's Routing
+daemons and the lab is deployed again. Quagga starts a daemon only if its own file exists in
+`/etc/quagga`, so saving creates a one-line `bgpd.conf`, `ripd.conf` and so on for each daemon
+ticked that has none. Until then `vtysh` accepts that daemon's commands, `router bgp 1` for
+instance, and drops them without an error.
 
 **To find out whether anything has changed inside the containers**, press **Check for
 changes** in the Laboratory panel. It only looks when you ask; nothing polls in the
@@ -636,7 +671,8 @@ Zones with other names are left alone. It is one undo step. For neat zones, pres
 **A lab imported without a layout** is laid out the same way, and arrives with those zones
 already drawn: an OSPF lab with a zone per area, a BGP lab with a zone per system, and a lab
 with both with the areas inside their system. The application reads each router's
-`frr.conf`, and `bgpd.conf` or `ospfd.conf` in labs from Quagga days. The zones are
+`frr.conf`, and `bgpd.conf` or `ospfd.conf` in labs from Quagga days, in `etc/quagga` or,
+for Netkit's, `etc/zebra`. The zones are
 ordinary ones: rename them, move them or delete them.
 
 ### Text labels

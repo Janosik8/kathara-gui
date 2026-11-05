@@ -254,6 +254,10 @@ export interface OpenResponse {
   /** Lines of lab.conf that could not be understood. Import is forgiving. */
   warnings: string[];
   foreign: boolean;
+  /** Devices naming an FRR image whose Quagga files were merged into frr.conf on import. */
+  converted?: string[];
+  /** Devices whose Netkit /etc/zebra was copied to /etc/quagga, for kathara/quagga. */
+  quagga?: string[];
   exam: ExamState;
 }
 

@@ -61,9 +61,14 @@ def render_startup(node: Node) -> str:
         body.append("sysctl -w net.ipv4.ip_forward=1")
 
     if node.daemons:
-        # The FRR image reads /etc/frr/daemons, written separately; starting
-        # the service here covers images that do not auto-start it.
-        body.append("systemctl start frr 2>/dev/null || /etc/init.d/frr start 2>/dev/null || true")
+        # The image reads its daemons file, written separately; starting the
+        # service here covers images that do not auto-start it. A Kathará
+        # Quagga lab keeps its image, and Quagga is started, not FRR (F60).
+        service = "quagga" if node.runs_quagga else "frr"
+        body.append(
+            f"systemctl start {service} 2>/dev/null || /etc/init.d/{service} start 2>/dev/null"
+            " || true"
+        )
 
     if not body:
         return ""

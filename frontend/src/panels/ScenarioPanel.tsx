@@ -35,6 +35,10 @@ interface Props {
   importWarnings: string[];
   /** The scenario came from outside this application. */
   foreign?: boolean;
+  /** Devices naming an FRR image whose Quagga files the import merged into frr.conf. */
+  converted?: string[];
+  /** Devices whose Netkit /etc/zebra the import copied to /etc/quagga. */
+  quagga?: string[];
   onCapture: () => void;
 }
 
@@ -52,6 +56,8 @@ export function ScenarioPanel({
   onDismissCapture,
   importWarnings,
   foreign = false,
+  converted = [],
+  quagga = [],
   onCapture,
 }: Props) {
   return (
@@ -79,6 +85,25 @@ export function ScenarioPanel({
         </p>
       )}
 
+      {quagga.length > 0 && (
+        // Netkit's files are in /etc/zebra, which kathara/quagga does not read.
+        <p className="field__hint">
+          <strong>Run on Quagga:</strong> {quagga.join(", ")} kept Netkit&apos;s configuration
+          in <code>/etc/zebra</code>, so they run the <code>kathara/quagga</code> image, and the
+          files were copied unchanged to <code>/etc/quagga</code>, where that image reads them.
+        </p>
+      )}
+
+      {converted.length > 0 && (
+        // The files the user will open are not the ones the lab arrived with,
+        // so where they came from is said (F60).
+        <p className="field__hint">
+          <strong>Converted to FRR:</strong> {converted.join(", ")} name an FRR image, so
+          their Quagga configuration was merged into <code>/etc/frr/frr.conf</code>, which that
+          image reads. The original files are kept beside it.
+        </p>
+      )}
+
       {importWarnings.length > 0 && (
         // Import is deliberately forgiving, which makes saying what was not
         // understood the only way the user learns something was left behind.
@@ -97,8 +122,9 @@ export function ScenarioPanel({
       <h3 className="panel__heading">Running configuration</h3>
       <Explanation>
         Copies what the devices are <em>actually</em> running into the scenario folder —
-        routing configuration into each router's <code>frr.conf</code>, and interface
-        addresses back onto the canvas.
+        routing configuration into each router&apos;s <code>frr.conf</code>, or a Quagga
+        router&apos;s <code>/etc/quagga</code> files, and interface addresses back onto the
+        canvas.
       </Explanation>
 
       <div className="lab__actions">

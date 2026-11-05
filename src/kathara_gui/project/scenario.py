@@ -28,6 +28,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -40,6 +41,7 @@ from kathara_gui.domain.codec.labconf import parse
 from kathara_gui.domain.codec.startup import parse_loopbacks, parse_startup
 from kathara_gui.domain.layout import arrange, needs_layout
 from kathara_gui.domain.model import (
+    DEFAULT_IMAGES,
     KNOWN_DAEMONS,
     CollisionDomain,
     Node,
@@ -50,7 +52,7 @@ from kathara_gui.domain.model import (
 from kathara_gui.features import Features
 from kathara_gui.fsutil import write_text_lf
 from kathara_gui.project.examlock import ExamLock
-from kathara_gui.project.labdir import write_lab
+from kathara_gui.project.labdir import render_frr_daemons, write_lab
 
 __all__ = [
     "FORMAT_VERSION",
@@ -62,6 +64,9 @@ __all__ = [
     "write_settings",
     "load",
     "recover_device_configuration",
+    "adopt_legacy_routing",
+    "Adopted",
+    "QUAGGA_IMAGE",
     "export_zip",
     "import_archive",
     "import_archive_bytes",
@@ -149,14 +154,39 @@ def _daemons_from_file(text: str) -> list[str]:
     return enabled
 
 
-#: Where a router's BGP and OSPF configuration may be, in labs from FRR or Quagga days.
+#: Where a router's routing suite keeps its files, in order of preference:
+#: FRR; Quagga, as Kathará's ``kathara/quagga`` labs have it; and ``/etc/zebra``,
+#: where Netkit's Quagga read them, as published Netkit labs still have it (F60).
+_CONFIG_DIRS = (("etc", "frr"), ("etc", "quagga"), ("etc", "zebra"))
+
+#: Per-daemon files of the Quagga era, zebra's first, as they are merged.
+_DAEMON_FILES = (
+    "zebra.conf",
+    "ospfd.conf",
+    "bgpd.conf",
+    "ripd.conf",
+    "ospf6d.conf",
+    "ripngd.conf",
+    "isisd.conf",
+)
+
+#: Where a router's routing configuration may be, in labs from FRR, Quagga or Netkit days.
 _ROUTING_FILES = (
     ("etc", "frr", "frr.conf"),
-    ("etc", "frr", "bgpd.conf"),
-    ("etc", "frr", "ospfd.conf"),
-    ("etc", "quagga", "bgpd.conf"),
-    ("etc", "quagga", "ospfd.conf"),
+    *((*folder, name) for folder in _CONFIG_DIRS for name in _DAEMON_FILES),
 )
+
+
+def _daemons_file(folder: Path, device: str) -> str | None:
+    """The first ``daemons`` file the device has, FRR's before Quagga's before Netkit's."""
+    for parts in _CONFIG_DIRS:
+        if (text := _read(folder.joinpath(device, *parts, "daemons"))) is not None:
+            return text
+    return None
+
+
+def _has_routing_files(folder: Path, device: str) -> bool:
+    return any(folder.joinpath(device, *parts).is_file() for parts in _ROUTING_FILES)
 
 
 def read_routing_configs(topology: Topology, folder: Path) -> dict[str, str]:
@@ -221,19 +251,29 @@ def recover_device_configuration(topology: Topology, folder: Path) -> Topology:
                     for iface in node.interfaces
                 ]
 
-        daemons_file = _read(folder / node.name / "etc" / "frr" / "daemons")
+        daemons_file = _daemons_file(folder, node.name)
         found = _daemons_from_file(daemons_file) if daemons_file else []
         if found and not node.daemons:
             changes["daemons"] = found
 
-        has_frr = bool(found) or (folder / node.name / "etc" / "frr" / "frr.conf").is_file()
-        if has_frr:
+        if found or _has_routing_files(folder, node.name):
             # Running routing daemons is proof, and outranks any guess.
             changes["kind"] = "router"
         elif not explicit_kinds:
             guessed = _infer_kind(node.name)
             if guessed:
                 changes["kind"] = guessed
+
+        if node.image is None:
+            # Kathará's own default is kathara/base, which has no routing, and
+            # lab.conf names an image only when the device has one. So a router
+            # imported without one deployed as a host (F60). Named here, it is
+            # shown in the inspector and written into lab.conf. Routing files in
+            # /etc/zebra or /etc/quagga mean the lab was written for Quagga.
+            if _runs_quagga_files(folder, node.name):
+                changes["image"] = QUAGGA_IMAGE
+            else:
+                changes["image"] = DEFAULT_IMAGES[changes.get("kind", node.kind)]  # type: ignore[index]
 
         nodes.append(node.model_copy(update=changes) if changes else node)
 
@@ -261,6 +301,150 @@ def recover_device_configuration(topology: Topology, folder: Path) -> Topology:
         topology = topology.model_copy(update={"collision_domains": domains})
 
     return topology
+
+
+#: The image a device whose routing files are Quagga's is given, if it names none.
+QUAGGA_IMAGE = "kathara/quagga"
+
+#: Lines of a Quagga file that have no place in a merged ``frr.conf``: each
+#: daemon's file named its own process ("hostname ospfd"), set the old telnet
+#: passwords, and logged to a directory the FRR image does not have.
+_DROPPED_LINES = re.compile(r"^\s*(hostname|password|enable\s+password|log\s+file)\b", re.I)
+#: An interface's OSPF setting in the deprecated spelling without ``ip``.
+_BARE_OSPF = re.compile(r"^(\s*)ospf\s+", re.I)
+#: What ends an ``interface`` block besides "!": the next block, or its end.
+_BLOCK_ENDS = frozenset({"router", "line", "exit", "end", "access-list"})
+
+
+def _quagga_to_frr(text: str) -> list[str]:
+    """One Quagga file's lines as FRR reads them.
+
+    Netkit's Quagga took ``ospf cost 90`` under an interface, an old spelling
+    FRR does not have; it takes only ``ip ospf cost 90``. Under ``router ospf``
+    the same words mean something else (``ospf router-id``) and are left alone.
+    """
+    lines: list[str] = []
+    in_interface = False
+    for line in text.splitlines():
+        if _DROPPED_LINES.match(line):
+            continue
+        # Netkit's files do not indent a block's lines, so a block is ended by
+        # "!" or the next block, not by the margin.
+        words = line.strip().lower().split()
+        if words and words[0] == "interface":
+            in_interface = True
+        elif not words or words[0] in _BLOCK_ENDS or words[0].startswith("!"):
+            in_interface = False
+        elif in_interface:
+            line = _BARE_OSPF.sub(r"\1ip ospf ", line)
+        lines.append(line)
+    return lines
+
+
+def _legacy_source(folder: Path, device: str) -> tuple[str, ...] | None:
+    """The Quagga folder a device's routing files are in, ``etc/quagga`` before
+    Netkit's ``etc/zebra``, or None if it has neither."""
+    for parts in _CONFIG_DIRS[1:]:
+        source = folder.joinpath(device, *parts)
+        if (source / "daemons").is_file() or any(
+            (source / name).is_file() for name in _DAEMON_FILES
+        ):
+            return parts
+    return None
+
+
+def _runs_quagga_files(folder: Path, device: str) -> bool:
+    """Whether a device's routing is Quagga's files alone, with nothing for FRR.
+
+    A path of ``/etc/zebra`` or ``/etc/quagga`` means the lab was written for
+    Quagga, so a device in it that names no image is given Quagga's (F60).
+    """
+    has_frr = (folder / device / "etc" / "frr" / "daemons").is_file() or any(
+        folder.joinpath(device, "etc", "frr", name).is_file()
+        for name in ("frr.conf", *_DAEMON_FILES)
+    )
+    return not has_frr and _legacy_source(folder, device) is not None
+
+
+@dataclass
+class Adopted:
+    """What :func:`adopt_legacy_routing` did, by device."""
+
+    #: Netkit's ``/etc/zebra`` copied to ``/etc/quagga``, for ``kathara/quagga``.
+    quagga: list[str] = field(default_factory=list)
+    #: Quagga's files merged into ``/etc/frr/frr.conf``, for a device naming FRR.
+    frr: list[str] = field(default_factory=list)
+
+
+def _convert_to_frr(folder: Path, device: str, parts: tuple[str, ...]) -> bool:
+    """Merge a device's Quagga files into ``/etc/frr/frr.conf`` and FRR's daemons file."""
+    source = folder.joinpath(device, *parts)
+    daemons_text = _read(source / "daemons")
+    enabled = _daemons_from_file(daemons_text) if daemons_text else []
+    files = [
+        name
+        for name in _DAEMON_FILES
+        if (source / name).is_file()
+        and (not enabled or name == "zebra.conf" or name[:-5] in enabled)
+    ]
+    if not files:
+        return False
+    relative = "/".join(parts)
+    body = [
+        f"! Converted by Kathara GUI from {', '.join(f'/{relative}/{n}' for n in files)}.",
+        "!",
+    ]
+    for name in files:
+        body += _quagga_to_frr(_read(source / name) or "")
+    target = folder / device / "etc" / "frr"
+    write_text_lf(target / "frr.conf", "\n".join(body) + "\n")
+    if not enabled:
+        enabled = ["zebra", *(n[:-5] for n in files if n != "zebra.conf")]
+    enabled = [d for d in enabled if d in KNOWN_DAEMONS]
+    if not (target / "daemons").is_file():
+        write_text_lf(
+            target / "daemons", render_frr_daemons(Node(name=device, daemons=enabled))
+        )
+    return True
+
+
+def adopt_legacy_routing(folder: Path) -> Adopted:
+    """Put a Quagga or Netkit lab's routing files where its image reads them.
+
+    A lab from Netkit days keeps each daemon's configuration in its own file
+    under ``/etc/zebra``, a Kathará Quagga lab under ``/etc/quagga``. Either
+    path means the lab was written for Quagga, so a device that names no image
+    is given ``kathara/quagga`` on load (:func:`recover_device_configuration`).
+    That image reads ``/etc/quagga``, so Netkit's ``/etc/zebra`` is copied
+    there unchanged.
+
+    A device that names an FRR image instead gets its Quagga files merged into
+    ``/etc/frr/frr.conf``, which is all ``kathara/frr`` reads: Quagga's
+    configuration language is FRR's ancestor, and FRR takes it with a few
+    spellings changed. The originals are left where they are, every time.
+    Run on an import, on the copy in the workspace.
+    """
+    folder = Path(folder)
+    adopted = Adopted()
+    lab_conf = _read(folder / LAB_CONF)
+    if lab_conf is None:
+        return adopted
+    for node in parse(lab_conf).topology.nodes:
+        parts = _legacy_source(folder, node.name)
+        if parts is None or (folder / node.name / "etc" / "frr" / "frr.conf").is_file():
+            continue
+        image = (node.image or "").lower()
+        if "frr" in image:
+            if _convert_to_frr(folder, node.name, parts):
+                adopted.frr.append(node.name)
+        elif (not image or "quagga" in image) and parts == ("etc", "zebra"):
+            target = folder / node.name / "etc" / "quagga"
+            target.mkdir(parents=True, exist_ok=True)
+            for path in sorted(folder.joinpath(node.name, *parts).iterdir()):
+                if path.is_file():
+                    shutil.copyfile(path, target / path.name)
+            adopted.quagga.append(node.name)
+    return adopted
 
 
 def is_scenario(folder: Path) -> bool:

@@ -13,13 +13,16 @@ through `vtysh`, rather than reading a file that is usually stale.
 
 What is captured is written into the lab directory at
 `<device>/etc/frr/frr.conf`, which is where Kathará copies files from on the
-next deployment. Hibernating and resuming is therefore just capture, then
-deploy — no separate restore step, and the same files travel inside a `.kgui`
-package.
+next deployment. A device on a Quagga image runs one process per daemon, each
+reading its own `/etc/quagga/<daemon>.conf`, so it is captured daemon by daemon
+with ``vtysh -d`` into those files instead (F61). Hibernating and resuming is
+therefore just capture, then deploy — no separate restore step, and the same
+files travel inside a `.kgui` package.
 """
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import re
 from dataclasses import dataclass, field
@@ -28,7 +31,7 @@ from typing import Any
 
 from Kathara.parser.netkit.LabParser import LabParser
 
-from kathara_gui.domain.model import Topology
+from kathara_gui.domain.model import Node, Topology
 from kathara_gui.fsutil import write_text_lf
 from kathara_gui.kathara import connection
 
@@ -48,6 +51,10 @@ __all__ = [
 #: Where FRR reads its configuration from inside the container, and therefore
 #: where a captured configuration has to be placed to be restored.
 FRR_CONFIG = "etc/frr/frr.conf"
+
+#: Where Quagga reads each daemon's configuration from inside the container.
+QUAGGA_DIR = "etc/quagga"
+
 
 #: `show running-config` prefaces the configuration with progress chatter that
 #: is not valid configuration. Everything before the first of these is dropped.
@@ -76,6 +83,11 @@ class CaptureReport:
     #: An address FRR holds survives a redeploy in ``frr.conf``, so a capture
     #: that leaves it out of the model has not lost it.
     frr_addresses: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    #: Files removed because the device's image never reads them (F61), relative
+    #: to the lab directory: an ``frr.conf`` beside a Quagga router's own files.
+    removed: list[str] = field(default_factory=list)
+    #: Devices whose routing configuration is Quagga's, not FRR's.
+    quagga: set[str] = field(default_factory=set)
 
     @property
     def any_captured(self) -> bool:
@@ -348,6 +360,9 @@ def capture(topology: Topology, lab_dir: Path) -> CaptureReport:
     report = CaptureReport()
 
     for node in topology.nodes:
+        if node.runs_quagga:
+            _capture_quagga(manager, lab, node, lab_dir, report)
+            continue
         output, exit_code = _run(
             manager, lab, node.name, ["vtysh", "-c", "show running-config"]
         )
@@ -384,3 +399,54 @@ def capture(topology: Topology, lab_dir: Path) -> CaptureReport:
             "Deploy the lab and configure a router first."
         )
     return report
+
+
+def _capture_quagga(
+    manager: Any, lab: Any, node: Node, lab_dir: Path, report: CaptureReport
+) -> None:
+    """Capture a Quagga router daemon by daemon, each into its own file (F61).
+
+    Quagga has no integrated ``frr.conf``: each daemon is its own process and
+    reads ``/etc/quagga/<daemon>.conf``. ``vtysh -d <daemon>`` asks one daemon
+    alone for what it is running, which is exactly that file's content. The
+    capture used to write the whole running configuration to ``frr.conf``,
+    which ``kathara/quagga`` never reads, so a redeploy lost what was captured.
+    """
+    texts: list[str] = []
+    for daemon in node.quagga_daemons:
+        output, exit_code = _run(
+            manager, lab, node.name, ["vtysh", "-d", daemon, "-c", "show running-config"]
+        )
+        config = clean_running_config(output) if exit_code == 0 else ""
+        if not config:
+            if exit_code != 0 and daemon == "zebra":
+                # No vtysh or not running: nothing at all to take.
+                report.skipped.append((node.name, "no running Quagga configuration"))
+                return
+            report.skipped.append((node.name, f"Quagga's {daemon} returned no configuration"))
+            continue
+        relative = f"{node.name}/{QUAGGA_DIR}/{daemon}.conf"
+        write_text_lf(lab_dir / relative, config)
+        report.captured.append(
+            Captured(device=node.name, path=relative, lines=len(config.strip().splitlines()))
+        )
+        texts.append(config)
+
+    if not texts:
+        return
+    report.quagga.add(node.name)
+    # Left by the capture before F61, or by an FRR past: never read by Quagga,
+    # and taken for the device's configuration by anything reading the folder.
+    for name in ("frr.conf", "daemons"):
+        stray = lab_dir / node.name / "etc" / "frr" / name
+        if stray.is_file():
+            stray.unlink()
+            report.removed.append(f"{node.name}/etc/frr/{name}")
+    with contextlib.suppress(OSError):
+        (lab_dir / node.name / "etc" / "frr").rmdir()
+
+    held = frr_interface_addresses("\n".join(texts))
+    if held:
+        report.frr_addresses[node.name] = held
+    if owned := held.get("lo"):
+        report.frr_loopbacks[node.name] = owned

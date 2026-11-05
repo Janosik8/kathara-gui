@@ -367,6 +367,10 @@ export default function App() {
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   /** The open scenario came from outside this application (test 9A.1). */
   const [foreign, setForeign] = useState(false);
+  /** Devices whose Quagga or Netkit configuration the import converted to FRR's (F60). */
+  const [converted, setConverted] = useState<string[]>([]);
+  /** Devices whose Netkit /etc/zebra the import copied to /etc/quagga (F60). */
+  const [quagga, setQuagga] = useState<string[]>([]);
   // A file whose scenario is already in the workspace, held while the user
   // decides whether it replaces that one (test 5C.1); or a sealed file, held
   // until its password is given (note 1). The password is kept for the
@@ -1226,6 +1230,8 @@ export default function App() {
       setFolder(result.folder);
       setImportWarnings(result.warnings);
       setForeign(result.foreign);
+      setConverted(result.converted ?? []);
+      setQuagga(result.quagga ?? []);
       setCapture(null);
       setLabStatus(null);
       setDiagnostics(null);
@@ -1276,6 +1282,8 @@ export default function App() {
       setFolder(null);
       setImportWarnings([]);
       setForeign(false);
+      setConverted([]);
+      setQuagga([]);
       setCapture(null);
       setLabStatus(null);
       setDiagnostics(null);
@@ -2033,6 +2041,8 @@ export default function App() {
                   onDismissCapture={() => setCapture(null)}
                   importWarnings={importWarnings}
                   foreign={foreign}
+                  converted={converted}
+                  quagga={quagga}
                   onCapture={captureState}
                 />
               ),

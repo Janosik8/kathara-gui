@@ -203,6 +203,26 @@ describe("Inspector", () => {
     });
   });
 
+  it("says a daemon on a Quagga router runs only once ticked and redeployed (F62)", () => {
+    const topology = linked();
+    topology.nodes[0]!.image = "kathara/quagga";
+    const { unmount } = render(
+      <ExplainContext.Provider value={true}>
+        <Inspector topology={topology} selected={["r1"]} onDispatch={vi.fn()} />
+      </ExplainContext.Provider>,
+    );
+    expect(screen.getByText(/vtysh accepts its commands and drops them/)).toBeInTheDocument();
+    unmount();
+
+    // Not on FRR, where one frr.conf serves every daemon.
+    render(
+      <ExplainContext.Provider value={true}>
+        <Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />
+      </ExplainContext.Provider>,
+    );
+    expect(screen.queryByText(/vtysh accepts its commands/)).toBeNull();
+  });
+
   it("describes privileged mode only while explanations are on, never pointing at nothing", () => {
     render(<Inspector topology={linked()} selected={["r1"]} onDispatch={vi.fn()} />);
     const box = screen.getByRole("checkbox", { name: "Privileged" });

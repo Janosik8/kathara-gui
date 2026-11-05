@@ -125,6 +125,10 @@ class OpenResponse(BaseModel):
     folder: str
     warnings: list[str] = []
     foreign: bool = False
+    #: Devices naming an FRR image whose Quagga files were merged into frr.conf on import.
+    converted: list[str] = []
+    #: Devices whose Netkit /etc/zebra was copied to /etc/quagga, for kathara/quagga (F60).
+    quagga: list[str] = []
     exam: ExamState = ExamState()
 
 
@@ -463,6 +467,10 @@ async def import_scenario(
         else:
             _stage_labconf(payload, staging)
 
+        # A Netkit or Quagga lab's files go where its image reads them (F60).
+        # On the staged copy, so the user's own files are never touched.
+        adopted = scenario.adopt_legacy_routing(staging)
+
         # Only once it is known to be a real scenario does anything the user
         # already had get touched.
         try:
@@ -480,7 +488,7 @@ async def import_scenario(
         shutil.move(str(staging), str(target))
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    return _adopt(session, target)
+    return _adopt(session, target, adopted)
 
 
 #: What a browser appends to a second download of the same file: "base exam (1)".
@@ -554,8 +562,14 @@ def _may_replace(existing: Path, replace: bool) -> None:
         )
 
 
-def _adopt(session: Session, folder: Path) -> OpenResponse:
-    """Make ``folder`` the scenario being edited."""
+def _adopt(
+    session: Session, folder: Path, adopted: scenario.Adopted | None = None
+) -> OpenResponse:
+    """Make ``folder`` the scenario being edited.
+
+    ``adopted`` says what an import did to a Quagga or Netkit lab's files (F60).
+    """
+    adopted = adopted or scenario.Adopted()
     try:
         loaded = scenario.load(folder)
     except scenario.ScenarioError as exc:
@@ -571,6 +585,8 @@ def _adopt(session: Session, folder: Path) -> OpenResponse:
         folder=str(folder),
         warnings=loaded.warnings,
         foreign=loaded.foreign,
+        converted=adopted.frr,
+        quagga=adopted.quagga,
         exam=_exam(session),
     )
 
@@ -580,8 +596,9 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
     """Pull each running device's live configuration into the scenario.
 
     Two destinations, because a device keeps its configuration in two places.
-    A router's routing state goes to ``<device>/etc/frr/frr.conf``, where
-    Kathará copies from on the next deploy. Interface addresses go back into
+    A router's routing state goes to ``<device>/etc/frr/frr.conf``, or on a
+    Quagga image to each daemon's ``<device>/etc/quagga/<daemon>.conf`` (F61),
+    where Kathará copies from on the next deploy. Interface addresses go back into
     the *model*, because that is what generates ``<device>.startup`` — writing
     the file directly would be undone by the next save, and would leave the
     canvas showing an address the device no longer has.
@@ -617,8 +634,9 @@ def capture(request: CaptureRequest, session: Session = Depends(get_session)) ->
         skipped=report.skipped,
         message=_joined(
             report.message,
-            _frr_loopback_notes(report.frr_loopbacks),
-            _left_out_notes(left_out, report.frr_addresses, topology),
+            _frr_loopback_notes(report.frr_loopbacks, report.quagga),
+            _left_out_notes(left_out, report.frr_addresses, topology, report.quagga),
+            _removed_notes(report.removed),
         ),
         folder=str(folder),
         topology=topology,
@@ -632,17 +650,38 @@ def _joined(message: str | None, *notes: list[str]) -> str | None:
     return " ".join(parts) or None
 
 
-def _frr_loopback_notes(owned: dict[str, list[str]]) -> list[str]:
+def _suite(device: str, quagga: set[str]) -> tuple[str, str]:
+    """The routing suite a device runs, and the file its configuration is kept in."""
+    if device in quagga:
+        return "Quagga", "its /etc/quagga files"
+    return "FRR", "frr.conf"
+
+
+def _frr_loopback_notes(owned: dict[str, list[str]], quagga: set[str]) -> list[str]:
     """Say why a loopback set in vtysh is not in the Loopback rows (F31).
 
     Without this the capture would look as if it had missed the address.
     """
+    notes = []
+    for device, addresses in sorted(owned.items()):
+        suite, kept_in = _suite(device, quagga)
+        notes.append(
+            f"{device}: {', '.join(addresses)} on lo "
+            f"{'is' if len(addresses) == 1 else 'are'} set in {suite} (vtysh), so "
+            f"{'it stays' if len(addresses) == 1 else 'they stay'} in {kept_in}; change "
+            f"{'it' if len(addresses) == 1 else 'them'} there."
+        )
+    return notes
+
+
+def _removed_notes(removed: list[str]) -> list[str]:
+    """Say which files a capture removed, as an image never reads them (F61)."""
+    if not removed:
+        return []
     return [
-        f"{device}: {', '.join(addresses)} on lo "
-        f"{'is' if len(addresses) == 1 else 'are'} set in FRR (vtysh), so "
-        f"{'it stays' if len(addresses) == 1 else 'they stay'} in frr.conf; change "
-        f"{'it' if len(addresses) == 1 else 'them'} there."
-        for device, addresses in sorted(owned.items())
+        f"Removed {', '.join(removed)}: a Quagga router reads only /etc/quagga, so "
+        f"{'that file' if len(removed) == 1 else 'those files'} only hid where its "
+        "configuration really is."
     ]
 
 
@@ -650,6 +689,7 @@ def _left_out_notes(
     left_out: dict[str, dict[int, list[str]]],
     frr_held: dict[str, dict[str, list[str]]],
     topology: Topology,
+    quagga: set[str] | None = None,
 ) -> list[str]:
     """Say which addresses the capture had no place for in the design.
 
@@ -681,8 +721,9 @@ def _left_out_notes(
                     f"{'it was' if len(lost) == 1 else 'they were'} not captured."
                 )
             if kept:
+                suite, kept_in = _suite(device, quagga or set())
                 notes.append(
-                    f"{device} {name} also has {', '.join(kept)}, set in FRR (vtysh), so "
-                    f"{'it stays' if len(kept) == 1 else 'they stay'} in frr.conf."
+                    f"{device} {name} also has {', '.join(kept)}, set in {suite} (vtysh), so "
+                    f"{'it stays' if len(kept) == 1 else 'they stay'} in {kept_in}."
                 )
     return notes

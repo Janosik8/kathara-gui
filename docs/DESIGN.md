@@ -244,6 +244,11 @@ configuration in memory, and `/etc/frr/frr.conf` only matches it if somebody ran
 have looked like it worked while capturing nothing. Asking `vtysh` for the running
 configuration also means the capture lands where Kathará copies from on the next deploy, so
 resuming a hibernated lab is capture-then-deploy with no separate restore step to get wrong.
+That holds only if it lands where the image reads. Quagga has no integrated file: each daemon
+is its own process with its own `/etc/quagga/<daemon>.conf`. So a Quagga router is asked one
+daemon at a time (`vtysh -d ospfd`), and each answer goes to that daemon's file. The same file
+is what lets the daemon start at all: the image will not start one without it, so a daemon
+ticked on a Quagga router is given a one-line file on saving.
 
 **A running lab is a snapshot, and the difference from the canvas is named, not hinted at.**
 Deploying freezes the topology into containers; the canvas then moves on. The consequence
@@ -295,7 +300,18 @@ a file manager, or a bare `lab.conf`, and none of them will carry our convention
 Kathará's format cannot express is recovered from the files beside it: addressing from each
 `.startup` — in the modern `ip address add` form and the Netkit-era `ifconfig` one — and
 routing daemons from `/etc/frr/daemons`. Without that, an imported lab looked unaddressed
-and the validator complained about addresses that were on disk all along. Device kinds,
+and the validator complained about addresses that were on disk all along. The teaching labs
+still most often handed out predate FRR. Netkit's keep Quagga's files in `/etc/zebra`, and
+Kathará's Quagga labs keep them in `/etc/quagga`. Both are read, and either path is taken
+to mean what it says: the lab was written for Quagga. A router in it with no image is given
+`kathara/quagga`, and Netkit's files are copied unchanged to `/etc/quagga`, where that image
+reads them, so the lab runs as its author wrote it. A first version converted such labs to
+FRR instead. It worked, tested to OSPF convergence, but it rewrote the author's files to
+suit an image they never chose. The conversion remains for a router that names an FRR image
+and carries only Quagga's files: Quagga's configuration language is FRR's ancestor, and
+FRR reads it with a few spellings changed. Any other device with no image gets its kind's
+default. Kathará's own default, `kathara/base`, has no routing, so a router left without an
+image used to deploy as a host. Device kinds,
 which Kathará genuinely does not record, are guessed from FRR evidence first and naming
 convention second, and the guess is presentational: it picks an icon the user can change.
 A zip is imported under its file's name, and the `LAB_NAME` inside is rewritten to match.

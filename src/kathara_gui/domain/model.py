@@ -60,6 +60,10 @@ KNOWN_DAEMONS = frozenset(
     ]
 )
 
+# The daemons Quagga has, each a process of its own reading its own
+# /etc/quagga/<daemon>.conf; zebra first (F61, F62).
+QUAGGA_DAEMONS = ("zebra", "ospfd", "bgpd", "ripd", "ospf6d", "ripngd", "isisd")
+
 
 class Position(BaseModel):
     """Canvas coordinates. Preserved so a shared lab reopens looking the same."""
@@ -183,6 +187,16 @@ class Node(BaseModel):
     @property
     def effective_image(self) -> str:
         return self.image or DEFAULT_IMAGES[self.kind]
+
+    @property
+    def runs_quagga(self) -> bool:
+        """Whether the device's image is Quagga's, as Kathará's Quagga labs name it (F60)."""
+        return "quagga" in self.effective_image.lower()
+
+    @property
+    def quagga_daemons(self) -> list[str]:
+        """The Quagga daemons this device runs: zebra, and each one ticked that Quagga has."""
+        return [d for d in QUAGGA_DAEMONS if d == "zebra" or d in self.daemons]
 
     def next_interface_number(self) -> int:
         """Lowest unused interface index, so numbering stays gap-free."""
